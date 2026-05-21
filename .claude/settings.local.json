@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -m uvicorn main:app --reload --timeout-graceful-shutdown 1)",
+      "Bash(curl *)",
+      "Bash(python -m uvicorn main:app --timeout-graceful-shutdown 1)"
+    ]
+  }
+}
