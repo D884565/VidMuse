@@ -77,6 +77,14 @@ class Settings(BaseSettings):
     DOUBAO_SEEDDANCE: str = "doubao-1.5-pro"
     VOLC_EMBEDDING_MODEL: str = "bge-large-zh"
 
+    # 上传配置
+    UPLOAD_MAX_SIZE: int = 1024 * 1024 * 1024  # 1GB
+    ALLOWED_EXTENSIONS: dict = {
+        1: ["jpg", "jpeg", "png", "gif", "webp"],       # 图片
+        2: ["mp4", "avi", "mov", "flv", "wmv", "webm"],  # 视频
+        3: ["mp3", "wav", "flac", "aac", "ogg"]           # 音频
+    }
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

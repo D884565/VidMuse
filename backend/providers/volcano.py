@@ -15,7 +15,6 @@ from backend.app.exceptions.error_codes import (
     AI_QUOTA_EXHAUSTED,
     THIRD_PARTY_TIMEOUT
 )
-from backend.providers import VideoResponse
 
 from backend.providers.base import LLMBase, StreamChatCallback
 from backend.providers.dto.schema import (
@@ -41,6 +40,14 @@ load_dotenv()
 
 class VolcanoLLM(LLMBase):
     """火山引擎大模型实现类"""
+    _instance = None
+    _initialized = False
+
+    def __new__(cls, *args, **kwargs):
+        """单例模式实现，确保只有一个实例"""
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
 
 
 
@@ -55,7 +62,11 @@ class VolcanoLLM(LLMBase):
             - service: 服务名，默认mlp
             - default_embedding_model: 默认嵌入模型，默认bge-large-zh
         """
-        key = key if key else os.getenv("DOUBAO_SEED_API_KEY")
+        # 单例模式：已初始化则直接返回
+        if self._initialized:
+            return
+
+        key =  os.getenv("DOUBAO_SEED_API_KEY")
         self.default_model = model_name if model_name else os.getenv("DOUBAO_SEED", "doubao-1.5-pro")
         self.video_model = os.getenv("DOUBAO_SEEDDANCE", "doubao-1.5-pro")
         self.default_embedding_model = kwargs.get(
@@ -74,6 +85,9 @@ class VolcanoLLM(LLMBase):
             # 豆包API的接入点
             base_url="https://ark.cn-beijing.volces.com/api/v3",
         )
+
+        # 标记已初始化
+        self._initialized = True
 
 
 
@@ -289,7 +303,7 @@ class VolcanoLLM(LLMBase):
 
     def image_understanding(self, request: ImageUnderstandingRequest) -> ImageUnderstandingResponse:
         """
-        图片理解接口
+        图片理解接口(chat)
         :param request: 图片理解请求对象
         :return: 图片理解响应对象
         """
@@ -334,6 +348,78 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
+
+    async def image_understanding_response(self, request: ImageUnderstandingRequest) -> ImageUnderstandingResponse:
+        """
+        图片理解接口(chat)
+        :param request: 图片理解请求对象
+        :return: 图片理解响应对象
+        """
+        try:
+            # 构造多模态消息
+            meg=[
+            {"role": "user", "content": [
+                {
+                    "type": "input_image",
+                    "image_url": f"file://{request.image_url}"
+                },
+                {
+                    "type": "input_text",
+                    "text": request.prompt
+                }
+            ]},
+        ]
+            # 调用多模态对话API
+            response = await self.async_client.responses.create(
+                model=self.default_model,
+                input=meg,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                stream=False
+            )
+
+            # 处理错误响应
+            if hasattr(response, 'error') and response.error:
+                error_msg = response.error.get("message", "未知错误") if isinstance(response.error, dict) else str(
+                    response.error)
+                error_code = response.error.get("code", "") if isinstance(response.error, dict) else ""
+                self._handle_error(error_code, error_msg)
+
+            # 查找message类型的输出项
+            message = None
+            for item in response.output:
+                if item.type == 'message':
+                    message = item
+                    break
+
+            if not message:
+                raise BaseAppException(AI_GENERATE_FAILED, message="响应中未找到消息内容")
+
+            # 提取文本内容
+            content = ""
+            for content_item in message.content:
+                if content_item.type == 'output_text':
+                    content = content_item.text
+                    break
+
+            # 构造使用情况
+            usage = ChatUsage(
+                prompt_tokens=response.usage.input_tokens,
+                completion_tokens=response.usage.output_tokens,
+                total_tokens=response.usage.total_tokens
+            )
+
+            return ImageUnderstandingResponse(
+                content=content,
+                usage=usage,
+                model=response.model,
+                id=response.id
+            )
+
+        except ApiException as e:
+            self._handle_api_exception(e)
+            raise  # 确保方法总是抛出异常，不会返回None
+
     def text_understanding(self, request: TextUnderstandingRequest) -> TextUnderstandingResponse:
         """
         文本理解接口
@@ -367,6 +453,76 @@ class VolcanoLLM(LLMBase):
 
             return TextUnderstandingResponse(
                 content=choice.message.content,
+                usage=usage,
+                model=response.model,
+                id=response.id
+            )
+
+        except ApiException as e:
+            self._handle_api_exception(e)
+            raise  # 确保方法总是抛出异常，不会返回None
+
+    async def video_understanding_response(self, request: VideoUnderstandingRequest) -> VideoUnderstandingResponse:
+        """
+        视频理解接口(responses)
+        :param request: 视频理解请求对象
+        :return: 视频理解响应对象
+        :raises BaseAppException: 理解失败、超时或其他错误时抛出异常
+        """
+        try:
+            # 构造多模态消息
+            messages = [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "input_text": request.prompt},
+                        {"type": "input_video", "video_url": request.video_url}
+                    ]
+                }
+            ]
+
+            # 调用多模态对话API
+            response = await self.async_client.responses.create(
+                model=self.default_model,
+                input=messages,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                stream=False
+            )
+
+            # 处理错误响应
+            if hasattr(response, 'error') and response.error:
+                error_msg = response.error.get("message", "未知错误") if isinstance(response.error, dict) else str(
+                    response.error)
+                error_code = response.error.get("code", "") if isinstance(response.error, dict) else ""
+                self._handle_error(error_code, error_msg)
+
+            # 查找message类型的输出项
+            message = None
+            for item in response.output:
+                if item.type == 'message':
+                    message = item
+                    break
+
+            if not message:
+                raise BaseAppException(AI_GENERATE_FAILED, message="响应中未找到消息内容")
+
+            # 提取文本内容
+            content = ""
+            for content_item in message.content:
+                if content_item.type == 'output_text':
+                    content = content_item.text
+                    break
+
+            # 构造使用情况
+            usage = ChatUsage(
+                prompt_tokens=response.usage.input_tokens,
+                completion_tokens=response.usage.output_tokens,
+                total_tokens=response.usage.total_tokens
+            )
+
+            return VideoUnderstandingResponse(
+                content=content,
                 usage=usage,
                 model=response.model,
                 id=response.id
@@ -424,6 +580,54 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
+    async def video_understanding_response(self, request: VideoUnderstandingRequest) -> VideoUnderstandingResponse:
+        """
+        视频理解接口（异步）
+        :param request: 视频理解请求对象
+        :return: 视频理解响应对象
+        :raises BaseAppException: 理解失败、超时或其他错误时抛出异常
+        """
+        try:
+
+            # 构造多模态消息
+            config = {
+                    "video": {
+                        "fps": 0.3,  # define the sampling fps of the video, default is 1.0
+                    }
+                }
+
+            file = await self.async_client.files.create(
+                file=open(request.video_url, "rb"),
+                purpose="user_data",
+                preprocess_configs=config
+            )
+
+            await self.async_client.files.wait_for_processing(file.id)
+
+            msg = [
+                    {"role": "user", "content": [
+                        {
+                            "type": "input_video",
+                            "file_id": file.id  # ref video file id
+                        },
+                        {
+                            "type": "input_text",
+                            "text": request.prompt
+
+                        }
+                    ]},
+                ]
+
+            response = await self.async_client.responses.create(
+                model="doubao-seed-2-0-lite-260215",
+                input=msg,
+            )
+
+
+        except ApiException as e:
+            self._handle_api_exception(e)
+            raise  # 确保方法总是抛出异常，不会返回None
+
 
 
 
@@ -454,7 +658,6 @@ class VolcanoLLM(LLMBase):
             raise BaseAppException(THIRD_PARTY_TIMEOUT, message=f"火山引擎服务超时: {error_msg}")
         else:
             raise BaseAppException(AI_GENERATE_FAILED, message=f"生成失败: {error_msg} (错误码: {error_code})")
-
 
 
 
