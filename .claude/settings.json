@@ -1,7 +1,18 @@
 {
   "permissions": {
     "allow": [
-      "Bash(pip show *)"
+      "Bash(pip show *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(mkdir -p backend/app/exceptions backend/app/prompts backend/app/middleware backend/providers/dto)",
+      "Bash(python -c \"from backend.app.exceptions import BusinessException; print\\('exceptions OK'\\)\")",
+      "Bash(python -c \"from backend.providers import VolcanoLLM; print\\('providers OK'\\)\")",
+      "Bash(python -c \"from backend.framework.web import Response; print\\('framework OK'\\)\")",
+      "Bash(pip install *)",
+      "Bash(python -c ' *)"
+    ],
+    "additionalDirectories": [
+      "c:\\vidmuse\\VidMuse\\backend\\app"
     ]
   }
 }
