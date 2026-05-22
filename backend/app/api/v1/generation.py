@@ -7,8 +7,9 @@ from backend.app.schemas.generation import GenerateRequest, GenerateResponse, Pr
 from backend.app.schemas.project import ProjectResponse, ProjectCreate
 from backend.app.services.script_generation import script_generation_service
 from backend.app.services.video_generation import video_generation_service
-from backend.framework import Response, BusinessException
-from backend.framework.errorcode import RESOURCE_NOT_FOUND, VIDEO_ERROR
+from backend.framework.web import Response
+from backend.app.exceptions import BusinessException
+from backend.app.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR
 
 router = APIRouter(prefix="/api/v1/projects", tags=["视频生成"])
 

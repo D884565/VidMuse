@@ -1,12 +1,12 @@
 from abc import ABC, abstractmethod
 from typing import List, Dict, Iterator, Optional
 from pydantic import ValidationError
-from backend.framework.exception.exceptions import BaseAppException
-from backend.framework.errorcode import (
+from backend.app.exceptions.exceptions import BaseAppException
+from backend.app.exceptions.error_codes import (
     AI_SERVICE_ERROR,
     PARAM_ERROR
 )
-from backend.vidmuse.provider.dto.schema import (
+from backend.providers.dto.schema import (
     ChatRequest,
     ChatResponse,
     ChatMessage,

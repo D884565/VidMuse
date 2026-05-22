@@ -1,6 +1,6 @@
 from .base import LLMBase, StreamChatCallback
 from .volcano import VolcanoLLM
-from backend.vidmuse.provider.dto.schema import (
+from backend.providers.dto.schema import (
     ChatMessage,
     ChatRequest,
     ChatResponse,

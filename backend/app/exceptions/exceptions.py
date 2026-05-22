@@ -1,5 +1,5 @@
 from typing import Optional, Any, Tuple, Union
-from backend.framework.errorcode import (
+from backend.app.exceptions.error_codes import (
     SYSTEM_ERROR,
     BUSINESS_ERROR,
     PARAM_ERROR,

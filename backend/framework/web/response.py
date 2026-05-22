@@ -1,6 +1,6 @@
 from typing import Generic, TypeVar, Optional
 from pydantic import BaseModel
-from backend.framework.errorcode import SUCCESS, SYSTEM_ERROR
+from backend.app.exceptions.error_codes import SUCCESS, SYSTEM_ERROR
 
 T = TypeVar('T')
 
