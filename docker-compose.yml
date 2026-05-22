@@ -93,7 +93,7 @@ services:
 
   # ==================== MinIO (对象存储) ====================
   minio:
-    image: minio/minio:RELEASE.2026-05-20T18-04-28Z
+    image: minio/minio:latest
     container_name: aigc_minio
     ports:
       - "9000:9000"   # API 端口

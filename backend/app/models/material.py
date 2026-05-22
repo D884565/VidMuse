@@ -32,3 +32,21 @@ class Material(Base):
 
     # 关联
     project = relationship("Project", back_populates="materials")
+
+    def to_dict(self) -> dict:
+        """转换为字典"""
+        return {
+            "id": self.id,
+            "project_id": self.project_id,
+            "script_id": self.script_id,
+            "type": self.type,
+            "title": self.title,
+            "url": self.url,
+            "file_size": self.file_size,
+            "duration": self.duration,
+            "format": self.format,
+            "ai_features": self.ai_features,
+            "source_type": self.source_type,
+            "scene_index": self.scene_index,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
