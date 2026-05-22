@@ -26,6 +26,7 @@ langgraph-checkpoint==2.0.24   # 状态持久化
 
 # LLM 相关
 openai==1.76.0
+volcengine-python-sdk==5.0.27  # 火山引擎 SDK
 
 tiktoken==0.9.0                # Token 计算
 
