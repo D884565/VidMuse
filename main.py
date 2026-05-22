@@ -14,11 +14,15 @@ from backend.framework import (
     RESOURCE_NOT_FOUND,
     SUCCESS
 )
+from backend.vidmuse.rag.controller.material_controller import router as material_router
 
-app = FastAPI()
+app = FastAPI(title="VidMuse API", version="1.0.0")
 
 # 注册全局异常处理器
 register_exception_handlers(app)
+
+# 注册业务路由
+app.include_router(material_router, prefix="/api/v1")
 
 
 @app.get("/", response_model=Response)
