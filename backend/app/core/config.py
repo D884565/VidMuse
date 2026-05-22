@@ -71,6 +71,12 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
 
+    # 火山引擎（豆包）
+    DOUBAO_SEED_API_KEY: str = ""
+    DOUBAO_SEED: str = "doubao-1.5-pro"
+    DOUBAO_SEEDDANCE: str = "doubao-1.5-pro"
+    VOLC_EMBEDDING_MODEL: str = "bge-large-zh"
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

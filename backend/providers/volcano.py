@@ -6,8 +6,8 @@ from typing import Iterator, Optional, Dict, List
 from dotenv import load_dotenv
 from volcenginesdkarkruntime import Ark, AsyncArk
 from volcenginesdkcore.rest import ApiException
-from backend.framework.exception.exceptions import BaseAppException
-from backend.framework.errorcode import (
+from backend.app.exceptions.exceptions import BaseAppException
+from backend.app.exceptions.error_codes import (
     PARAM_ERROR,
     AI_SERVICE_ERROR,
     AI_GENERATE_FAILED,
@@ -15,10 +15,10 @@ from backend.framework.errorcode import (
     AI_QUOTA_EXHAUSTED,
     THIRD_PARTY_TIMEOUT
 )
-from backend.vidmuse.provider import VideoResponse
+from backend.providers import VideoResponse
 
-from backend.vidmuse.provider.base import LLMBase, StreamChatCallback
-from backend.vidmuse.provider.dto.schema import (
+from backend.providers.base import LLMBase, StreamChatCallback
+from backend.providers.dto.schema import (
     ChatRequest,
     ChatResponse,
     ChatUsage,
