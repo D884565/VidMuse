@@ -1,18 +1,20 @@
 from fastapi import FastAPI
-from backend.framework import (
-    Response,
+from backend.framework.web import Response
+from backend.app.exceptions import (
     BusinessException,
     ValidationException,
     UnauthorizedException,
     ForbiddenException,
     NotFoundException,
     register_exception_handlers,
+)
+from backend.app.exceptions.error_codes import (
     USER_NOT_FOUND,
     PARAM_ERROR,
     UNAUTHORIZED,
     FORBIDDEN,
     RESOURCE_NOT_FOUND,
-    SUCCESS
+    SUCCESS,
 )
 from backend.app.api.v1.generation import router as generation_router
 

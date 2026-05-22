@@ -10,7 +10,7 @@ from pydantic import ValidationError
 
 from .exceptions import BaseAppException, BusinessException
 from backend.framework.web.response import Response
-from backend.framework.errorcode import (
+from backend.app.exceptions.error_codes import (
     PARAM_ERROR,
     SYSTEM_ERROR,
     UNAUTHORIZED,
