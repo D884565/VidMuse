@@ -1,4 +1,3 @@
-import os
 import uuid
 import json
 
@@ -6,11 +5,11 @@ from typing import Optional
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
-from backend.app.core.config import settings
-from backend.app.core.minio_client import get_minio_client
-from backend.app.rag.dao.material_dao import MaterialDAO
-from backend.app.exceptions.exceptions import BusinessException, BaseAppException
-from backend.app.exceptions.error_codes import PARAM_ERROR
+from backend.v1.app.config.config import settings
+from backend.v1.app.core.minio_client import get_minio_client
+from backend.v1.app.rag.dao.material_dao import MaterialDAO
+from backend.framework.exceptions.exceptions import BusinessException, BaseAppException
+from backend.framework.exceptions.error_codes import PARAM_ERROR
 from backend.providers import VolcanoLLM
 from backend.providers.dto.schema import ImageUnderstandingRequest, VideoUnderstandingRequest
 

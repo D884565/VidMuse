@@ -2,22 +2,22 @@
 from fastapi import APIRouter, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.core.database import get_db
-from backend.app.schemas.generation import GenerateRequest, GenerateResponse, ProjectDetail
-from backend.app.schemas.project import ProjectResponse, ProjectCreate
-from backend.app.services.script_generation import script_generation_service
-from backend.app.services.video_generation import video_generation_service
+from backend.v1.app.client.async_database import get_db
+from backend.v1.app.generate.dao.generation import GenerateRequest
+from backend.v1.app.generate.dao.project import ProjectCreate
+from backend.v1.app.generate.service.script_generation import script_generation_service
+from backend.v1.app.generate.service.video_generation import video_generation_service
 from backend.framework.web import Response
-from backend.app.exceptions import BusinessException
-from backend.app.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR
+from backend.framework.exceptions import BusinessException
+from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR
 
-router = APIRouter(prefix="/api/v1/projects", tags=["视频生成"])
+router = APIRouter(prefix="/generate/v1/projects", tags=["视频生成"])
 
 
 @router.post("", response_model=Response)
 async def create_project(project: ProjectCreate, db: AsyncSession = Depends(get_db)):
     """创建视频项目"""
-    from backend.app.models.project import Project
+    from backend.v1.app.models.project import Project
     p = Project(title=project.title, description=project.description)
     db.add(p)
     await db.commit()

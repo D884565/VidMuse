@@ -8,17 +8,11 @@ from fastapi.exceptions import (
 
 from pydantic import ValidationError
 
-from .exceptions import BaseAppException, BusinessException
+from backend.framework.exceptions.exceptions import BaseAppException
 from backend.framework.web.response import Response
-from backend.app.exceptions.error_codes import (
+from backend.framework.exceptions.error_codes import (
     PARAM_ERROR,
-    SYSTEM_ERROR,
-    UNAUTHORIZED,
-    FORBIDDEN,
-    RESOURCE_NOT_FOUND,
-    REQUEST_METHOD_NOT_SUPPORTED,
-    RESOURCE_CONFLICT,
-    REQUEST_TOO_FREQUENT
+    SYSTEM_ERROR
 )
 
 logger = logging.getLogger(__name__)

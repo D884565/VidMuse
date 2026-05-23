@@ -2,11 +2,11 @@
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.project import Project
-from backend.app.models.script import Script
-from backend.app.models.material import Material
-from backend.app.core.celery_app import celery_app
-from backend.app.services.minio_service import minio_service
+from backend.v1.app.models.project import Project
+from backend.v1.app.models.script import Script
+from backend.v1.app.models.material import Material
+from backend.v1.app.generate.temp.celery_app import celery_app
+from backend.v1.app.services.minio_service import minio_service
 
 
 class VideoGenerationService:

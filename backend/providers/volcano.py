@@ -1,14 +1,12 @@
 import asyncio
-import json
 import os
-from typing import Iterator, Optional, Dict, List
+from typing import Iterator, Optional
 
 from dotenv import load_dotenv
 from volcenginesdkarkruntime import Ark, AsyncArk
 from volcenginesdkcore.rest import ApiException
-from backend.app.exceptions.exceptions import BaseAppException
-from backend.app.exceptions.error_codes import (
-    PARAM_ERROR,
+from backend.framework.exceptions.exceptions import BaseAppException
+from backend.framework.exceptions.error_codes import (
     AI_SERVICE_ERROR,
     AI_GENERATE_FAILED,
     AI_CONTENT_VIOLATION,
@@ -16,7 +14,7 @@ from backend.app.exceptions.error_codes import (
     THIRD_PARTY_TIMEOUT
 )
 
-from backend.providers.base import LLMBase, StreamChatCallback
+from backend.providers.base import LLMBase
 from backend.providers.dto.schema import (
     ChatRequest,
     ChatResponse,
@@ -24,7 +22,6 @@ from backend.providers.dto.schema import (
     EmbeddingRequest,
     EmbeddingResponse,
     EmbeddingUsage,
-    ChatMessage,
     VideoRequest,
     VideoResponse,
     ImageUnderstandingRequest,
@@ -580,7 +577,7 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
-    async def video_understanding_response(self, request: VideoUnderstandingRequest) -> VideoUnderstandingResponse:
+    async def video_understanding_response_file(self, request: VideoUnderstandingRequest) -> None:
         """
         视频理解接口（异步）
         :param request: 视频理解请求对象

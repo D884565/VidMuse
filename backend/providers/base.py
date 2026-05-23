@@ -1,15 +1,14 @@
 from abc import ABC, abstractmethod
-from typing import List, Dict, Iterator, Optional
+from typing import Iterator, Optional
 from pydantic import ValidationError
-from backend.app.exceptions.exceptions import BaseAppException
-from backend.app.exceptions.error_codes import (
+from backend.framework.exceptions.exceptions import BaseAppException
+from backend.framework.exceptions.error_codes import (
     AI_SERVICE_ERROR,
     PARAM_ERROR
 )
 from backend.providers.dto.schema import (
     ChatRequest,
     ChatResponse,
-    ChatMessage,
     EmbeddingRequest,
     EmbeddingResponse,
     ChatUsage

@@ -3,8 +3,8 @@ import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.app.models.project import Project
-from backend.app.models.script import Script
+from backend.v1.app.models.project import Project
+from backend.v1.app.models.script import Script
 
 
 class ScriptGenerationService:

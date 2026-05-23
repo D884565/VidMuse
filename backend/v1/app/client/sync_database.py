@@ -2,7 +2,7 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-from backend.app.core.config import settings
+from backend.v1.app.config.config import settings
 
 engine = create_engine(
     settings.sync_db_url,

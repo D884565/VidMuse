@@ -1,6 +1,6 @@
 """Celery 应用初始化"""
 from celery import Celery
-from backend.app.core.config import settings
+from backend.v1.app.config.config import settings
 
 celery_app = Celery(
     "vidmuse",

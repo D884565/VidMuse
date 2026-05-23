@@ -1,7 +1,7 @@
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from backend.app.models.material import Material
+from backend.v1.app.models.material import Material
 
 
 class MaterialDAO:

@@ -1,13 +1,13 @@
 from fastapi import FastAPI
-from backend.framework.web import Response
-from backend.framework.exceptions import (
+from backend.framework.web.response import Response
+from backend.framework.exceptions.exceptions import (
     BusinessException,
     ValidationException,
     UnauthorizedException,
     ForbiddenException,
     NotFoundException,
-    register_exception_handlers,
 )
+from backend.framework.web.exception_handler import register_exception_handlers
 from backend.framework.exceptions.error_codes import (
     USER_NOT_FOUND,
     PARAM_ERROR,

@@ -6,15 +6,15 @@ import tempfile
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from backend.app.core.celery_app import celery_app
-from backend.app.core.config import settings
-from backend.app.models.project import Project
-from backend.app.models.script import Script
-from backend.app.models.material import Material
-from backend.app.services.tts_service import tts_service
-from backend.app.services.image_service import image_service
-from backend.app.services.video_composer import video_composer
-from backend.app.services.minio_service import minio_service
+from backend.v1.app.generate.temp.celery_app import celery_app
+from backend.v1.app.config.config import settings
+from backend.v1.app.models.project import Project
+from backend.v1.app.models.script import Script
+from backend.v1.app.models.material import Material
+from backend.v1.app.generate.service.tts_service import tts_service
+from backend.v1.app.generate.service.image_service import image_service
+from backend.v1.app.generate.service.video_composer import video_composer
+from backend.v1.app.services.minio_service import minio_service
 
 logger = logging.getLogger(__name__)
 

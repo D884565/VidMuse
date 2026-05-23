@@ -1,10 +1,9 @@
-import time
 from datetime import timedelta
 
 from minio import Minio
 from minio.error import S3Error
 
-from backend.app.core.config import settings
+from backend.v1.app.config.config import settings
 
 
 class MinioClient:
