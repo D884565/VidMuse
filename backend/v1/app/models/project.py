@@ -2,7 +2,7 @@
 import datetime
 from sqlalchemy import String, Text, BigInteger, DateTime, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from backend.v1.app.client.async_database import Base
+from backend.store.database.async_database import Base
 
 
 class Project(Base):
