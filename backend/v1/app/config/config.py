@@ -96,6 +96,17 @@ class Settings(BaseSettings):
     TTS_ACCESS_KEY: str = ""
     TTS_SECRET_KEY: str = ""
 
+    # 存储配置
+    STORAGE_TYPE: str = "minio"  # 可选值: minio, tos
+
+    # 火山引擎对象存储 TOS
+    TOS_ENDPOINT: str = "tos-cn-beijing.volces.com"
+    TOS_ACCESS_KEY: str = os.getenv('TOS_ACCESS_KEY')
+    TOS_SECRET_KEY: str = os.getenv('TOS_SECRET_KEY')
+    TOS_BUCKET_NAME: str = "vidmuse"
+    TOS_REGION: str = "cn-beijing"
+    TOS_SECURE: bool = True
+
     # 上传配置
     UPLOAD_MAX_SIZE: int = 1024 * 1024 * 1024  # 1GB
     ALLOWED_EXTENSIONS: dict = {

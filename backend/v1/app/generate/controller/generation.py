@@ -2,7 +2,7 @@
 from fastapi import APIRouter, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.v1.app.client.async_database import get_db
+from backend.store.database.async_database import get_db
 from backend.v1.app.generate.dao.generation import GenerateRequest
 from backend.v1.app.generate.dao.project import ProjectCreate
 from backend.v1.app.generate.service.script_generation import script_generation_service
