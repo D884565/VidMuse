@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, File, Form, UploadFile
 from sqlalchemy.orm import Session
 
 from backend.framework.web.response import Response
-from backend.v1.app.client.sync_database import get_db
+from backend.store.database.sync_database import get_db
 from backend.v1.app.rag.service.material_service import MaterialService
 
 router = APIRouter(prefix="/materials", tags=["素材管理"])
