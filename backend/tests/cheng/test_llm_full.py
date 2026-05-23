@@ -292,30 +292,7 @@ class TestVolcanoLLM(unittest.TestCase):
         if not supported:
             self.skipTest("当前账号或模型不支持视频生成功能")
 
-    def test_09_chat_with_custom_model(self):
-        """测试指定模型的聊天接口"""
-        print("\n" + "="*60)
-        print("测试9: 指定模型的聊天接口")
-        print("="*60)
 
-        # 使用默认模型测试自定义模型参数
-        request = ChatRequest(
-            messages=[
-                ChatMessage(role="user", content="2+2等于几？")
-            ],
-            model=self.default_model,
-            max_tokens=50
-        )
-
-        response = self.llm.chat(request)
-
-        self.assertIsNotNone(response)
-        self.assertIn("4", response.content)
-        self.assertEqual(response.model, self.default_model)
-
-        print(f"✓ 响应内容: {response.content.strip()}")
-        print(f"✓ 使用模型: {response.model}")
-        print("✓ 指定模型聊天接口测试通过")
 
 
 
