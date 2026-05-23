@@ -34,10 +34,22 @@
       "Bash(celery -A backend.v1.app.generate.temp.celery_app worker --loglevel=info --pool=solo)",
       "Bash(git checkout *)",
       "Bash(git branch *)",
-      "Bash(git stash *)"
+      "Bash(git stash *)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat: 视频生成功能完整实现 *)",
+      "Bash(git push *)",
+      "Bash(find \"c:/vidmuse/VidMuse\" -name \"chromadb_client*\" -type f 2>/dev/null | head -5)",
+      "Read(//c/vidmuse/VidMuse/**)",
+      "Bash(git cherry-pick *)",
+      "Bash(pkill -f \"uvicorn backend.v1.main\")",
+      "Bash(pkill -f \"celery.*worker\")",
+      "Bash(pkill -9 -f \"celery\")",
+      "Bash(kill -9 266 378 455)",
+      "Bash(celery -A backend.v1.app.generate.temp.celery_app worker --loglevel=info --pool=solo -n single_worker)"
     ],
     "additionalDirectories": [
-      "c:\\vidmuse\\VidMuse\\backend\\app"
+      "c:\\vidmuse\\VidMuse\\backend\\app",
+      "C:\\Users\\练轩成\\Desktop"
     ]
   }
 }

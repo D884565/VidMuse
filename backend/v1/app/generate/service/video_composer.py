@@ -105,11 +105,16 @@ class VideoComposer:
             watermark=False,
         )
 
+        # 首帧图片：仅传有效 URL，本地占位文件不传
+        image_url = None
+        if reference_image and reference_image.startswith("http"):
+            image_url = reference_image
+
         # 调用视频生成模型（异步）
         response = asyncio.run(self.llm.generate_video(
             request=video_request,
             prompt=prompt,
-            image=reference_image,  # 首帧图片（可选）
+            image=image_url,
         ))
 
         if not response or not response.video_url:
