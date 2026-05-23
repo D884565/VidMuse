@@ -81,10 +81,11 @@ class EmbeddingRequest(BaseModel):
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {
-                    "texts": ["你好，世界", "人工智能正在改变世界"]
-                }
+                {"text":"天很蓝，海很深","type":"text"},
+                {"image_url":{"url":"https://ark-project.tos-cn-beijing.volces.com/images/view.jpeg"},"type":"image_url"},
+
             ]
+
         }
     }
 

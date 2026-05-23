@@ -9,17 +9,8 @@ import asyncio
 from dotenv import load_dotenv
 from typing import List, Optional
 
-from backend.vidmuse.provider import (
-    VolcanoLLM,
-    ChatRequest,
-    ChatMessage,
-    StreamChatCallback,
-    VideoRequest,
-    EmbeddingRequest,
-    ImageUnderstandingRequest,
-    TextUnderstandingRequest,
-    VideoUnderstandingRequest
-)
+from backend.providers import StreamChatCallback, VolcanoLLM, ChatRequest, ChatMessage, ImageUnderstandingRequest, \
+    TextUnderstandingRequest, VideoUnderstandingRequest, VideoRequest
 
 
 class TestStreamCallback(StreamChatCallback):

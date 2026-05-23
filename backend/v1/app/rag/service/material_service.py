@@ -6,7 +6,7 @@ from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
 from backend.v1.app.config.config import settings
-from backend.v1.app.core.minio_client import get_minio_client
+from backend.store.obj.minio_client import get_minio_client
 from backend.v1.app.rag.dao.material_dao import MaterialDAO
 from backend.framework.exceptions.exceptions import BusinessException, BaseAppException
 from backend.framework.exceptions.error_codes import PARAM_ERROR
