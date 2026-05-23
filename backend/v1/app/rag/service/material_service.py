@@ -1,10 +1,11 @@
 import uuid
 import json
 
-from typing import Optional
+from typing import Optional, BinaryIO
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
+from backend.store import get_storage_client
 from backend.v1.app.config.config import settings
 from backend.store.obj.minio_client import get_minio_client
 from backend.v1.app.rag.dao.material_dao import MaterialDAO
@@ -143,15 +144,14 @@ class MaterialService:
         ext = MaterialService._validate_file(file, material_type)
         object_name = MaterialService._generate_object_name(material_type, ext)
 
-        minio_client = get_minio_client()
-        file_url = minio_client.upload_fileobj(
-            file=file,
+        client = get_storage_client()
+        file_url = client.upload_fileobj(
+            file=file.file,
             object_name=object_name,
             content_type=file.content_type
         )
 
-        presigned_url = minio_client.get_presigned_url(object_name)
-
+        presigned_url = client.get_presigned_url(object_name)
         ai_features = await MaterialService._extract_ai_features(presigned_url, material_type)
 
         if tags:
@@ -228,6 +228,8 @@ class MaterialService:
     ) -> None:
         """删除素材"""
         material = MaterialDAO.get_material_by_id(db, material_id)
+        client  = get_storage_client()
+        client.delete_object(material.object_name)
         if not material:
             raise BusinessException(PARAM_ERROR, "素材不存在")
 

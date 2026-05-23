@@ -66,10 +66,8 @@ class VolcanoLLM(LLMBase):
         key =  os.getenv("DOUBAO_SEED_API_KEY")
         self.default_model = model_name if model_name else os.getenv("DOUBAO_SEED", "doubao-1.5-pro")
         self.video_model = os.getenv("DOUBAO_SEEDDANCE", "doubao-1.5-pro")
-        self.default_embedding_model = kwargs.get(
-            "default_embedding_model",
-            os.getenv("VOLC_EMBEDDING_MODEL", "bge-large-zh")
-        )
+        self.default_embedding_model = os.getenv("EMBED_MODEL", "bge-large-zh")
+        key_02 = os.getenv("EMBED_API_KEY","")
 
         self.async_client = AsyncArk(
             api_key=key,
@@ -79,6 +77,12 @@ class VolcanoLLM(LLMBase):
 
         self.client = Ark(
             api_key=key,
+            # 豆包API的接入点
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+        )
+
+        self.embed_client = Ark(
+            api_key=key_02,
             # 豆包API的接入点
             base_url="https://ark.cn-beijing.volces.com/api/v3",
         )
@@ -273,23 +277,27 @@ class VolcanoLLM(LLMBase):
         :return: 嵌入响应对象
         """
         try:
+            # 处理混合类型输入:对象转换为字典
+            processed_input = []
+            for content in request.texts:
+                processed_input.append(content.model_dump())
+
             # 调用嵌入API
-            response = self.client.multimodal_embeddings.create(
-                input=request.texts,
-                model=request.model or self.default_embedding_model
+            response = self.embed_client.multimodal_embeddings.create(
+                input=processed_input,
+                model=self.default_embedding_model,
             )
 
             # 提取嵌入向量
-            embeddings = [item.embedding for item in response.data]
+            data = response.data.embedding
 
             # 构造使用情况
             usage = EmbeddingUsage(
-                prompt_tokens=response.usage.prompt_tokens,
-                total_tokens=response.usage.total_tokens
+                prompt_tokens=100,
+                total_tokens=100
             )
-
             return EmbeddingResponse(
-                embeddings=embeddings,
+                embeddings=[data,],
                 usage=usage,
                 model=response.model
             )

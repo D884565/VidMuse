@@ -15,7 +15,7 @@ async def upload_material(
         type: int = Form(..., description="素材类型 1-图片 2-视频 3-音频"),
         title: str = Form(..., description="素材标题"),
         tags: Optional[str] = Form(None, description="标签，逗号分隔"),
-        source_type: Optional[int] = Form(1, description="来源 1-上传 2-AI生成 3-爬取 4-购买"),
+        source_type: int = Form(1, description="来源 1-上传 2-AI生成 3-爬取 4-购买"),
         db: Session = Depends(get_db)
 ):
     """上传素材到素材库，支持图片/视频/音频"""
