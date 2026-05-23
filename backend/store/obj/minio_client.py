@@ -1,12 +1,14 @@
 from datetime import timedelta
+from typing import Optional
 
 from minio import Minio
 from minio.error import S3Error
 
 from backend.v1.app.config.config import settings
+from backend.store.obj.base import ObjectStorage
 
 
-class MinioClient:
+class MinioClient(ObjectStorage):
     """MinIO 客户端封装"""
     _instance = None
 
@@ -91,6 +93,67 @@ class MinioClient:
             )
         except S3Error as e:
             raise RuntimeError(f"获取预签名URL失败: {str(e)}")
+
+    def download_file(self, object_name: str, file_path: str) -> None:
+        """从MinIO下载文件到本地"""
+        try:
+            self.client.fget_object(
+                bucket_name=self.bucket_name,
+                object_name=object_name,
+                file_path=file_path
+            )
+        except S3Error as e:
+            raise RuntimeError(f"从MinIO下载文件失败: {str(e)}")
+
+    def get_object(self, object_name: str) -> bytes:
+        """获取对象内容"""
+        try:
+            response = self.client.get_object(
+                bucket_name=self.bucket_name,
+                object_name=object_name
+            )
+            return response.read()
+        except S3Error as e:
+            raise RuntimeError(f"获取MinIO对象失败: {str(e)}")
+        finally:
+            if 'response' in locals():
+                response.close()
+                response.release_conn()
+
+    def delete_object(self, object_name: str) -> None:
+        """删除对象"""
+        try:
+            self.client.remove_object(
+                bucket_name=self.bucket_name,
+                object_name=object_name
+            )
+        except S3Error as e:
+            raise RuntimeError(f"删除MinIO对象失败: {str(e)}")
+
+    def get_presigned_upload_url(self, object_name: str, expires_in: timedelta = timedelta(hours=1),
+                                content_type: Optional[str] = None) -> str:
+        """获取预签名上传URL"""
+        try:
+            return self.client.presigned_put_object(
+                bucket_name=self.bucket_name,
+                object_name=object_name,
+                expires=expires_in
+            )
+        except S3Error as e:
+            raise RuntimeError(f"获取MinIO预签名上传URL失败: {str(e)}")
+
+    def object_exists(self, object_name: str) -> bool:
+        """检查对象是否存在"""
+        try:
+            self.client.stat_object(
+                bucket_name=self.bucket_name,
+                object_name=object_name
+            )
+            return True
+        except S3Error as e:
+            if e.code == 'NoSuchKey':
+                return False
+            raise RuntimeError(f"检查MinIO对象是否存在失败: {str(e)}")
 
 
 def get_minio_client() -> MinioClient:
