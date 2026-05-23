@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from backend.framework.web import Response
-from backend.app.exceptions import (
+from backend.framework.exceptions import (
     BusinessException,
     ValidationException,
     UnauthorizedException,
@@ -8,7 +8,7 @@ from backend.app.exceptions import (
     NotFoundException,
     register_exception_handlers,
 )
-from backend.app.exceptions.error_codes import (
+from backend.framework.exceptions.error_codes import (
     USER_NOT_FOUND,
     PARAM_ERROR,
     UNAUTHORIZED,
@@ -16,8 +16,8 @@ from backend.app.exceptions.error_codes import (
     RESOURCE_NOT_FOUND,
     SUCCESS,
 )
-from backend.app.api.v1.generation import router as generation_router
-from backend.app.rag.controller.material_controller import router as material_router
+from backend.v1.app.generate.controller.generation import router as generation_router
+from backend.v1.app.rag.controller.material_controller import router as material_router
 
 app = FastAPI(title="VidMuse", version="0.1.0")
 
@@ -26,7 +26,7 @@ register_exception_handlers(app)
 
 # 注册业务路由
 app.include_router(generation_router)
-app.include_router(material_router, prefix="/api/v1")
+app.include_router(material_router, prefix="/generate/v1")
 
 
 @app.get("/", response_model=Response)
