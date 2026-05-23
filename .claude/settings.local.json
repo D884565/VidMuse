@@ -8,7 +8,9 @@
       "Bash(pip list *)",
       "Bash(python *)",
       "Bash(pip show *)",
-      "Bash(uvicorn main:app *)"
+      "Bash(uvicorn main:app *)",
+      "mcp__ide__getDiagnostics",
+      "Bash(PYTHONPATH=. python backend/tests/cheng/test_search.py)"
     ]
   }
 }
