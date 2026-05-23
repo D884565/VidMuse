@@ -268,13 +268,13 @@ class VolcanoLLM(LLMBase):
 
     def _embedding(self, request: EmbeddingRequest) -> EmbeddingResponse:
         """
-        文本嵌入接口实现
+        多模态嵌入接口实现
         :param request: 嵌入请求对象
         :return: 嵌入响应对象
         """
         try:
             # 调用嵌入API
-            response = self.client.embeddings.create(
+            response = self.client.multimodal_embeddings.create(
                 input=request.texts,
                 model=request.model or self.default_embedding_model
             )
