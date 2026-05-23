@@ -141,7 +141,7 @@ class LLMBase(ABC):
 
     def embedding(self, request: EmbeddingRequest) -> EmbeddingResponse:
         """
-        文本嵌入接口（对外统一入口）
+        多模态嵌入接口（对外统一入口）
         :param request: 嵌入请求对象
         :return: 嵌入响应对象
         """
@@ -159,7 +159,7 @@ class LLMBase(ABC):
     @abstractmethod
     def _embedding(self, request: EmbeddingRequest) -> EmbeddingResponse:
         """
-        文本嵌入接口具体实现，由子类实现
+        多模态嵌入接口具体实现，由子类实现
         :param request: 嵌入请求对象
         :return: 嵌入响应对象
         """
