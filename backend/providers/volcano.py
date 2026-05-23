@@ -283,19 +283,31 @@ class VolcanoLLM(LLMBase):
         """
         try:
             # 调用嵌入API（使用单独的向量模型客户端）
+            # 多模态嵌入接口要求 input 为 [{type, text}] 格式
+            embedding_input = [{'type': 'text', 'text': t} for t in request.texts]
             response = self.embedding_client.multimodal_embeddings.create(
-                input=request.texts,
+                input=embedding_input,
                 model=request.model or self.default_embedding_model
             )
 
-            # 提取嵌入向量
-            embeddings = [item.embedding for item in response.data]
+            # 提取嵌入向量（response.data 可能是单个对象或列表）
+            if isinstance(response.data, list):
+                embeddings = [item.embedding for item in response.data]
+            else:
+                embeddings = [response.data.embedding]
 
-            # 构造使用情况
-            usage = EmbeddingUsage(
-                prompt_tokens=response.usage.prompt_tokens,
-                total_tokens=response.usage.total_tokens
-            )
+            # 构造使用情况（response.usage 可能是 dict 或对象）
+            usage_data = response.usage
+            if isinstance(usage_data, dict):
+                usage = EmbeddingUsage(
+                    prompt_tokens=usage_data.get('prompt_tokens', 0),
+                    total_tokens=usage_data.get('total_tokens', 0)
+                )
+            else:
+                usage = EmbeddingUsage(
+                    prompt_tokens=usage_data.prompt_tokens,
+                    total_tokens=usage_data.total_tokens
+                )
 
             return EmbeddingResponse(
                 embeddings=embeddings,
