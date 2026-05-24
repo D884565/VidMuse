@@ -71,6 +71,9 @@ class VolcanoLLM(LLMBase):
             os.getenv("VOLC_EMBEDDING_MODEL", "bge-large-zh")
         )
 
+        # 向量模型可能使用单独的 API Key
+        embedding_key = os.getenv("VOLC_EMBEDDING_API_KEY") or key
+
         self.async_client = AsyncArk(
             api_key=key,
             # 豆包API的接入点
@@ -80,6 +83,12 @@ class VolcanoLLM(LLMBase):
         self.client = Ark(
             api_key=key,
             # 豆包API的接入点
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+        )
+
+        # 向量模型客户端（可能使用不同的 API Key）
+        self.embedding_client = Ark(
+            api_key=embedding_key,
             base_url="https://ark.cn-beijing.volces.com/api/v3",
         )
 
@@ -273,20 +282,32 @@ class VolcanoLLM(LLMBase):
         :return: 嵌入响应对象
         """
         try:
-            # 调用嵌入API
-            response = self.client.multimodal_embeddings.create(
-                input=request.texts,
+            # 调用嵌入API（使用单独的向量模型客户端）
+            # 多模态嵌入接口要求 input 为 [{type, text}] 格式
+            embedding_input = [{'type': 'text', 'text': t} for t in request.texts]
+            response = self.embedding_client.multimodal_embeddings.create(
+                input=embedding_input,
                 model=request.model or self.default_embedding_model
             )
 
-            # 提取嵌入向量
-            embeddings = [item.embedding for item in response.data]
+            # 提取嵌入向量（response.data 可能是单个对象或列表）
+            if isinstance(response.data, list):
+                embeddings = [item.embedding for item in response.data]
+            else:
+                embeddings = [response.data.embedding]
 
-            # 构造使用情况
-            usage = EmbeddingUsage(
-                prompt_tokens=response.usage.prompt_tokens,
-                total_tokens=response.usage.total_tokens
-            )
+            # 构造使用情况（response.usage 可能是 dict 或对象）
+            usage_data = response.usage
+            if isinstance(usage_data, dict):
+                usage = EmbeddingUsage(
+                    prompt_tokens=usage_data.get('prompt_tokens', 0),
+                    total_tokens=usage_data.get('total_tokens', 0)
+                )
+            else:
+                usage = EmbeddingUsage(
+                    prompt_tokens=usage_data.prompt_tokens,
+                    total_tokens=usage_data.total_tokens
+                )
 
             return EmbeddingResponse(
                 embeddings=embeddings,

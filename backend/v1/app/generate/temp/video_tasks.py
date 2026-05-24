@@ -14,7 +14,7 @@ from backend.v1.app.models.material import Material
 from backend.v1.app.generate.service.tts_service import tts_service
 from backend.v1.app.generate.service.image_service import image_service
 from backend.v1.app.generate.service.video_composer import video_composer
-from backend.v1.app.services.minio_service import minio_service
+from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ def generate_video_task(self, project_id: int, script_id: int):
         audio_path = tts_service.generate_audio(script_content["full_text"])
         # 上传配音到 MinIO
         audio_object = f"projects/{project_id}/audio_{script_id}.mp3"
-        minio_service.upload_file(audio_path, audio_object)
+        get_storage_client().upload_file(audio_path, audio_object)
         # 记录素材
         db.add(Material(
             project_id=project_id, script_id=script_id,
@@ -69,7 +69,7 @@ def generate_video_task(self, project_id: int, script_id: int):
         image_objects = []
         for i, img_path in enumerate(image_paths):
             img_object = f"projects/{project_id}/scene_{i + 1}.png"
-            minio_service.upload_file(img_path, img_object)
+            get_storage_client().upload_file(img_path, img_object)
             image_objects.append(img_object)
             db.add(Material(
                 project_id=project_id, script_id=script_id,
@@ -90,7 +90,7 @@ def generate_video_task(self, project_id: int, script_id: int):
         )
         # 上传成品视频到 MinIO
         video_object = f"projects/{project_id}/output.mp4"
-        minio_service.upload_file(video_path, video_object)
+        get_storage_client().upload_file(video_path, video_object)
 
         # 记录素材
         db.add(Material(

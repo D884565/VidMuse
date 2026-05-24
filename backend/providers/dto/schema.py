@@ -1,5 +1,30 @@
 from typing import List, Dict, Any, Optional, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, Discriminator, Tag
+from typing_extensions import Annotated
+
+
+class TextContent(BaseModel):
+    """文本内容"""
+    type: str = Field("text", description="内容类型，固定为text")
+    text: str = Field(description="文本内容")
+
+
+class ImageUrlContent(BaseModel):
+    """图片URL内容"""
+    type: str = Field("image_url", description="内容类型，固定为image_url")
+    image_url: Dict[str, str] = Field(description="图片URL信息，包含url字段")
+
+
+class VideoUrlContent(BaseModel):
+    """视频URL内容"""
+    type: str = Field("video_url", description="内容类型，固定为video_url")
+    video_url: Dict[str, str] = Field(description="视频URL信息，包含url或path字段")
+
+
+# 多模态内容联合类型：支持字符串（纯文本）或结构化多模态对象
+MultimodalContent = Union[
+        Union[TextContent, ImageUrlContent, VideoUrlContent]
+]
 
 
 class ChatMessage(BaseModel):
@@ -74,18 +99,17 @@ class ChatResponse(BaseModel):
 
 class EmbeddingRequest(BaseModel):
     """嵌入请求"""
-    texts: List[str] = Field(description="待嵌入的文本列表")
+    texts: List[MultimodalContent] = Field(description="待嵌入的多模态数据列表，支持字符串（纯文本）或结构化多模态对象（文本、图片、视频）")
     model: Optional[str] = Field(None, description="嵌入模型名称，不指定则使用默认模型")
     extra_params: Optional[Dict[str, Any]] = Field(None, description="额外的参数")
 
     model_config = {
         "json_schema_extra": {
             "examples": [
-                {"text":"天很蓝，海很深","type":"text"},
-                {"image_url":{"url":"https://ark-project.tos-cn-beijing.volces.com/images/view.jpeg"},"type":"image_url"},
-
+                {"type": "text", "text": "天很蓝，海很深"},
+                {"type": "image_url", "image_url": {"url": "https://ark-project.tos-cn-beijing.volces.com/images/view.jpeg"}},
+                {"type": "video_url", "video_url": {"url": "/path/to/video.mp4"}}
             ]
-
         }
     }
 
