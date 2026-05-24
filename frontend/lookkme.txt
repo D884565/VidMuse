@@ -1,0 +1,8 @@
+cd C:\Users\zboto\Desktop\前端开发\VidMuse
+python -m uvicorn backend.opencv.keyframesmaker:app --reload --host 0.0.0.0 --port 8000
+
+cd C:\Users\zboto\Desktop\前端开发\VidMuse\frontend
+docker compose down
+docker compose up --build
+
+http://localhost:5173
