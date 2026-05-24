@@ -6,7 +6,7 @@ celery_app = Celery(
     "vidmuse",
     broker=settings.celery_broker,
     backend=settings.celery_backend,
-    include=["backend.app.workers.video_tasks"],
+    include=["backend.v1.app.generate.temp.video_tasks"],
 )
 
 celery_app.conf.update(
