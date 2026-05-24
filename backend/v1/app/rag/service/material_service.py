@@ -1,10 +1,11 @@
 import uuid
 import json
 
-from typing import Optional
+from typing import Optional, BinaryIO
 from fastapi import UploadFile
 from sqlalchemy.orm import Session
 
+from backend.store import get_storage_client
 from backend.v1.app.config.config import settings
 from backend.store.obj.minio_client import get_minio_client
 from backend.v1.app.rag.dao.material_dao import MaterialDAO
@@ -40,12 +41,12 @@ class MaterialService:
 
         return ext
 
+
     @staticmethod
-    def _generate_object_name(material_type: int, ext: str) -> str:
+    def _generate_object_name(title: str ,material_type: int) -> str:
         """生成对象存储路径"""
         type_dir = {1: "image", 2: "video", 3: "audio"}.get(material_type, "other")
-        filename = f"{uuid.uuid4().hex}.{ext}"
-        return f"materials/{type_dir}/{filename[:2]}/{filename[2:4]}/{filename}"
+        return f"materials/{type_dir}/{title[:2]}/{title[2:4]}/{title}"
 
     @staticmethod
     async def _extract_ai_features(file_url: str, material_type: int) -> dict:
@@ -141,17 +142,16 @@ class MaterialService:
     ) -> dict:
         """上传素材"""
         ext = MaterialService._validate_file(file, material_type)
-        object_name = MaterialService._generate_object_name(material_type, ext)
+        object_name = MaterialService._generate_object_name(title, material_type)
 
-        minio_client = get_minio_client()
-        file_url = minio_client.upload_fileobj(
-            file=file,
+        client = get_storage_client()
+        file_url = client.upload_fileobj(
+            file=file.file,
             object_name=object_name,
             content_type=file.content_type
         )
 
-        presigned_url = minio_client.get_presigned_url(object_name)
-
+        presigned_url = client.get_presigned_url(object_name)
         ai_features = await MaterialService._extract_ai_features(presigned_url, material_type)
 
         if tags:
@@ -228,9 +228,58 @@ class MaterialService:
     ) -> None:
         """删除素材"""
         material = MaterialDAO.get_material_by_id(db, material_id)
+        if not material or not material.title:
+            raise BusinessException(PARAM_ERROR, "素材不存在")
+        client  = get_storage_client()
+        object_name = MaterialService._generate_object_name(material.title, material.type)
+        client.delete_object(object_name)
         if not material:
             raise BusinessException(PARAM_ERROR, "素材不存在")
 
         success = MaterialDAO.delete_material(db, material_id)
         if not success:
             raise BusinessException(PARAM_ERROR, "删除失败")
+
+    @staticmethod
+    def update_material(
+            db: Session,
+            material_id: int,
+            title: Optional[str] = None,
+            tags: Optional[str] = None,
+            current_user_id: Optional[int] = None
+    ) -> dict:
+        """更新素材信息（仅支持修改标题和标签）"""
+        material = MaterialDAO.get_material_by_id(db, material_id)
+        if not material:
+            raise BusinessException(PARAM_ERROR, "素材不存在")
+
+        update_data = {}
+
+        # 处理标题更新
+        if title is not None:
+            update_data["title"] = title
+
+        # 处理标签更新
+        if tags is not None:
+            # 解析现有ai_features
+            ai_features = {}
+            if material.ai_features:
+                try:
+                    ai_features = json.loads(material.ai_features)
+                except json.JSONDecodeError:
+                    pass
+
+            # 处理新标签
+            new_tags = [tag.strip() for tag in tags.split(",") if tag.strip()]
+            ai_features["tags"] = new_tags
+
+            # 保存回update_data
+            update_data["ai_features"] = json.dumps(ai_features, ensure_ascii=False)
+
+        # 如果没有要更新的字段，直接返回原数据
+        if not update_data:
+            return material.to_dict()
+
+        # 执行更新
+        updated_material = MaterialDAO.update_material(db, material_id, update_data)
+        return updated_material.to_dict()
