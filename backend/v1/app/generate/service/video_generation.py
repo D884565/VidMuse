@@ -6,7 +6,7 @@ from backend.v1.app.models.project import Project
 from backend.v1.app.models.script import Script
 from backend.v1.app.models.material import Material
 from backend.v1.app.generate.temp.celery_app import celery_app
-from backend.v1.app.services.minio_service import minio_service
+
 
 
 class VideoGenerationService:
@@ -78,15 +78,12 @@ class VideoGenerationService:
             "id": project.id,
             "title": project.title,
             "status": project.status,
-            "video_url": (
-                minio_service.get_url(project.video_output_url)
-                if project.video_output_url else None
-            ),
+            "video_url": project.video_output_url,
             "script": {"id": script.id, "content": script.content} if script else None,
             "materials": [
                 {
                     "type": m.type,
-                    "url": minio_service.get_url(m.url) if m.url else None,
+                    "url": m.url,
                     "duration": m.duration,
                 }
                 for m in materials

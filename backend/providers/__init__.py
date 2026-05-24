@@ -1,5 +1,8 @@
 from .base import LLMBase, StreamChatCallback
-from .volcano import VolcanoLLM
+try:
+    from .volcano import VolcanoLLM
+except ImportError:
+    VolcanoLLM = None
 from backend.providers.dto.schema import (
     ChatMessage,
     ChatRequest,

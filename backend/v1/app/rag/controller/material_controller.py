@@ -15,7 +15,7 @@ async def upload_material(
         type: int = Form(..., description="素材类型 1-图片 2-视频 3-音频"),
         title: str = Form(..., description="素材标题"),
         tags: Optional[str] = Form(None, description="标签，逗号分隔"),
-        source_type: Optional[int] = Form(1, description="来源 1-上传 2-AI生成 3-爬取 4-购买"),
+        source_type: int = Form(1, description="来源 1-上传 2-AI生成 3-爬取 4-购买"),
         db: Session = Depends(get_db)
 ):
     """上传素材到素材库，支持图片/视频/音频"""
@@ -64,3 +64,22 @@ def delete_material(
         current_user_id=current_user_id
     )
     return Response.success(data=None)
+
+
+@router.put("/{material_id}", response_model=Response, summary="修改素材信息")
+def update_material(
+        material_id: int,
+        title: Optional[str] = Form(None, description="素材标题"),
+        tags: Optional[str] = Form(None, description="标签，逗号分隔"),
+        db: Session = Depends(get_db)
+):
+    """修改素材基本信息，仅支持修改标题和标签"""
+    current_user_id = None
+    updated_material = MaterialService.update_material(
+        db=db,
+        material_id=material_id,
+        title=title,
+        tags=tags,
+        current_user_id=current_user_id
+    )
+    return Response.success(data=updated_material)
