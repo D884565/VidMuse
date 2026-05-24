@@ -1,5 +1,8 @@
 import os
+import re
+import uuid
 import tempfile
+from urllib.parse import quote
 from typing import Any
 
 import cv2
@@ -109,7 +112,22 @@ async def _save_upload_to_temp(upload: UploadFile) -> str:
 def _keyframe_url(path: str, output_dir: str) -> str:
     if os.path.normpath(output_dir) != os.path.normpath(DEFAULT_KEYFRAME_DIR):
         return ""
-    return f"{STATIC_KEYFRAME_ROUTE}/{os.path.basename(path)}"
+    return f"{STATIC_KEYFRAME_ROUTE}/{quote(os.path.basename(path))}"
+
+
+def _safe_video_stem(filename: str | None) -> str:
+    stem = os.path.splitext(os.path.basename(filename or "video"))[0]
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", stem).strip("._-")
+    if safe:
+        return safe[:48]
+    return uuid.uuid4().hex
+
+
+def _write_jpeg(path: str, frame) -> None:
+    ok, encoded = cv2.imencode(".jpg", frame)
+    if not ok:
+        raise HTTPException(status_code=500, detail="Failed to encode keyframe as JPEG.")
+    encoded.tofile(path)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -329,7 +347,7 @@ async def save_keyframes_on_change(
         reference_gray = None
         last_saved_frame = -min_interval_frames
         frame_index = -1
-        basename = os.path.splitext(os.path.basename(upload.filename or "video"))[0]
+        basename = _safe_video_stem(upload.filename)
 
         while len(keyframes) < max_keyframes_value:
             ok, frame = cap.read()
@@ -354,7 +372,7 @@ async def save_keyframes_on_change(
                 timestamp = _round_float(frame_index / fps) if fps > 0 else 0.0
                 filename = f"{basename}_frame_{frame_index:06d}_score_{change_score:.2f}.jpg"
                 save_path = os.path.join(output_dir, filename)
-                cv2.imwrite(save_path, frame)
+                _write_jpeg(save_path, frame)
 
                 keyframes.append(
                     SavedKeyframe(
