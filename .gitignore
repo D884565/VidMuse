@@ -34,3 +34,7 @@ turlinSpec/
 
 # turlin 测试
 backend/tests/turlin/
+
+# Claude 配置
+.claude/
+openspec/
