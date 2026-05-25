@@ -112,3 +112,11 @@ VIDEO_TOO_LONG: Tuple[str, str] = ("A050004", "视频时长过长")
 TEMPLATE_NOT_FOUND: Tuple[str, str] = ("A050005", "模板不存在")
 MATERIAL_NOT_FOUND: Tuple[str, str] = ("A050006", "素材不存在")
 GENERATE_QUOTA_EXHAUSTED: Tuple[str, str] = ("A050007", "生成配额已用完")
+
+
+# ==================== 商品模块错误码 (模块 06) ====================
+PRODUCT_ERROR: Tuple[str, str] = ("A060001", "商品模块错误")
+PRODUCT_NOT_FOUND: Tuple[str, str] = ("A060002", "商品不存在")
+PRODUCT_NO_PERMISSION: Tuple[str, str] = ("A060003", "无权限操作此商品")
+PRODUCT_URL_INVALID: Tuple[str, str] = ("A060004", "商品链接格式错误")
+PRODUCT_CRAWL_FAILED: Tuple[str, str] = ("A060005", "商品抓取失败")
