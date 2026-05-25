@@ -37,3 +37,4 @@ backend/tests/turlin/
 
 # Claude 配置
 .claude/
+openspec/
