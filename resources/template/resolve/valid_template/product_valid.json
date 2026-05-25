@@ -1,0 +1,15 @@
+{
+  "$schema": "/resources/template/resolve/product.json",
+  "type": "object",
+  "required": ["商品基础信息", "卖点列表", "价格与服务"],
+  "properties": {
+    "价格与服务": {
+      "type": "object",
+      "required": ["原价", "现价"],
+      "properties": {
+        "原价": { "type": "number" },
+        "现价": { "type": "number" }
+      }
+    }
+  }
+}
