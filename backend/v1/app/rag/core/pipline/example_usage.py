@@ -1,6 +1,7 @@
 """
 三条流水线使用示例
 """
+import os
 from unittest.mock import Mock
 from backend.v1.app.rag.core.pipline import (
     VideoParsingPipeline,
@@ -13,28 +14,63 @@ from backend.v1.app.rag.core.pipline.processors import (
     VideoOverallUnderstandingProcessor
 )
 
+
 def example_video_parsing():
-    """视频解析流水线示例"""
+    """视频解析流水线示例（端到端整合版）"""
     print("=" * 60)
-    print("📹 视频解析流水线示例")
+    print("视频解析流水线示例（端到端整合版）")
     print("=" * 60)
 
     # 使用Mock的LLM客户端
     mock_llm = Mock()
     video_understanding_processor = VideoUnderstandingProcessor(llm_client=mock_llm)
+    video_overall_processor = VideoOverallUnderstandingProcessor(llm_client=mock_llm)
 
-    # 创建流水线
+    # 创建自定义处理器链（如果不自定义则使用默认的完整端到端流程）
     from backend.v1.app.rag.core.pipline.processors import (
         VideoSplitProcessor,
         SliceGenerateProcessor,
-        SchemaValidationProcessor
+        SchemaValidationProcessor,
+        VideoAggregationProcessor,
+        VideoGenerateProcessor
     )
+
+    # 手动获取schema路径
+    current_dir = os.path.abspath(__file__)
+    project_root = current_dir
+    while not os.path.exists(os.path.join(project_root, "resources")):
+        project_root = os.path.dirname(project_root)
+
+    slice_schema = os.path.join(project_root, "resources", "template", "resolve", "valid_template", "slice_valid.json")
+    video_schema = os.path.join(project_root, "resources", "template", "resolve", "valid_template", "video_valid.json")
+
     pipeline = VideoParsingPipeline(custom_processors=[
-        VideoSplitProcessor(),
+        VideoSplitProcessor(slice_duration=5000),
         video_understanding_processor,
         SliceGenerateProcessor(),
-        SchemaValidationProcessor()
+        SchemaValidationProcessor(
+            schema_path=slice_schema,
+            data_key="slice_data",
+            valid_key="valid_slices",
+            invalid_key="invalid_slices",
+            summary_key="slice_validation_summary",
+            id_field="slice_id"
+        ),
+        VideoAggregationProcessor(),
+        video_overall_processor,
+        VideoGenerateProcessor(),
+        SchemaValidationProcessor(
+            schema_path=video_schema,
+            data_key="video_data",
+            valid_key="valid_video",
+            invalid_key="invalid_video",
+            summary_key="video_validation_summary",
+            id_field="video_id"
+        )
     ])
+
+    # 也可以直接使用默认流水线，不需要自定义处理器：
+    # pipeline = VideoParsingPipeline()
 
     # 执行流水线
     result = pipeline.run({
@@ -45,12 +81,50 @@ def example_video_parsing():
 
     # 处理结果
     if result["success"]:
-        print("✅ 视频解析流水线执行成功！")
-        summary = result["data"]["validation_summary"]
-        print(f"📊 校验结果：共{summary['total']}个切片，{summary['valid']}个通过，{summary['invalid']}个失败")
+        print("视频解析流水线执行成功！")
+        slice_summary = result["data"]["slice_validation_summary"]
+        print(f"分片校验结果：共{slice_summary['total']}个切片，{slice_summary['valid']}个通过，{slice_summary['invalid']}个失败")
+
+        if "video_validation_summary" in result["data"]:
+            video_summary = result["data"]["video_validation_summary"]
+            print(f"整体校验结果：共{video_summary['total']}个视频，{video_summary['valid']}个通过，{video_summary['invalid']}个失败")
+
+        if result["data"]["valid_slices"]:
+            print("\n通过校验的切片：")
+            for i, slice_data in enumerate(result["data"]["valid_slices"][:3]):  # 显示前3个
+                print(f"  - {slice_data['slice_id']}: {slice_data['单片段模板']['模板名称']}")
+            if len(result["data"]["valid_slices"]) > 3:
+                print(f"  ... 共{len(result['data']['valid_slices'])}个切片")
+
+        if result["data"]["invalid_slices"]:
+            print("\n校验失败的切片：")
+            for invalid in result["data"]["invalid_slices"]:
+                print(f"  - {invalid['slice_id']}: {invalid['error']}")
+
+        if result["data"].get("valid_video"):
+            print("\n整体视频分析结果：")
+            video_data = result["data"]["valid_video"][0]
+            print(f"  商品名称：{video_data['视频基本信息']['商品名称']}")
+            print(f"  目标人群：{video_data['视频基本信息']['目标人群']}")
+            print(f"  分片数量：{len(video_data['片段索引列表'])}个")
+            print(f"  生成文件：{result['data']['video_file']}")
+
+        print("\n生成的分片文件：")
+        for i, file_path in enumerate(result["data"]["slice_files"][:3]):  # 显示前3个
+            print(f"  - {os.path.basename(file_path)}")
+        if len(result["data"]["slice_files"]) > 3:
+            print(f"  ... 共{len(result['data']['slice_files'])}个文件")
+
+        # 清理测试文件
+        for file_path in result["data"]["slice_files"]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        if "video_file" in result["data"] and os.path.exists(result["data"]["video_file"]):
+            os.remove(result["data"]["video_file"])
+
         return result["data"]
     else:
-        print("❌ 视频解析流水线执行失败！")
+        print("视频解析流水线执行失败！")
         print(f"错误信息：{result['errors']}")
         return None
 
@@ -87,26 +161,35 @@ def example_product_parsing():
 
     # 处理结果
     if result["success"]:
-        print("✅ 商品解析流水线执行成功！")
+        print("商品解析流水线执行成功！")
+        product_summary = result["data"]["product_validation_summary"]
+        print(f"校验结果：共{product_summary['total']}个商品，{product_summary['valid']}个通过，{product_summary['invalid']}个失败")
+
         product_data = result["data"]["product_data"]
-        print(f"📦 商品名称：{product_data['商品基础信息']['商品名称']}")
-        print(f"💰 价格：原价{product_data['价格与服务']['原价']}元，现价{product_data['价格与服务']['现价']}元")
-        print(f"📄 生成文件：{result['data']['product_file']}")
+        print(f"\n商品信息：")
+        print(f"  商品名称：{product_data['商品基础信息']['商品名称']}")
+        print(f"  价格：原价{product_data['价格与服务']['原价']}元，现价{product_data['价格与服务']['现价']}元")
+        print(f"  生成文件：{result['data']['product_file']}")
+
+        # 清理测试文件
+        if os.path.exists(result["data"]["product_file"]):
+            os.remove(result["data"]["product_file"])
+
         return result["data"]
     else:
-        print("❌ 商品解析流水线执行失败！")
+        print("商品解析流水线执行失败！")
         print(f"错误信息：{result['errors']}")
         return None
 
 
 def example_video_overall_parsing(video_slices_data):
-    """视频整体理解流水线示例"""
+    """视频整体理解流水线示例（独立使用版）"""
     print("\n" + "=" * 60)
-    print("🎬 视频整体理解流水线示例")
+    print("🎬 视频整体理解流水线示例（独立使用版）")
     print("=" * 60)
 
     if not video_slices_data:
-        print("❌ 缺少视频分片数据，请先运行视频解析流水线")
+        print("缺少视频分片数据，请先运行视频解析流水线")
         return
 
     # 使用Mock的LLM客户端
@@ -135,27 +218,39 @@ def example_video_overall_parsing(video_slices_data):
 
     # 处理结果
     if result["success"]:
-        print("✅ 视频整体理解流水线执行成功！")
+        print("视频整体理解流水线执行成功！")
+        video_summary = result["data"]["video_validation_summary"]
+        print(f"校验结果：共{video_summary['total']}个视频，{video_summary['valid']}个通过，{video_summary['invalid']}个失败")
+
         video_data = result["data"]["video_data"]
-        print(f"🎥 视频ID：{video_data['视频基本信息']['video_id']}")
-        print(f"📦 推广商品：{video_data['视频基本信息']['商品名称']}")
-        print(f"🎯 目标人群：{video_data['视频基本信息']['目标人群']}")
-        print(f"📄 生成文件：{result['data']['video_file']}")
+        print(f"\n视频信息：")
+        print(f"  视频ID：{video_data['视频基本信息']['video_id']}")
+        print(f"  推广商品：{video_data['视频基本信息']['商品名称']}")
+        print(f"  目标人群：{video_data['视频基本信息']['目标人群']}")
+        print(f"  生成文件：{result['data']['video_file']}")
+
+        # 清理测试文件
+        if os.path.exists(result["data"]["video_file"]):
+            os.remove(result["data"]["video_file"])
+
         return result["data"]
     else:
-        print("❌ 视频整体理解流水线执行失败！")
+        print("视频整体理解流水线执行失败！")
         print(f"错误信息：{result['errors']}")
         return None
 
+
 def main():
     """主函数：运行所有示例"""
-    # 1. 运行视频解析流水线
+    print("🚀 运行三条流水线示例...\n")
+
+    # 1. 运行视频解析流水线（端到端整合版）
     video_data = example_video_parsing()
 
     # 2. 运行商品解析流水线
     product_data = example_product_parsing()
 
-    # 3. 运行视频整体理解流水线
+    # 3. 运行独立的视频整体理解流水线（可选，演示如何单独使用）
     if video_data:
         overall_data = example_video_overall_parsing(video_data)
 

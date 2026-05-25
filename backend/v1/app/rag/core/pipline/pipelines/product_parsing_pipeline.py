@@ -57,7 +57,14 @@ class ProductParsingPipeline(BasePipeline):
             processors = [
                 ProductUnderstandingProcessor(),
                 ProductGenerateProcessor(),
-                SchemaValidationProcessor(schema_path=product_schema_path)
+                SchemaValidationProcessor(
+                    schema_path=product_schema_path,
+                    data_key="product_data",
+                    valid_key="valid_product",
+                    invalid_key="invalid_product",
+                    summary_key="product_validation_summary",
+                    id_field="SKU_ID"
+                )
             ]
 
         super().__init__(processors)
