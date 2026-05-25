@@ -28,3 +28,4 @@ class Project(Base):
 
     # 关联
     scripts = relationship("Script", back_populates="project", cascade="all, delete-orphan")
+    materials = relationship("Material", back_populates="project", cascade="all, delete-orphan")
