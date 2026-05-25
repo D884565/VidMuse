@@ -28,3 +28,6 @@ logs/
 # 临时文件
 *.tmp
 *.temp
+
+# 个人文档
+turlinSpec/
