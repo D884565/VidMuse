@@ -98,6 +98,7 @@ class Settings(BaseSettings):
     # 火山引擎 TTS 语音合成
     TTS_ACCESS_KEY: str = ""
     TTS_SECRET_KEY: str = ""
+    TTS_API_KEY: str = ""  # 新版语音合成API Key
 
 
 

@@ -18,7 +18,7 @@ from backend.framework.exceptions.error_codes import PARAM_ERROR
 
 def search(
     query: Union[str, MultimodalContent, List[MultimodalContent]],
-    top_k: int = 10,
+    treop_k: int = 10,
     where: Optional[Dict[str, Any]] = None,
     rerank: bool = True,
     embedding_model: Optional[str] = None,
@@ -36,7 +36,7 @@ def search(
     :return: 搜索结果，包含检索到的文档、元数据、相似度分数等
     """
     # 参数验证
-    if top_k < 1 or top_k > 100:
+    if treop_k < 1 or treop_k > 100:
         raise BaseAppException(PARAM_ERROR, message="top_k必须在1-100之间")
 
     # 标准化查询内容格式
@@ -66,7 +66,7 @@ def search(
     chromadb_client = get_chromadb_client()
     search_results = chromadb_client.query_similar(
         query_embeddings=query_embeddings,
-        n_results=top_k * 2 if rerank else top_k,  # 重排序时多召回一些结果
+        n_results=treop_k * 2 if rerank else treop_k,  # 重排序时多召回一些结果
         where=where
     )
 
@@ -88,7 +88,7 @@ def search(
                     "score": 1 - dist if dist is not None else None  # 转换为相似度分数，越大越相似
                 }
                 for id_, doc, meta, dist in zip(ids, documents, metadatas, distances)
-            ][:top_k],
+            ][:treop_k],
             "embedding_usage": embedding_response.usage.dict(),
             "rerank_enabled": rerank,
             "rerank_usage": None
@@ -115,7 +115,7 @@ def search(
 
     # 根据重排序结果重新组织返回数据
     reranked_results = []
-    for idx in reranked_indices[:top_k]:
+    for idx in reranked_indices[:treop_k]:
         if 0 <= idx < len(documents):
             reranked_results.append({
                 "id": ids[idx],

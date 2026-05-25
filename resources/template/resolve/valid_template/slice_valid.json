@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VideoSliceParser",
+  "type": "object",
+  "required": ["slice_id", "time_range", "video_id", "单片段模板"],
+  "properties": {
+    "slice_id": {
+      "type": "string",
+      "pattern": "^s_\\d+$",
+      "description": "片段唯一标识，格式如 s_001"
+    },
+    "time_range": {
+      "type": "array",
+      "items": { "type": "integer", "minimum": 0 },
+      "minItems": 2,
+      "maxItems": 2,
+      "description": "时间范围，必须为两个非负整数[开始, 结束]"
+    },
+    "video_id": { "type": "string" },
+
+    "单片段模板": {
+      "type": "object",
+      "required": ["模板名称", "模板类型", "创作要素", "生成Prompt完整模板"],
+      "properties": {
+        "模板名称": { "type": "string" },
+        "模板类型": {
+          "type": "string",
+          "enum": ["HOOK", "PAIN_POINT", "PRODUCT_SHOW", "TRUST_BUILD", "CTA"]
+        },
+        "机制": { "type": "string" },
+        "总结": { "type": "string" },
+
+        "创作要素": {
+          "type": "object",
+          "required": ["画面", "动作", "台词", "运镜", "时长"],
+          "properties": {
+            "画面": { "type": "string" },
+            "动作": { "type": "string" },
+            "台词": { "type": "string" },
+            "运镜": { "type": "string" },
+            "时长": { "type": "string" },
+            "情绪评分": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          }
+        },
+
+        "一致性": {
+          "type": "object",
+          "properties": {
+            "商品": { "type": "array", "items": { "type": "string" } },
+            "置信度": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+
+        "生成Prompt完整模板": {
+          "type": "string",
+          "minLength": 10,
+          "description": "用于直接输入给AI视频生成模型的最终Prompt"
+        }
+      }
+    }
+  }
+}
