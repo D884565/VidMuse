@@ -17,7 +17,6 @@ from backend.framework.exceptions.error_codes import (
     SUCCESS,
 )
 from backend.v1.app.generate.controller.generation import router as generation_router
-from backend.v1.app.rag.controller.material_controller import router as material_router
 from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.product.controller.product_controller import router as product_router
 from backend.v1.app.rag.controller.asset_controller import router as asset_router
@@ -30,7 +29,6 @@ register_exception_handlers(app)
 
 # 注册业务路由
 app.include_router(generation_router)
-app.include_router(material_router, prefix="/generate/v1")
 app.include_router(user_router, prefix="/generate/v1")
 app.include_router(product_router, prefix="/generate/v1")
 app.include_router(asset_router, prefix="/rag/v1")
