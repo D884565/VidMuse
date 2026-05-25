@@ -1,0 +1,65 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VideoAnalysisSummarySchema",
+  "type": "object",
+  "required": ["视频基本信息", "片段索引列表", "片段间关系"],
+  "properties": {
+    "视频基本信息": {
+      "type": "object",
+      "required": ["商品名称", "总时长_ms"],
+      "properties": {
+        "video_id": { "type": "string" },
+        "tree_id": { "type": "string" },
+        "商品名称": { "type": "string" },
+        "目标人群": { "type": "string" },
+        "总时长_ms": { "type": "integer", "minimum": 0 },
+        "全局摘要": { "type": "string" },
+        "原片核心文案": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "片段索引列表": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["slice_id", "time_range_ms", "序号", "模板类型", "总结"],
+        "properties": {
+          "slice_id": { "type": "string", "pattern": "^s_\\d+$" },
+          "time_range_ms": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0 },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "序号": { "type": "integer", "minimum": 1 },
+          "模板类型": {
+            "type": "string",
+            "enum": ["HOOK", "PAIN_POINT", "PRODUCT_SHOW", "TRUST_BUILD", "CTA"]
+          },
+          "模板名称": { "type": "string" },
+          "机制": { "type": "string" },
+          "总结": { "type": "string", "minLength": 5 },
+          "核心视觉标签": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    },
+
+    "片段间关系": {
+      "type": "object",
+      "required": ["转场序列", "情绪曲线"],
+      "properties": {
+        "转场序列": { "type": "array", "items": { "type": "string" } },
+        "情绪曲线": { "type": "array", "items": { "type": "string" } },
+        "视觉节奏": { "type": "string" },
+        "BGM节奏匹配": { "type": "string" }
+      }
+    }
+  }
+}
