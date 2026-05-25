@@ -31,3 +31,6 @@ logs/
 
 # 个人文档
 turlinSpec/
+
+# turlin 测试
+backend/tests/turlin/
