@@ -24,6 +24,7 @@ class VideoSplitProcessor(BaseProcessor):
         :return: 修改后的上下文，包含拆分后的片段列表
         """
         video_id = context.get("video_id")
+
         video_duration = context.get("video_duration", 60000)  # 默认视频时长1分钟（Mock）
 
         if not video_id:
