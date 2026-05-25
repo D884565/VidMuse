@@ -109,6 +109,11 @@ class Settings(BaseSettings):
         3: ["mp3", "wav", "flac", "aac", "ogg"]           # 音频
     }
 
+    # JWT 配置
+    JWT_SECRET_KEY: str = "vidmuse-secret-key-change-in-production"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_ACCESS_TOKEN_EXPIRE_SECONDS: int = 7200  # 2小时
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 
