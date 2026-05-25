@@ -48,7 +48,14 @@
       "Bash(celery -A backend.v1.app.generate.temp.celery_app worker --loglevel=info --pool=solo -n single_worker)",
       "Bash(git rm *)",
       "Bash(git commit *)",
-      "WebFetch(domain:www.coze.cn)"
+      "WebFetch(domain:www.coze.cn)",
+      "Bash(findstr :8000)",
+      "Bash(findstr LISTENING)",
+      "Bash(taskkill //F //PID 26372 //PID 9360 //PID 24460 //PID 30448 //PID 26164)",
+      "Bash(findstr \"800[0-9]\")",
+      "Bash(openspec new *)",
+      "Bash(openspec status *)",
+      "Bash(openspec instructions *)"
     ],
     "additionalDirectories": [
       "c:\\vidmuse\\VidMuse\\backend\\app",

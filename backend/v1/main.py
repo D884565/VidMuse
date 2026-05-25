@@ -21,6 +21,8 @@ from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.product.controller.product_controller import router as product_router
 from backend.v1.app.rag.controller.asset_controller import router as asset_router
 from backend.v1.app.rag.controller.project_controller import router as project_router
+from backend.v1.app.video.controller.video import router as video_router
+from backend.v1.app.merge.controller.merge import router as merge_router
 
 app = FastAPI(title="VidMuse", version="0.1.0")
 
@@ -33,6 +35,8 @@ app.include_router(user_router, prefix="/generate/v1")
 app.include_router(product_router, prefix="/generate/v1")
 app.include_router(asset_router, prefix="/rag/v1")
 app.include_router(project_router, prefix="/rag/v1")
+app.include_router(video_router, prefix="/v1")
+app.include_router(merge_router, prefix="/v1")
 
 
 @app.get("/", response_model=Response)

@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.script import Script
-from backend.v1.app.models.material import Material
+from backend.v1.app.models.asset import Asset
 from backend.v1.app.generate.temp.celery_app import celery_app
 
 
@@ -68,11 +68,13 @@ class VideoGenerationService:
         )
         script = script_result.scalars().first()
 
-        # 获取素材
-        material_result = await db.execute(
-            select(Material).where(Material.project_id == project_id)
-        )
-        materials = material_result.scalars().all()
+        # 获取用户资产（assets 是用户级别，通过 user_id 关联）
+        assets = []
+        if project.user_id:
+            asset_result = await db.execute(
+                select(Asset).where(Asset.user_id == project.user_id)
+            )
+            assets = asset_result.scalars().all()
 
         return {
             "id": project.id,
@@ -80,13 +82,14 @@ class VideoGenerationService:
             "status": project.status,
             "video_url": project.video_output_url,
             "script": {"id": script.id, "content": script.content} if script else None,
-            "materials": [
+            "assets": [
                 {
-                    "type": m.type,
-                    "url": m.url,
-                    "duration": m.duration,
+                    "type": a.type,
+                    "title": a.title,
+                    "url": a.url,
+                    "duration": a.duration,
                 }
-                for m in materials
+                for a in assets
             ],
             "created_at": project.created_at.isoformat() if project.created_at else "",
             "updated_at": project.updated_at.isoformat() if project.updated_at else "",
