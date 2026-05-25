@@ -45,7 +45,10 @@
       "Bash(pkill -f \"celery.*worker\")",
       "Bash(pkill -9 -f \"celery\")",
       "Bash(kill -9 266 378 455)",
-      "Bash(celery -A backend.v1.app.generate.temp.celery_app worker --loglevel=info --pool=solo -n single_worker)"
+      "Bash(celery -A backend.v1.app.generate.temp.celery_app worker --loglevel=info --pool=solo -n single_worker)",
+      "Bash(git rm *)",
+      "Bash(git commit *)",
+      "WebFetch(domain:www.coze.cn)"
     ],
     "additionalDirectories": [
       "c:\\vidmuse\\VidMuse\\backend\\app",
