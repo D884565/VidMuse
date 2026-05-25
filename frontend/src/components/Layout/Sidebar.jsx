@@ -1,6 +1,7 @@
 import {
   FolderKanban,
   Images,
+  KeyRound,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -32,10 +33,10 @@ export default function Sidebar() {
           <p className="m-0 text-xs text-[var(--text-muted)]">AI Video Studio</p>
         </div>
         <button
+          aria-label="Toggle sidebar"
           className="ml-auto rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white max-[1024px]:hidden"
           type="button"
           onClick={toggleSidebar}
-          aria-label="折叠侧边栏"
         >
           {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
         </button>
@@ -53,7 +54,7 @@ export default function Sidebar() {
         >
           <FolderKanban size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            项目管理
+            Projects
           </span>
         </button>
 
@@ -69,10 +70,23 @@ export default function Sidebar() {
           onClick={() => setActiveView('media')}
         >
           <Images size={18} />
-          <span className="max-[1024px]:hidden">素材库</span>
+          <span className="max-[1024px]:hidden">Media</span>
           <span className="ml-auto rounded-full bg-[rgba(124,58,237,0.22)] px-2 py-0.5 text-xs text-white max-[1024px]:hidden">
             12
           </span>
+        </button>
+
+        <button
+          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
+            activeView === 'keyframes'
+              ? 'bg-[var(--brand-soft)] text-white'
+              : 'text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white'
+          }`}
+          type="button"
+          onClick={() => setActiveView('keyframes')}
+        >
+          <KeyRound size={18} />
+          <span className="max-[1024px]:hidden">Keyframes</span>
         </button>
 
         <div className="my-4 h-px bg-[var(--border-soft)]" />
@@ -83,7 +97,7 @@ export default function Sidebar() {
         >
           <Plus size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            创建新项目
+            New Project
           </span>
         </button>
       </nav>
@@ -96,7 +110,7 @@ export default function Sidebar() {
         >
           <Settings size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            设置
+            Settings
           </span>
         </button>
       </div>
