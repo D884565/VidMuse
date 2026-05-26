@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS projects (
     description     TEXT COMMENT '项目描述',
     product_url     VARCHAR(1000) COMMENT '商品链接',
     video_output_url VARCHAR(500) COMMENT '最终成片URL',
+    audio_url       VARCHAR(500) COMMENT 'TTS配音音频URL',
+    status          VARCHAR(50) DEFAULT 'draft' COMMENT '项目状态: draft/script_ready/processing/completed/failed',
     user_id         BIGINT COMMENT '用户id',
   	product_id      BIGINT COMMENT '商品id',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
