@@ -38,3 +38,15 @@ backend/tests/turlin/
 # Claude 配置
 .claude/
 openspec/
+test_output/
+localTest/
+
+# Cookie 文件（包含登录信息）
+backend/v1/app/product/service/cookies/*.json
+
+# 测试文件
+test_*.py
+test_*.html
+
+# 导出工具
+export_cookies.py

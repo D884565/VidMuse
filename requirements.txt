@@ -44,3 +44,7 @@ minio==7.2.15
 # ChromaDB (向量数据库)
 chromadb==1.0.5
 chromadb-client==1.0.5         # 轻量级客户端
+
+# ==================== 爬虫层 ====================
+playwright==1.49.1             # 浏览器自动化（商品页面渲染）
+beautifulsoup4==4.13.4         # HTML 解析

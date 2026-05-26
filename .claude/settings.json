@@ -55,7 +55,21 @@
       "Bash(findstr \"800[0-9]\")",
       "Bash(openspec new *)",
       "Bash(openspec status *)",
-      "Bash(openspec instructions *)"
+      "Bash(openspec instructions *)",
+      "Bash(where ffmpeg *)",
+      "Bash(alembic upgrade *)",
+      "Bash(ffmpeg -version)",
+      "Bash(cmd.exe /c \"winget --version\")",
+      "Bash(git check-ignore *)",
+      "Bash(cmd.exe /c \"where ffmpeg\")",
+      "Read(//c/ffmpeg/bin/**)",
+      "Bash(cmd.exe /c \"dir /s /b C:\\\\ffmpeg.exe 2>NUL\")",
+      "Bash(cmd.exe /c \"dir /s /b \\\\\"C:\\\\Users\\\\练轩成\\\\ffmpeg.exe\\\\\" 2>NUL\")",
+      "Bash(cmd.exe /c \"dir /s /b \\\\\"C:\\\\Program Files\\\\ffmpeg.exe\\\\\" 2>NUL\")",
+      "Bash(cmd.exe /c \"winget install --id Gyan.FFmpeg -e --accept-package-agreements --accept-source-agreements\")",
+      "Bash(cmd.exe /c \"ffmpeg -version\")",
+      "Bash(powershell.exe -Command \"winget list ffmpeg\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem -Path 'C:\\\\Users\\\\练轩成' -Recurse -Filter 'ffmpeg.exe' -ErrorAction SilentlyContinue | Select-Object FullName\")"
     ],
     "additionalDirectories": [
       "c:\\vidmuse\\VidMuse\\backend\\app",
