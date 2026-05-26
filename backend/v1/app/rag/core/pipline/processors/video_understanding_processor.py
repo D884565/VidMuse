@@ -1,4 +1,5 @@
 import asyncio
+import json
 from typing import Dict, List
 
 from volcenginesdkcore.interceptor.interceptors import request
@@ -6,6 +7,7 @@ from volcenginesdkcore.interceptor.interceptors import request
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM, VideoUnderstandingRequest
 from backend.providers.dto.schema import ChatRequest, ChatMessage, VideoUrlContent
+from backend.v1.app.rag.dao import AssetDAO
 
 
 class VideoUnderstandingProcessor(BaseProcessor):
@@ -67,34 +69,32 @@ class VideoUnderstandingProcessor(BaseProcessor):
         :param context: 流水线上下文
         :return: 修改后的上下文，包含大模型理解结果
         """
+
+
+        # 遍历片段url,并行解析片段
         slices = context.get("slices", [])
-        video_path = context.get("video_path")
-
-        if not slices:
+        if not slices or len(slices) == 0:
             raise ValueError("No slices found in context")
-        if not video_path:
-            raise ValueError("video_path is required in context")
 
-        understood_slices: List[Dict] = []
 
-        for slice_info in slices:
+        slices = list(dict())
+        for i,slice_info in enumerate(slices):
             # 构建大模型请求
             response =  asyncio.run(self.llm_client.video_understanding(VideoUnderstandingRequest(
-                video_url=video_path,
+                video_url=slice_info,
                 prompt=self.prompt_template,
                 max_tokens=1024,
                 temperature=0.7,
                 top_p=0.9,
                 model=""
             )))
-
-            understanding = response.content
-            
-            # 合并理解结果到片段信息
-            understood_slice = {**slice_info, "understanding": understanding}
-            understood_slices.append(understood_slice)
-
-        context.set("understood_slices", understood_slices)
-        context.metadata["understanding_count"] = len(understood_slices)
+            # 返回就解析
+            mapping ={
+                "slice_id":i,
+                "understood_slice":json.loads(response.content)
+            }
+            slices.append(mapping)
+        # 合并理解结果到片段信息
+        context.set("understood_slices", slices)
 
         return context

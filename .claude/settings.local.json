@@ -11,7 +11,8 @@
       "Bash(uvicorn main:app *)",
       "mcp__ide__getDiagnostics",
       "Bash(PYTHONPATH=. python backend/tests/cheng/test_search.py)",
-      "Bash(PYTHONPATH=/e/project/py/byte/VidMuse python *)"
+      "Bash(PYTHONPATH=/e/project/py/byte/VidMuse python *)",
+      "Bash(ffmpeg *)"
     ]
   }
 }

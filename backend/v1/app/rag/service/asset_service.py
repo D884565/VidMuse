@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from backend.store import get_storage_client
 from backend.v1.app.config.config import settings
 from backend.store.obj.minio_client import get_minio_client
+from backend.v1.app.rag.core.pipline import VideoParsingPipeline
 from backend.v1.app.rag.dao.asset_dao import AssetDAO
 from backend.framework.exceptions.exceptions import BusinessException, BaseAppException
 from backend.framework.exceptions.error_codes import PARAM_ERROR
@@ -50,7 +51,7 @@ class AssetService:
         return ext
 
     @staticmethod
-    def _generate_object_name(asset_type: int, ext: str, is_internal: bool = False) -> str:
+    def generate_object_name(asset_type: int, ext: str, is_internal: bool = False) -> str:
         """生成对象存储路径"""
         type_dir = {1: "img", 2: "video", 3: "audio"}.get(asset_type, "other")
         uuid_str = str(uuid.uuid4()).replace("-", "")
@@ -201,7 +202,8 @@ class AssetService:
             title = file.filename or f"{AssetService.TYPE_NAME.get(type, '素材')}_{uuid.uuid4().hex[:8]}"
 
         # 获取预签名URL用于后续AI分析
-        presigned_url = client.get_presigned_url(object_name)
+        # todo 后续确定上传的数据流向
+        # presigned_url = client.get_presigned_url(object_name)
 
         # 获取文件时长
         duration = AssetService._get_file_duration(file, type)
@@ -223,13 +225,11 @@ class AssetService:
         asset = AssetDAO.create_asset(db, asset_data)
         asset_dict = asset.to_dict()
 
-        # 将AI特征提取任务添加到后台执行
-        background_tasks.add_task(
-            AssetService._process_ai_features_background,
-            asset_id=asset.id,
-            presigned_url=presigned_url,
-            asset_type=type
-        )
+        # 调用流水线执行解析执行异步任务
+        pipeline = VideoParsingPipeline()
+
+        #传入视频id
+        pipeline.run({"video_id":asset.id,"object_name": object_name})
 
         # 构造响应数据
         response_data = {
