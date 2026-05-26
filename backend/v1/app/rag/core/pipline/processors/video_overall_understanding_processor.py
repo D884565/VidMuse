@@ -1,7 +1,7 @@
 from typing import Dict, List
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
-from backend.providers.dto.schema import ChatRequest, ChatMessage, TextContent
+from backend.providers.dto.schema import ChatRequest, ChatMessage, TextContent, TextUnderstandingRequest
 
 
 class VideoOverallUnderstandingProcessor(BaseProcessor):
@@ -61,36 +61,10 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         prompt = self.prompt_template.format(segment_info=segment_info_str)
 
         # 构建大模型请求
-        request = ChatRequest(
-            messages=[
-                ChatMessage(role="system", content=prompt),
-                ChatMessage(role="user", content=[TextContent(text="请输出视频整体分析结果")])
-            ]
-        )
+        response = self.llm.text_understanding(TextUnderstandingRequest(prompt=self.prompt, text=aggregated_segments))
+        context.set("VideoAggregation", response.content)
 
-        # 调用大模型（Mock：实际调用时取消注释）
-        # response = self.llm_client.chat(request)
-        # video_overall_info = response.content
 
-        # Mock 响应（临时使用，实际调用时替换为真实响应）
-        video_overall_info = {
-            "视频基本信息": {
-                "video_id": video_id,
-                "tree_id": "020301",
-                "商品名称": "法式碎花连衣裙",
-                "目标人群": "25-35岁都市女性",
-                "总时长_ms": video_duration,
-                "$剧本scheme": "/",
-                "原片核心文案": aggregated_segments.get("all_copies", [])
-            },
-            "片段索引列表": aggregated_segments.get("segment_list", []),
-            "片段间关系": {
-                "转场序列": ["硬切"] * (len(aggregated_segments["segment_list"]) - 1),
-                "情绪曲线": ["高涨→平稳", "平稳→微升"],
-                "视觉节奏": "中景→近景→中景（无剧烈跳变）",
-                "BGM节奏匹配": "前5秒卡点重音，中段平缓过渡"
-            }
-        }
 
-        context.set("video_overall_info", video_overall_info)
+        context.set("video_overall_info", response.content)
         return context

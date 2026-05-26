@@ -15,7 +15,7 @@ async def upload_asset(
         file: UploadFile = File(..., description="上传的文件"),
         type: int = Form(..., description="资产类型：1-图片, 2-视频, 3-音频"),
         title: Optional[str] = Form(None, description="资产标题"),
-        source_type: Optional[int] = Form(0, description="来源：0-用户上传, 1-AI生成, 2-爬取, 3-购买"),
+        source_type: int = Form(0, description="来源：0-用户上传, 1-AI生成, 2-爬取, 3-购买"),
         db: Session = Depends(get_db)
 ):
     """【面向用户】上传视频/图片/音频素材到个人素材库"""

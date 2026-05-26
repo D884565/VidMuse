@@ -16,6 +16,7 @@ class AssetDAO:
         db.refresh(asset)
         return asset
 
+
     @staticmethod
     def get_asset_by_id(db: Session, asset_id: int) -> Optional[Asset]:
         """根据ID获取资产"""
