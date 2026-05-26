@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.project import Project
-from backend.v1.app.models.script import Script
+from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.generate.temp.celery_app import celery_app
 
@@ -20,7 +20,7 @@ class VideoGenerationService:
         """
         提交视频生成异步任务。
 
-        1. 校验项目状态
+        1. 校验项目状态和帧数据
         2. 更新状态为 processing
         3. 发送 Celery 任务
         """
@@ -31,13 +31,13 @@ class VideoGenerationService:
         if project.status not in ("script_ready", "draft"):
             raise ValueError(f"当前状态不允许生成: {project.status}")
 
-        # 查找最新剧本
-        script_result = await db.execute(
-            select(Script).where(Script.project_id == project_id).order_by(Script.id.desc())
+        # 检查是否有帧数据
+        frame_result = await db.execute(
+            select(Frame).where(Frame.project_id == project_id)
         )
-        script = script_result.scalars().first()
-        if not script:
-            raise ValueError("请先生成剧本")
+        frames = frame_result.scalars().all()
+        if not frames:
+            raise ValueError("请先生成剧本（无帧数据）")
 
         # 更新状态
         project.status = "processing"
@@ -46,27 +46,29 @@ class VideoGenerationService:
         # 异步发送 Celery 任务
         celery_app.send_task(
             "generate_video_task",
-            args=[project_id, script.id],
+            args=[project_id],
         )
 
         return {
             "project_id": project_id,
-            "script_id": script.id,
+            "frames_count": len(frames),
             "status": "processing",
         }
 
     async def get_project_detail(self, db: AsyncSession, project_id: int) -> dict:
-        """查询项目详情（含剧本和素材），供前端轮询"""
+        """查询项目详情（含帧和素材），供前端轮询"""
         result = await db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
 
-        # 获取剧本
-        script_result = await db.execute(
-            select(Script).where(Script.project_id == project_id).order_by(Script.id.desc())
+        # 获取帧列表
+        frame_result = await db.execute(
+            select(Frame)
+            .where(Frame.project_id == project_id)
+            .order_by(Frame.sequence)
         )
-        script = script_result.scalars().first()
+        frames = frame_result.scalars().all()
 
         # 获取用户资产（assets 是用户级别，通过 user_id 关联）
         assets = []
@@ -81,7 +83,20 @@ class VideoGenerationService:
             "title": project.title,
             "status": project.status,
             "video_url": project.video_output_url,
-            "script": {"id": script.id, "content": script.content} if script else None,
+            "audio_url": project.audio_url,
+            "frames": [
+                {
+                    "id": f.id,
+                    "sequence": f.sequence,
+                    "scene_type": f.scene_type,
+                    "description": f.description,
+                    "image_url": f.image_url,
+                    "duration": float(f.duration),
+                    "status": f.status,
+                    "text_overlay": f.text_overlay,
+                }
+                for f in frames
+            ],
             "assets": [
                 {
                     "type": a.type,

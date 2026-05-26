@@ -12,7 +12,9 @@ class Project(Base):
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     product_url: Mapped[str | None] = mapped_column(String(1000), nullable=True)
-    video_output_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    product_info: Mapped[str | None] = mapped_column(Text, nullable=True, comment="商品信息JSON（抓取结果）")
+    video_output_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="最终成片URL")
+    audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="TTS配音音频URL")
     user_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, comment="用户id")
     product_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, comment="商品id")
     status: Mapped[str] = mapped_column(
@@ -27,4 +29,4 @@ class Project(Base):
     )
 
     # 关联
-    scripts = relationship("Script", back_populates="project", cascade="all, delete-orphan")
+    frames = relationship("Frame", back_populates="project", cascade="all, delete-orphan")

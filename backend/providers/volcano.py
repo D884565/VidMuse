@@ -278,6 +278,104 @@ class VolcanoLLM(LLMBase):
             error_msg = getattr(e, 'message', str(e))
             raise BaseAppException(AI_GENERATE_FAILED, message=f"视频生成失败: {error_msg}") from e
 
+    def generate_video_sync(self, request: VideoRequest, prompt: str, image: str | None) -> VideoResponse | None:
+        """
+        使用Seedance 1.5生成视频（同步版本）
+
+        :param request: 视频生成请求对象
+        :param prompt: 视频生成提示词
+        :param image: 视频生成首帧（可选）
+        :return: 视频生成响应对象
+        :raises BaseAppException: 生成失败、超时或其他错误时抛出异常
+        """
+        import time
+
+        try:
+            con = [
+                {
+                    "type": "text",
+                    "text": prompt,
+                }
+            ]
+            if image:
+                con.append(dict(type="image_url", image_url={
+                    "url": image  # 首帧图片 URL
+                }))
+
+            # 调用视频生成API创建任务（使用同步客户端）
+            create_result = self.client.content_generation.tasks.create(
+                content=con,
+                model=self.video_model,
+                generate_audio=request.generate_audio,
+                draft=request.draft,
+                watermark=request.watermark,
+                return_last_frame=request.return_last_frame,
+                duration=request.duration,
+                ratio=request.ratio,
+                resolution=request.resolution,
+            )
+
+            task_id = create_result.id
+            model_used = request.model or self.video_model
+
+            # 轮询任务状态
+            max_retry = 30  # 最多轮询30次，每次间隔10秒，总共5分钟
+            retry_count = 0
+
+            while retry_count < max_retry:
+                get_result = self.client.content_generation.tasks.get(task_id=task_id)
+                status = get_result.status
+
+                if status == "succeeded":
+                    # 生成成功，解析结果
+                    result_dict = get_result.model_dump() if hasattr(get_result, 'model_dump') else vars(get_result)
+                    # 获取实际时长
+                    actual_duration = result_dict.get("duration", 0)
+                    actual_ratio = result_dict.get("ratio")
+                    actual_id = result_dict.get("id", task_id)
+
+                    # 获取视频URL
+                    con = result_dict["content"] if hasattr(get_result, 'model_dump') else vars(result_dict)
+                    video_url = con["video_url"]
+
+                    if not video_url:
+                        raise BaseAppException(AI_GENERATE_FAILED, message="视频生成成功但未获取到视频URL")
+
+                    # 构造响应对象
+                    return VideoResponse(
+                        video_url=video_url,
+                        duration=float(actual_duration) if actual_duration else None,
+                        id=actual_id,
+                        model=model_used,
+                        status=status,
+                        resolution=actual_ratio,
+                        ratio=actual_ratio
+                    )
+
+                elif status == "failed":
+                    # 任务失败，获取错误信息
+                    result_dict = get_result.model_dump() if hasattr(get_result, 'model_dump') else vars(get_result)
+                    error_msg = result_dict.get('error_message') or result_dict.get('error') or "视频生成任务失败"
+                    error_code = result_dict.get('error_code', "GENERATE_FAILED")
+                    self._handle_error(error_code, error_msg)
+
+                else:
+                    # 生成中，等待后继续轮询
+                    retry_count += 1
+                    time.sleep(10)
+
+            # 轮询超时
+            raise BaseAppException(THIRD_PARTY_TIMEOUT, message=f"视频生成超时，任务ID: {task_id}")
+
+        except ApiException as e:
+            self._handle_api_exception(e)
+        except Exception as e:
+            if isinstance(e, BaseAppException):
+                raise e
+            # 处理其他异常
+            error_msg = getattr(e, 'message', str(e))
+            raise BaseAppException(AI_GENERATE_FAILED, message=f"视频生成失败: {error_msg}") from e
+
     def _embedding(self, request: EmbeddingRequest) -> EmbeddingResponse:
         """
         多模态嵌入接口实现

@@ -80,7 +80,19 @@ class TOSClient(ObjectStorage):
                 )
 
             protocol = "https" if settings.TOS_SECURE else "http"
-            return f"{protocol}://{settings.TOS_ENDPOINT}/{self.bucket_name}/{object_name}"
+            url = f"{protocol}://{self.bucket_name}.{settings.TOS_ENDPOINT}/{object_name}"
+
+            # 设置对象ACL为公共读
+            try:
+                self.client.put_object_acl(
+                    bucket=self.bucket_name,
+                    key=object_name,
+                    acl=tos.ACLType.ACL_Public_Read
+                )
+            except Exception:
+                pass  # ACL设置失败不影响上传
+
+            return url
         except (TosServerError, TosClientError) as e:
             self._handle_tos_error(e)
         except Exception as e:
@@ -97,7 +109,19 @@ class TOSClient(ObjectStorage):
             )
 
             protocol = "https" if settings.TOS_SECURE else "http"
-            return f"{protocol}://{settings.TOS_ENDPOINT}/{self.bucket_name}/{object_name}"
+            url = f"{protocol}://{self.bucket_name}.{settings.TOS_ENDPOINT}/{object_name}"
+
+            # 设置对象ACL为公共读
+            try:
+                self.client.put_object_acl(
+                    bucket=self.bucket_name,
+                    key=object_name,
+                    acl=tos.ACLType.ACL_Public_Read
+                )
+            except Exception:
+                pass
+
+            return url
         except (TosServerError, TosClientError) as e:
             self._handle_tos_error(e)
         except Exception as e:
