@@ -1,9 +1,8 @@
 """剧本生成 & 视频生成 API 路由"""
 import json
 import logging
-from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, Header, Path
+from fastapi import APIRouter, Body, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.store.database.async_database import get_db
@@ -12,30 +11,17 @@ from backend.v1.app.generate.service.script_generation import script_generation_
 from backend.v1.app.generate.service.video_generation import video_generation_service
 from backend.v1.app.generate.service.chat_service import chat_service
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
-from backend.v1.app.user.service.user_service import user_service
 from backend.framework.web import Response
 from backend.framework.exceptions import BusinessException
-from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR, UNAUTHORIZED
+from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/generate/v1/projects", tags=["视频生成"])
 
 
-def _get_current_user_id(authorization: Optional[str] = Header(None)) -> int:
-    """从 Authorization 请求头解析当前登录用户的ID"""
-    if not authorization or not authorization.startswith("Bearer "):
-        raise BusinessException(UNAUTHORIZED)
-    token = authorization[7:]
-    return user_service.get_user_id_from_token(token)
-
-
 @router.post("", response_model=Response)
-async def create_project(
-    project: ProjectCreate,
-    current_user_id: int = Depends(_get_current_user_id),
-    db: AsyncSession = Depends(get_db),
-):
+async def create_project(project: ProjectCreate, db: AsyncSession = Depends(get_db)):
     """创建视频项目，自动触发剧本+视频生成"""
     from backend.v1.app.models.project import Project
 
@@ -55,7 +41,6 @@ async def create_project(
         description=project.description,
         product_url=project.product_url,
         product_info=product_info_str,
-        user_id=current_user_id,
         user_prompt=project.user_prompt,
         reference_images=project.reference_images or [],
         style=project.style,
