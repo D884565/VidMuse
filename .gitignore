@@ -34,6 +34,7 @@ turlinSpec/
 
 # turlin 测试
 backend/tests/turlin/
+docs/superpowers/
 
 # Claude 配置
 .claude/
@@ -50,3 +51,6 @@ test_*.html
 
 # 导出工具
 export_cookies.py
+
+# RAG 临时接口（RAG团队提供正式实现后删除）
+backend/v1/app/generate/service/_rag_temp/
