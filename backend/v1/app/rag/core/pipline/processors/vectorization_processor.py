@@ -23,7 +23,6 @@ class VectorizationProcessor(BaseProcessor):
                  metadata_fields: List[str] = None,
                  id_field: str = "slice_id",
                  vector_db_type: str = VectorDBType.MILVUS,
-                 llm_client=None,
                  vector_db_client=None):
         """
         初始化向量化处理器
@@ -36,7 +35,6 @@ class VectorizationProcessor(BaseProcessor):
         :param metadata_fields: 需要作为元数据存储的字段名列表，默认存储所有字段
         :param id_field: 数据中唯一标识的字段名，用于向量ID
         :param vector_db_type: 向量数据库类型，默认使用Milvus
-        :param llm_client: 大模型客户端，默认使用VolcanoLLM
         :param vector_db_client: 向量数据库客户端，默认自动创建
         """
         self.data_key = data_key
@@ -45,7 +43,7 @@ class VectorizationProcessor(BaseProcessor):
         self.id_field = id_field
 
         # 初始化LLM客户端
-        self.llm_client = llm_client or VolcanoLLM(key=None, model_name=None)
+        self.llm_client =VolcanoLLM(key=None, model_name=None)
 
         # 初始化向量数据库客户端
         self.vector_db_client = vector_db_client or get_vector_db_client(
@@ -131,6 +129,7 @@ class VectorizationProcessor(BaseProcessor):
         """
         data_list = context.get(self.data_key, [])
 
+
         # 如果是单个对象而不是列表，包装成列表
         if isinstance(data_list, dict):
             data_list = [data_list]
@@ -141,8 +140,9 @@ class VectorizationProcessor(BaseProcessor):
         # 准备所有需要向量化的内容
         ids = []
         all_contents = []  # 存储所有条目对应的多模态内容列表
-        metadatas = []
+        meta_data = []
         documents = []
+
 
         for data in data_list:
             # 获取ID
@@ -172,7 +172,7 @@ class VectorizationProcessor(BaseProcessor):
 
             ids.append(item_id)
             all_contents.append(multimodal_contents)
-            metadatas.append(metadata)
+            meta_data.append(metadata)
             documents.append(document)
 
         if not all_contents:
@@ -187,7 +187,7 @@ class VectorizationProcessor(BaseProcessor):
         flat_metadatas = []
         flat_documents = []
 
-        for item_idx, (item_id, contents, metadata, document) in enumerate(zip(ids, all_contents, metadatas, documents)):
+        for item_idx, (item_id, contents, metadata, document) in enumerate(zip(ids, all_contents, meta_data, documents)):
             for content_idx, content in enumerate(contents):
                 # 为每个内容生成唯一ID
                 if len(contents) == 1:

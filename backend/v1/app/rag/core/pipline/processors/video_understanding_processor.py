@@ -7,6 +7,7 @@ from volcenginesdkcore.interceptor.interceptors import request
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM, VideoUnderstandingRequest
 from backend.providers.dto.schema import ChatRequest, ChatMessage, VideoUrlContent
+from backend.v1.app.rag.core.pipline.utils import load_template
 from backend.v1.app.rag.dao import AssetDAO
 
 
@@ -37,34 +38,7 @@ class VideoUnderstandingProcessor(BaseProcessor):
         4. 生成Prompt完整模板：可以直接用于AI视频生成的完整Prompt描述
         
         完整的json模板如下:
-        {
-  "片段模板": {
-    "模板名称": "主播情绪开场",
-    "模板类型": "HOOK",
-    "机制": "通过夸张反转留住观众",
-    "总结": "",
-
-    "创作要素": {
-      "画面": "主播半身中景，明亮直播间，暖色调",
-      "动作": "挥手打招呼，表情兴奋",
-      "台词": "家人们，谁懂啊！",
-      "运镜": "固定机位，平视角度",
-      "时长": "3-5秒",
-      "情绪评分": "0.5",
-      "视觉标签": ["开心","激情"]
-    },
-
-    "关键帧时间戳": [0.0 ,2.3, 4.5],
-
-
-    "一致性": {
-      "商品是否出现": "True",
-      "商品": [],
-      "置信度": 0.8
-    }
-  }
-}
-
+        {json_info}
 
         请严格按照JSON格式输出，不要有其他内容。
         """
@@ -79,12 +53,11 @@ class VideoUnderstandingProcessor(BaseProcessor):
 
 
         # 遍历片段url,并行解析片段
-        video_id = context.get("video_id")
         slices = context.get("slices", [])
         if not slices or len(context.get("slices_count")) == 0:
             raise ValueError("No slices found in context")
 
-
+        prompts = self.prompt_template.format(json_info=load_template("slice"))
         slices = list(dict())
         for i,slice_info in enumerate(slices):
             # 构建大模型请求
@@ -97,11 +70,8 @@ class VideoUnderstandingProcessor(BaseProcessor):
                 model=""
             )))
             # 返回就解析
-            mapping ={
-                "slice_id":video_id + "_" + str(i),
-                "understood_slice":json.loads(response.content)
-            }
-            slices.append(mapping)
+            # 直接添加模板
+            slices.append(json.loads(response.content))
         # 合并理解结果到片段信息
         context.set("understood_slices", slices)
 
