@@ -1,7 +1,7 @@
 """视频帧模型"""
 import datetime
 from sqlalchemy import (
-    String, Text, BigInteger, Integer, DateTime, Numeric, JSON, func
+    String, Text, BigInteger, Integer, DateTime, Numeric, JSON, func, ForeignKey
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.store.database.async_database import Base
@@ -12,7 +12,7 @@ class Frame(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="帧id")
     project_id: Mapped[int] = mapped_column(
-        BigInteger, nullable=False, comment="项目id"
+        BigInteger, ForeignKey("projects.id"), nullable=False, comment="项目id"
     )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False, comment="帧序号(第几帧)")
     scene_type: Mapped[int | None] = mapped_column(

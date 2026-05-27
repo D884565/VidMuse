@@ -41,9 +41,8 @@ export default function MediaGrid() {
   const fetchAssets = async () => {
     try {
       setLoading(true)
-      const res = await listAssets()
-      const data = res.data ?? res
-      const items = Array.isArray(data) ? data : data.items ?? data.results ?? []
+      const data = await listAssets({ page: 1, page_size: 100 })
+      const items = data?.list ?? (Array.isArray(data) ? data : [])
       setAssets(items.map(mapAsset))
     } catch (err) {
       console.error('加载素材列表失败:', err)
@@ -56,6 +55,14 @@ export default function MediaGrid() {
     fetchAssets()
   }, [])
 
+  // 根据文件 MIME 类型判断后端 type 值
+  function getFileType(file) {
+    if (file.type.startsWith('image/')) return 1
+    if (file.type.startsWith('video/')) return 2
+    if (file.type.startsWith('audio/')) return 3
+    return 1 // 默认图片
+  }
+
   // 处理文件上传
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0]
@@ -64,6 +71,7 @@ export default function MediaGrid() {
       setUploading(true)
       const formData = new FormData()
       formData.append('file', file)
+      formData.append('type', getFileType(file))
       await uploadAsset(formData)
       // 上传成功后刷新列表
       await fetchAssets()

@@ -34,7 +34,11 @@ export default function Login() {
     setLoading(true)
     try {
       const data = await login(username, password)
-      loginAction(data.access_token)
+      loginAction(data.access_token, data.refresh_token, {
+        id: data.user_id,
+        username: data.username,
+        role: data.role,
+      })
     } catch (err) {
       setError(err.message || '登录失败，请重试')
     } finally {
@@ -61,7 +65,11 @@ export default function Login() {
     try {
       const data = await register(username, password)
       // 注册成功后自动登录
-      loginAction(data.access_token)
+      loginAction(data.access_token, data.refresh_token, {
+        id: data.user_id,
+        username: data.username,
+        role: data.role,
+      })
     } catch (err) {
       setError(err.message || '注册失败，请重试')
     } finally {

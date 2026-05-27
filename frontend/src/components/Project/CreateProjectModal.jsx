@@ -14,7 +14,6 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [userPrompt, setUserPrompt] = useState('')
-  const [targetDuration, setTargetDuration] = useState(30)
   const [voiceType, setVoiceType] = useState('zh-CN-XiaoxiaoNeural')
   const [style, setStyle] = useState('')
   const [error, setError] = useState('')
@@ -22,13 +21,17 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
 
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
   const setActiveView = useAppStore((state) => state.setActiveView)
+  const parameters = useAppStore((state) => state.parameters)
+  const updateParameters = useAppStore((state) => state.updateParameters)
+
+  // 从 store 读取 duration，避免本地默认值与 store 不一致
+  const targetDuration = parameters.duration
 
   // 关闭弹窗并重置表单
   const handleClose = () => {
     setTitle('')
     setDescription('')
     setUserPrompt('')
-    setTargetDuration(30)
     setVoiceType('zh-CN-XiaoxiaoNeural')
     setStyle('')
     setError('')
@@ -54,13 +57,21 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
 
     setLoading(true)
     try {
+      // 从 store parameters 映射到后端字段
+      const keyPoints = []
+      if (parameters.aspectRatio) {
+        keyPoints.push(`画幅比: ${parameters.aspectRatio}`)
+      }
+
       const data = await createProject({
         title: title.trim(),
         description: description.trim() || undefined,
         user_prompt: userPrompt.trim() || undefined,
-        target_duration: targetDuration,
+        target_duration: Number(targetDuration) || 30,
         voice_type: voiceType,
-        style: style.trim() || undefined,
+        style: style.trim() || parameters.quality || undefined,
+        key_points: keyPoints.length > 0 ? keyPoints : undefined,
+        rag_weight: 0.3,
       })
 
       // 创建成功：切换到项目并关闭弹窗
@@ -154,7 +165,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
                 <input
                   type="number"
                   value={targetDuration}
-                  onChange={(e) => setTargetDuration(Number(e.target.value))}
+                  onChange={(e) => updateParameters({ duration: Number(e.target.value) })}
                   min={5}
                   max={300}
                   className="w-full px-4 py-2.5 pr-10 bg-[var(--bg-main)] border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#7C3AED] transition-colors"

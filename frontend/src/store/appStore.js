@@ -5,6 +5,9 @@ export const useAppStore = create((set) => ({
   sidebarCollapsed: false,
   activeProjectId: 'p-001',
   isLoggedIn: !!localStorage.getItem('token'),
+  // 用户信息（会话内有效，可通过 /users/me 刷新）
+  user: null,
+  // refresh_token 存 localStorage 实现跨会话持久化
   parameters: {
     aspectRatio: '16:9',
     duration: 10,
@@ -14,14 +17,24 @@ export const useAppStore = create((set) => ({
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
-  login: (token) => {
+  setUser: (user) => set({ user }),
+  setRefreshToken: (refreshToken) => {
+    if (refreshToken) {
+      localStorage.setItem('refresh_token', refreshToken)
+    } else {
+      localStorage.removeItem('refresh_token')
+    }
+  },
+  login: (token, refreshToken, userInfo) => {
     localStorage.setItem('token', token)
-    set({ isLoggedIn: true })
+    if (refreshToken) localStorage.setItem('refresh_token', refreshToken)
+    set({ isLoggedIn: true, user: userInfo || null })
   },
   setIsLoggedIn: (isLoggedIn) => set({ isLoggedIn }),
   logout: () => {
     localStorage.removeItem('token')
-    set({ isLoggedIn: false })
+    localStorage.removeItem('refresh_token')
+    set({ isLoggedIn: false, user: null })
   },
   updateParameters: (patch) =>
     set((state) => ({ parameters: { ...state.parameters, ...patch } })),

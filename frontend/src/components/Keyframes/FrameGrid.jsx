@@ -3,6 +3,7 @@ import { RefreshCw, Image, Loader2 } from 'lucide-react'
 import { useProjectPolling } from '../../hooks/useProjectPolling.js'
 import { useAppStore } from '../../store/appStore.js'
 import { regenerateFrame, regenerateFrameImage } from '../../services/frame.js'
+import MergePanel from '../Merge/MergePanel.jsx'
 
 // 帧状态映射
 const STATUS_MAP = {
@@ -12,9 +13,18 @@ const STATUS_MAP = {
   3: { text: '失败', color: 'text-red-400' },
 }
 
+// 场景类型映射
+const SCENE_TYPE_MAP = {
+  0: '开场',
+  1: '商品展示',
+  2: '口播',
+  3: '转场',
+  4: '结尾',
+}
+
 export default function FrameGrid() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
-  const { frames, loading, error } = useProjectPolling(activeProjectId)
+  const { frames, videoUrl, assets, loading, error } = useProjectPolling(activeProjectId)
   const [regenerating, setRegenerating] = useState({}) // { [frameId]: 'script' | 'image' }
 
   // 重新生成脚本+图片
@@ -111,12 +121,34 @@ export default function FrameGrid() {
               {/* 帧信息 */}
               <div className="p-3">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-sm font-medium">场景 {frame.sequence}</span>
-                  <span className={`text-xs ${status.color}`}>{status.text}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">场景 {frame.sequence}</span>
+                    {frame.scene_type != null && SCENE_TYPE_MAP[frame.scene_type] && (
+                      <span className="rounded-full bg-[rgba(124,58,237,0.2)] px-1.5 py-0.5 text-[10px] text-[#c4b5fd]">
+                        {SCENE_TYPE_MAP[frame.scene_type]}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {frame.duration && (
+                      <span className="text-xs text-[var(--text-muted)]">{frame.duration}s</span>
+                    )}
+                    <span className={`text-xs ${status.color}`}>{status.text}</span>
+                  </div>
                 </div>
-                <p className="text-xs text-[var(--text-muted)] line-clamp-2 mb-3">
+                <p className="text-xs text-[var(--text-muted)] line-clamp-2 mb-1">
                   {frame.description || '无描述'}
                 </p>
+                {frame.text_overlay && (
+                  <p className="text-xs text-[#a78bfa] line-clamp-1 mb-1">
+                    叠字: {frame.text_overlay}
+                  </p>
+                )}
+                {frame.audio_url && (
+                  <div className="mb-2">
+                    <audio controls src={frame.audio_url} className="w-full h-7" />
+                  </div>
+                )}
                 {/* 操作按钮 */}
                 <div className="flex gap-2">
                   <button
@@ -146,6 +178,11 @@ export default function FrameGrid() {
             </div>
           )
         })}
+      </div>
+
+      {/* 音视频合成面板 */}
+      <div className="mt-8">
+        <MergePanel videoId={videoUrl ? activeProjectId : null} assets={assets} />
       </div>
     </section>
   )
