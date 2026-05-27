@@ -42,6 +42,13 @@ async def create_project(project: ProjectCreate, db: AsyncSession = Depends(get_
         description=project.description,
         product_url=project.product_url,
         product_info=product_info_str,
+        user_prompt=project.user_prompt,
+        reference_images=project.reference_images or [],
+        style=project.style,
+        target_audience=project.target_audience,
+        key_points=project.key_points or [],
+        avoid=project.avoid or [],
+        rag_weight=project.rag_weight,
     )
     db.add(p)
     await db.commit()

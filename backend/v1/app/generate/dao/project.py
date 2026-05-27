@@ -1,6 +1,6 @@
 """项目 Pydantic 模型"""
 import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProjectBase(BaseModel):
@@ -13,6 +13,13 @@ class ProjectBase(BaseModel):
 
 class ProjectCreate(ProjectBase):
     title: str
+    user_prompt: str | None = None
+    reference_images: list[str] = Field(default_factory=list, max_length=5)
+    style: str | None = None
+    target_audience: str | None = None
+    key_points: list[str] = Field(default_factory=list)
+    avoid: list[str] = Field(default_factory=list)
+    rag_weight: float = 0.3
 
 
 class ProjectUpdate(ProjectBase):
