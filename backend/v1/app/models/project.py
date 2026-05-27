@@ -1,6 +1,6 @@
 """视频项目模型"""
 import datetime
-from sqlalchemy import String, Text, BigInteger, DateTime, func
+from sqlalchemy import String, Text, BigInteger, DateTime, Numeric, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.store.database.async_database import Base
 
@@ -21,6 +21,16 @@ class Project(Base):
         String(20), nullable=False, default="draft",
         comment="draft/script_ready/processing/completed/failed"
     )
+
+    # 用户输入字段
+    user_prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="用户创作意图")
+    reference_images: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="参考图片URL列表")
+    style: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="视频风格")
+    target_audience: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="目标受众")
+    key_points: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="强调卖点列表")
+    avoid: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="避免内容列表")
+    rag_weight: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False, default=0.3, comment="RAG权重0.00~1.00")
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )

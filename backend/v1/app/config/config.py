@@ -99,7 +99,7 @@ class Settings(BaseSettings):
     TTS_ACCESS_KEY: str = ""
     TTS_SECRET_KEY: str = ""
 
-    # 火山引擎图片生成 (Seedream 3.0)
+    # 火山引擎图片生成 (Seedream 4.5)
     IMAGE_API_KEY: str = ""
 
     # Suno 音乐生成
