@@ -1,9 +1,23 @@
 import { useAppStore } from '../../store/appStore.js'
 
+// 后端状态映射
+const STATUS_DISPLAY = {
+  0: { text: '待生成', color: 'bg-[rgba(234,179,8,0.14)] text-[#fbbf24]' },
+  1: { text: '生成中', color: 'bg-[rgba(124,58,237,0.22)] text-[#c4b5fd]' },
+  2: { text: '已完成', color: 'bg-[rgba(16,185,129,0.14)] text-[#6ee7b7]' },
+  3: { text: '失败', color: 'bg-[rgba(239,68,68,0.14)] text-[#f87171]' },
+}
+
 export default function ProjectCard({ project }) {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
   const active = activeProjectId === project.id
+
+  const status = STATUS_DISPLAY[project.status] || STATUS_DISPLAY[0]
+  const frameCount = project.frame_count ?? 0
+  const createdDate = project.created_at
+    ? new Date(project.created_at).toLocaleDateString('zh-CN')
+    : ''
 
   return (
     <button
@@ -16,19 +30,13 @@ export default function ProjectCard({ project }) {
       onClick={() => setActiveProjectId(project.id)}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm text-white">{project.name}</span>
-        <span
-          className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${
-            project.status === '生成中'
-              ? 'bg-[rgba(124,58,237,0.22)] text-[#c4b5fd]'
-              : 'bg-[rgba(16,185,129,0.14)] text-[#6ee7b7]'
-          }`}
-        >
-          {project.status}
+        <span className="truncate text-sm text-white">{project.title}</span>
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${status.color}`}>
+          {project.status_name || status.text}
         </span>
       </div>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
-        {project.createdAt} · {project.videos} 个视频
+        {createdDate} · {frameCount} 个帧
       </p>
     </button>
   )

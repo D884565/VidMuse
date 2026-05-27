@@ -48,6 +48,15 @@ class ScriptGenerationService:
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
 
+        # 检查是否已有帧数据，避免重复生成
+        existing_frames = await db.execute(
+            select(Frame).where(Frame.project_id == project_id).order_by(Frame.sequence)
+        )
+        frames_list = existing_frames.scalars().all()
+        if frames_list:
+            logger.info(f"[剧本生成] 项目 {project_id} 已有 {len(frames_list)} 个帧，跳过生成")
+            return frames_list
+
         # 限制总时长在 12-20 秒
         target_duration = max(12, min(20, project.target_duration or 30))
 

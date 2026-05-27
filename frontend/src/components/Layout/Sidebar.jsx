@@ -3,16 +3,19 @@ import {
   FolderKanban,
   Images,
   KeyRound,
+  LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
   Settings,
   Sparkles,
+  User,
 } from 'lucide-react'
 import ProjectList from '../Project/ProjectList.jsx'
 import CreateProjectModal from '../Project/CreateProjectModal.jsx'
-import UserProfile from './UserProfile.jsx'
+import UserProfileMini from './UserProfile.jsx'
 import { useAppStore } from '../../store/appStore.js'
+import { logoutApi } from '../../services/user.js'
 
 export default function Sidebar() {
   const activeView = useAppStore((state) => state.activeView)
@@ -20,7 +23,15 @@ export default function Sidebar() {
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
 
+  const storeLogout = useAppStore((state) => state.logout)
+  const user = useAppStore((state) => state.user)
+
   const [showCreateModal, setShowCreateModal] = useState(false)
+
+  const handleLogout = async () => {
+    try { await logoutApi() } catch (err) { /* 忽略 */ }
+    storeLogout()
+  }
 
   return (
     <>
@@ -94,6 +105,19 @@ export default function Sidebar() {
           <span className="max-[1024px]:hidden">Keyframes</span>
         </button>
 
+        <button
+          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
+            activeView === 'profile'
+              ? 'bg-[var(--brand-soft)] text-white'
+              : 'text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white'
+          }`}
+          type="button"
+          onClick={() => setActiveView('profile')}
+        >
+          <User size={18} />
+          <span className="max-[1024px]:hidden">个人信息</span>
+        </button>
+
         <div className="my-4 h-px bg-[var(--border-soft)]" />
 
         <button
@@ -109,14 +133,15 @@ export default function Sidebar() {
       </nav>
 
       <div className="border-t border-[var(--border-soft)] p-3">
-        <UserProfile collapsed={collapsed} />
+        <UserProfileMini collapsed={collapsed} />
         <button
-          className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white"
+          onClick={handleLogout}
+          className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-400"
           type="button"
         >
-          <Settings size={18} />
+          <LogOut size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            Settings
+            退出登录
           </span>
         </button>
       </div>

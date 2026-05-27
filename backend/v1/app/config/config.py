@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     MYSQL_PORT: int = 3306
     MYSQL_DATABASE: str = "aigc_video"
     MYSQL_USER: str = "aigc_user"
-    MYSQL_PASSWORD: str = "aigc_password"
+    MYSQL_PASSWORD: str = "123456"
     DATABASE_URL: str | None = None  # 显式指定时优先
 
     @property

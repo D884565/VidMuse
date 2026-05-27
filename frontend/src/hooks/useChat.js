@@ -1,11 +1,46 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { sendChatMessage } from '../services/chat.js'
+import { getConversations } from '../services/conversation.js'
 import { useAppStore } from '../store/appStore.js'
 
 export function useChat() {
   const [messages, setMessages] = useState([])
   const [isTyping, setIsTyping] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
   const activeProjectId = useAppStore((state) => state.activeProjectId)
+
+  // 加载对话历史
+  useEffect(() => {
+    if (!activeProjectId) {
+      setMessages([])
+      setHistoryLoaded(true)
+      return
+    }
+
+    let cancelled = false
+    setHistoryLoaded(false)
+
+    getConversations(activeProjectId)
+      .then((conversations) => {
+        if (cancelled) return
+        const history = (conversations || []).map((c) => ({
+          id: c.id,
+          role: c.role,
+          content: c.content,
+          frame_id: c.frame_id,
+        }))
+        setMessages(history)
+      })
+      .catch((err) => {
+        console.warn('加载对话历史失败，使用空列表:', err.message)
+        if (!cancelled) setMessages([])
+      })
+      .finally(() => {
+        if (!cancelled) setHistoryLoaded(true)
+      })
+
+    return () => { cancelled = true }
+  }, [activeProjectId])
 
   const sendMessage = useCallback(async (content, files = []) => {
     if (!content.trim() && files.length === 0) return
@@ -40,5 +75,5 @@ export function useChat() {
     }
   }, [activeProjectId])
 
-  return { messages, isTyping, sendMessage }
+  return { messages, isTyping, sendMessage, historyLoaded }
 }
