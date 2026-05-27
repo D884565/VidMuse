@@ -69,9 +69,10 @@ class Settings(BaseSettings):
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8001
     PRODUCT_COLLECTION: str = "product_knowledge"
-    TEMPLATE_COLLECTION: str = "video_knowledge"
-    STYLE_COLLECTION: str = "video_knowledge"
-    Storyboard_COLLECTION: str = "video_knowledge"
+    SLICE_COLLECTION: str = "slice_knowledge"
+    VIDEO_COLLECTION: str = "video_knowledge"
+    IMG_COLLECTION: str = "img_knowledge"
+    AUDIO_COLLECTION: str = "audio_knowledge"
 
     # OpenAI
     OPENAI_API_KEY: str = ""
@@ -98,6 +99,7 @@ class Settings(BaseSettings):
     # 火山引擎 TTS 语音合成
     TTS_ACCESS_KEY: str = ""
     TTS_SECRET_KEY: str = ""
+    TTS_API_KEY: str = ""  # 新版语音合成API Key
 
     # 火山引擎图片生成 (Seedream 4.5)
     IMAGE_API_KEY: str = ""
