@@ -1,10 +1,12 @@
 import chromadb
 from chromadb import Settings
+from typing import Dict
 
 from backend.v1.app.config.config import settings
+from .base import VectorDatabase
 
 
-class ChromaDBClient:
+class ChromaDBClient(VectorDatabase):
     """ChromaDB 向量数据库客户端封装"""
     _instance = None
 
@@ -84,6 +86,18 @@ class ChromaDBClient:
             }
         except Exception as e:
             raise RuntimeError(f"获取ChromaDB集合统计失败: {str(e)}")
+
+    def create_index(self, field_name: str, index_type: str, params: Dict) -> None:
+        """创建索引 - ChromaDB不支持，抛出未实现错误"""
+        raise NotImplementedError("ChromaDB does not support explicit index creation")
+
+    def load_collection(self) -> None:
+        """加载集合 - ChromaDB不支持，抛出未实现错误"""
+        raise NotImplementedError("ChromaDB does not support collection loading")
+
+    def release_collection(self) -> None:
+        """释放集合 - ChromaDB不支持，抛出未实现错误"""
+        raise NotImplementedError("ChromaDB does not support collection releasing")
 
 
 def get_chromadb_client():
