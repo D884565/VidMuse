@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import {
   FolderKanban,
   Images,
@@ -9,6 +10,7 @@ import {
   Sparkles,
 } from 'lucide-react'
 import ProjectList from '../Project/ProjectList.jsx'
+import CreateProjectModal from '../Project/CreateProjectModal.jsx'
 import UserProfile from './UserProfile.jsx'
 import { useAppStore } from '../../store/appStore.js'
 
@@ -18,7 +20,10 @@ export default function Sidebar() {
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
 
+  const [showCreateModal, setShowCreateModal] = useState(false)
+
   return (
+    <>
     <aside
       className={`fixed inset-y-0 left-0 z-20 flex flex-col border-r border-[var(--border-soft)] bg-[var(--bg-sidebar)] transition-all duration-300 ${
         collapsed ? 'w-[72px]' : 'w-[260px]'
@@ -94,6 +99,7 @@ export default function Sidebar() {
         <button
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,#7C3AED_0%,#A855F7_100%)] px-3 py-2.5 text-sm font-medium shadow-[0_4px_24px_rgba(124,58,237,0.15)] hover:shadow-[0_4px_30px_rgba(124,58,237,0.35)]"
           type="button"
+          onClick={() => setShowCreateModal(true)}
         >
           <Plus size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
@@ -115,5 +121,11 @@ export default function Sidebar() {
         </button>
       </div>
     </aside>
+
+      <CreateProjectModal
+        isOpen={showCreateModal}
+        onClose={() => setShowCreateModal(false)}
+      />
+    </>
   )
 }

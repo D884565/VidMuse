@@ -31,6 +31,19 @@ export default function MessageBubble({ message, index }) {
             </div>
           </div>
         ) : null}
+        {/* 显示被更新的场景帧 */}
+        {message.updated_frames && message.updated_frames.length > 0 ? (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {message.updated_frames.map((frame) => (
+              <span
+                key={frame.frame_id}
+                className="inline-flex items-center gap-1 rounded-full bg-[rgba(124,58,237,0.15)] px-2.5 py-1 text-xs text-[#a78bfa]"
+              >
+                场景 {frame.sequence}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </article>
   )
