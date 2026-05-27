@@ -20,6 +20,8 @@ class ProjectCreate(ProjectBase):
     key_points: list[str] = Field(default_factory=list)
     avoid: list[str] = Field(default_factory=list)
     rag_weight: float = 0.3
+    target_duration: int = 30
+    voice_type: str = "zh-CN-XiaoxiaoNeural"
 
 
 class ProjectUpdate(ProjectBase):

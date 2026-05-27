@@ -38,20 +38,18 @@ class ScriptGenerationService:
         self,
         db: AsyncSession,
         project_id: int,
-        target_duration: int = 15,
     ) -> list[Frame]:
         """
         生成带货剧本，逐帧写入 frames 表。
-
-        :returns: Frame 列表
+        target_duration 从 projects 表读取。
         """
-        # 限制总时长在 12-20 秒
-        target_duration = max(12, min(20, target_duration))
-
         result = await db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
+
+        # 限制总时长在 12-20 秒
+        target_duration = max(12, min(20, project.target_duration or 30))
 
         # RAG 检索参考资料（带降级）
         rag_weight = float(project.rag_weight) if project.rag_weight else 0.3
