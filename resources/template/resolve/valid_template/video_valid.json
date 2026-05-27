@@ -1,24 +1,19 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "VideoAnalysisSummarySchema",
+  "title": "VideoTemplateSchema",
   "type": "object",
-  "required": ["视频基本信息", "片段索引列表", "片段间关系"],
+  "required": ["基本信息", "片段索引列表", "片段间关系"],
   "properties": {
-    "视频基本信息": {
+    "基本信息": {
       "type": "object",
-      "required": ["商品名称", "总时长_ms"],
+      "required": ["商品", "剧本", "模板", "摘要"],
       "properties": {
-        "video_id": { "type": "string" },
-        "tree_id": { "type": "string" },
-        "商品名称": { "type": "string" },
-        "目标人群": { "type": "string" },
-        "总时长_ms": { "type": "integer", "minimum": 0 },
-        "全局摘要": { "type": "string" },
-        "原片核心文案": {
-          "type": "array",
-          "items": { "type": "string" }
-        }
-      }
+        "商品": { "type": "string" },
+        "剧本": { "type": "string" },
+        "模板": { "type": "string" },
+        "摘要": { "type": "string" }
+      },
+      "additionalProperties": true
     },
 
     "片段索引列表": {
@@ -26,7 +21,7 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["slice_id", "time_range_ms", "序号", "模板类型", "总结"],
+        "required": ["slice_id", "time_range_ms", "序号", "模板类型"],
         "properties": {
           "slice_id": { "type": "string", "pattern": "^s_\\d+$" },
           "time_range_ms": {
@@ -38,28 +33,24 @@
           "序号": { "type": "integer", "minimum": 1 },
           "模板类型": {
             "type": "string",
-            "enum": ["HOOK", "PAIN_POINT", "PRODUCT_SHOW", "TRUST_BUILD", "CTA"]
-          },
-          "模板名称": { "type": "string" },
-          "机制": { "type": "string" },
-          "总结": { "type": "string", "minLength": 5 },
-          "核心视觉标签": {
-            "type": "array",
-            "items": { "type": "string" }
+            "enum": ["HOOK", "PAIN_POINT", "PRODUCT_SHOW", "TRUST_BUILD", "CTA", "REVERSE"]
           }
-        }
+        },
+        "additionalProperties": true
       }
     },
 
     "片段间关系": {
       "type": "object",
-      "required": ["转场序列", "情绪曲线"],
+      "required": ["转场序列", "情绪曲线", "视觉节奏", "BGM节奏匹配"],
       "properties": {
         "转场序列": { "type": "array", "items": { "type": "string" } },
         "情绪曲线": { "type": "array", "items": { "type": "string" } },
         "视觉节奏": { "type": "string" },
         "BGM节奏匹配": { "type": "string" }
-      }
+      },
+      "additionalProperties": true
     }
-  }
+  },
+  "additionalProperties": true
 }

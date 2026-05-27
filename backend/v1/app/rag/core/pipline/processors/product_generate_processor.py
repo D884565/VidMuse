@@ -8,6 +8,7 @@ class ProductGenerateProcessor(BaseProcessor):
     """
     商品JSON生成处理器
     根据大模型理解结果生成符合模板要求的product.json文件
+    处理图+文信息的解析
     """
 
     def __init__(self, output_dir: str = None):
@@ -54,21 +55,6 @@ class ProductGenerateProcessor(BaseProcessor):
         :param context: 流水线上下文
         :return: 修改后的上下文，包含生成的文件路径和数据
         """
-        product_info = context.get("product_info", {})
-        product_id = context.get("product_id", "prod_001")
 
-        if not product_info:
-            raise ValueError("No product info found in context")
-
-        # 生成文件名
-        file_name = f"{product_id}_product.json"
-        file_path = os.path.join(self.output_dir, file_name)
-
-        # 写入文件
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(product_info, f, ensure_ascii=False, indent=2)
-
-        context.set("product_file", file_path)
-        context.set("product_data", product_info)
-
+        # todo 后期可能对商品图进行预处理用
         return context

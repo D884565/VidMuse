@@ -38,26 +38,33 @@ class VideoUnderstandingProcessor(BaseProcessor):
         
         完整的json模板如下:
         {
-        "模板名称": "主播情绪开场",
-        "模板类型": "HOOK",
-        "机制": "mechanism",
-        "总结": "",
+  "片段模板": {
+    "模板名称": "主播情绪开场",
+    "模板类型": "HOOK",
+    "机制": "通过夸张反转留住观众",
+    "总结": "",
 
-        "创作要素": {
-        "画面": "主播半身中景，明亮直播间，暖色调",
-        "动作": "挥手打招呼，表情兴奋",
-        "台词": "家人们，谁懂啊！",
-        "运镜": "固定机位，平视角度",
-        "时长": "3-5秒",
-        "情绪评分": "0.5"
-        },
+    "创作要素": {
+      "画面": "主播半身中景，明亮直播间，暖色调",
+      "动作": "挥手打招呼，表情兴奋",
+      "台词": "家人们，谁懂啊！",
+      "运镜": "固定机位，平视角度",
+      "时长": "3-5秒",
+      "情绪评分": "0.5",
+      "视觉标签": ["开心","激情"]
+    },
+
+    "关键帧时间戳": [0.0 ,2.3, 4.5],
 
 
-        "一致性": {
+    "一致性": {
+      "商品是否出现": "True",
       "商品": [],
       "置信度": 0.8
-        }
-        }
+    }
+  }
+}
+
 
         请严格按照JSON格式输出，不要有其他内容。
         """
@@ -72,8 +79,9 @@ class VideoUnderstandingProcessor(BaseProcessor):
 
 
         # 遍历片段url,并行解析片段
+        video_id = context.get("video_id")
         slices = context.get("slices", [])
-        if not slices or len(slices) == 0:
+        if not slices or len(context.get("slices_count")) == 0:
             raise ValueError("No slices found in context")
 
 
@@ -83,14 +91,14 @@ class VideoUnderstandingProcessor(BaseProcessor):
             response =  asyncio.run(self.llm_client.video_understanding(VideoUnderstandingRequest(
                 video_url=slice_info,
                 prompt=self.prompt_template,
-                max_tokens=1024,
+                max_tokens=2048,
                 temperature=0.7,
                 top_p=0.9,
                 model=""
             )))
             # 返回就解析
             mapping ={
-                "slice_id":i,
+                "slice_id":video_id + "_" + str(i),
                 "understood_slice":json.loads(response.content)
             }
             slices.append(mapping)

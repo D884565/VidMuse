@@ -4,9 +4,9 @@ from .slice_generate_processor import SliceGenerateProcessor
 from .schema_validation_processor import SchemaValidationProcessor
 from .product_understanding_processor import ProductUnderstandingProcessor
 from .product_generate_processor import ProductGenerateProcessor
-from .video_aggregation_processor import VideoAggregationProcessor
+from .vectorization_processor import VectorizationProcessor
 from .video_overall_understanding_processor import VideoOverallUnderstandingProcessor
-from .video_generate_processor import VideoGenerateProcessor
+
 
 __all__ = [
     "VideoSplitProcessor",
@@ -15,7 +15,6 @@ __all__ = [
     "SchemaValidationProcessor",
     "ProductUnderstandingProcessor",
     "ProductGenerateProcessor",
-    "VideoAggregationProcessor",
+    "VectorizationProcessor",
     "VideoOverallUnderstandingProcessor",
-    "VideoGenerateProcessor"
 ]

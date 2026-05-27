@@ -14,13 +14,20 @@ class AssetDAO:
         db.add(asset)
         db.commit()
         db.refresh(asset)
-        return asset
+        return
+
+    @staticmethod
+    def insert_batch_assets(db: Session, assets_data: list[dict]) -> None:
+        """批量插入资产记录"""
+        db.bulk_insert_mappings(Asset, assets_data)
+        db.commit()
 
 
     @staticmethod
     def get_asset_by_id(db: Session, asset_id: int) -> Optional[Asset]:
         """根据ID获取资产"""
         return db.query(Asset).filter(Asset.id == asset_id).first()
+
 
     @staticmethod
     def update_asset(db: Session, asset_id: int, update_data: dict) -> Optional[Asset]:
