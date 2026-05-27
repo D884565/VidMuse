@@ -68,6 +68,7 @@ class MusicGenerationService:
             "customMode": False,
             "instrumental": True,
             "model": "V4_5ALL",
+            "callBackUrl": "http://localhost/callback",
         }
 
         try:
@@ -107,9 +108,9 @@ class MusicGenerationService:
                 status = data.get("status", "")
 
                 if status == "SUCCESS":
-                    audio_list = data.get("response", {}).get("data", [])
+                    audio_list = data.get("response", {}).get("sunoData", [])
                     if audio_list:
-                        audio_url = audio_list[0].get("audio_url")
+                        audio_url = audio_list[0].get("audioUrl") or audio_list[0].get("audio_url")
                         if audio_url:
                             return audio_url
                     logger.warning("[BGM] 任务完成但无音频数据")
