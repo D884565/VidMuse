@@ -1,7 +1,10 @@
+import json
 from typing import Dict, List
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
 from backend.providers.dto.schema import ChatRequest, ChatMessage, TextContent, TextUnderstandingRequest
+from backend.v1.app.rag.core.pipline.utils import load_template
+from backend.v1.app.rag.core.pipline.utils.json_flattener import JsonFlattener
 
 
 class VideoOverallUnderstandingProcessor(BaseProcessor):
@@ -36,7 +39,7 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
            - 视觉节奏: 整体视觉节奏描述
            - BGM节奏匹配: BGM与画面的匹配情况描述
 
-        输入的分片信息：
+        需要输出的分片信息：
         {segment_info}
 
         请保证所有字段完整，信息不足时可以生成合理的模拟值。
@@ -49,16 +52,17 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         :param context: 流水线上下文，需要包含 aggregated_segments 字段
         :return: 修改后的上下文，包含视频整体理解结果
         """
-        aggregated_segments = context.get("aggregated_segments", {})
+        slices = context.get("understood_slices")
 
-        if not aggregated_segments:
+        if not slices:
             raise ValueError("No aggregated segments found in context")
 
         # 构建请求prompt
-        segment_info_str = str(aggregated_segments["segment_list"])
-        prompt = self.prompt_template.format(segment_info=segment_info_str)
+        segment_info_str = ''.join([JsonFlattener.flatten(s) for s in slices])
+        prompts = self.prompt_template.format(segment_info=load_template("video"))
 
         # 构建大模型请求
-        response = self.llm_client.text_understanding(TextUnderstandingRequest(prompt=self.prompt_template, text=aggregated_segments))
+        response = self.llm_client.text_understanding(TextUnderstandingRequest(prompt=prompts, text=segment_info_str))
         context.set("ai_features", response.content)
+        context.set("video",json.loads(response.content) )
         return context

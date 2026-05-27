@@ -28,7 +28,7 @@ class VideoSplitProcessor(BaseProcessor):
         # 先获取视频（素材）id，从对象存储中查出来，在内存里面分割，然后再上传对象存储，最后返回的是对象存储的url
         video_id = context.get("video_id")
         object_name = context.get("object_name")
-        if not object_name:
+        if not object_name or not video_id:
             raise ValueError("video_id is required in context")
 
         from backend.store import get_storage_client
@@ -36,16 +36,24 @@ class VideoSplitProcessor(BaseProcessor):
         ios = client.get_object(object_name)
 
         from backend.ffmpeg import FFmpegVideoProcessor
-        ios = FFmpegVideoProcessor.split_into_segments_in_memory(ios, (10,20))
+        ios = (FFmpegVideoProcessor
+                                   .split_into_segments_in_memory(ios,
+                                                                 segment_duration_range=
+                                                                 (self.slice_duration, self.slice_duration),
+                                                                 extract_first_frame=True,
+                                                                 return_frame_bytes=True))
         slices = list()
-
+        idx = 0
+        images = list()
         # todo 后续异步落库
-        for i, by in enumerate(ios):
-            slices.append(client.upload_fileobj(io.BytesIO(by), f"{video_id}_{i}.mp4"))
-
+        for  out in ios:
+            slices.append(client.upload_fileobj(io.BytesIO(out["video_bytes"]), f"{video_id}_video_{idx}.mp4"))
+            images.append(client.upload_fileobj(io.BytesIO(out["frame_bytes"]), f"{video_id}_image_{idx}.jpg"))
+            idx += 1
 
 
         context.set("slices", slices)
-        context.metadata["split_count"] = len(slices)
+        context.set("frames", images)
+        context.metadata["count"] = len(slices)
 
         return context
