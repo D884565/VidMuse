@@ -300,3 +300,149 @@ class FFmpegVideoProcessor:
 
         return segments
 
+    def extract_frame_by_timestamp(self, timestamp: Union[float, str], output_path: Optional[str] = None,
+                                  format: str = 'png', quality: int = 2) -> Optional[np.ndarray]:
+        """
+        根据时间戳提取视频帧
+        :param timestamp: 时间戳，可以是秒数（float）或 'HH:MM:SS' 格式字符串
+        :param output_path: 输出文件路径，如果为None则返回numpy数组
+        :param format: 输出格式，默认'png'，支持'jpg'、'jpeg'、'png'等
+        :param quality: 输出质量，1-31，越小质量越高，默认2
+        :return: 如果output_path为None返回numpy数组，否则返回None
+        """
+        import os
+        try:
+            # 获取视频元数据
+            meta = self.get_metadata()
+            width, height = meta['width'], meta['height']
+
+            if output_path:
+                # 输出到文件
+                # 处理路径：如果是目录则自动生成文件名
+                if os.path.isdir(output_path):
+                    # 目录情况下，自动生成文件名
+                    timestamp_str = str(timestamp).replace(':', '-').replace('.', '_')
+                    output_path = os.path.join(output_path, f"frame_{timestamp_str}.{format}")
+                else:
+                    # 检查是否有扩展名，如果没有则添加
+                    ext = os.path.splitext(output_path)[1].lower()
+                    if not ext:
+                        output_path = f"{output_path}.{format}"
+                    else:
+                        # 从扩展名推断格式
+                        ext = ext.lstrip('.')
+                        if ext in ['jpg', 'jpeg', 'png']:
+                            format = ext
+
+                # 确保输出目录存在
+                os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+                # 输出图片时不需要指定format，ffmpeg会自动从扩展名识别
+                # 对于单帧输出，使用image2 muxer
+                output_kwargs = {'vframes': 1, 'q:v': quality}
+                if format:
+                    # 如果指定了format，使用正确的muxer名称
+                    output_kwargs['format'] = 'image2'
+                    # 对于jpg/jpeg需要额外指定编码器
+                    if format.lower() in ['jpg', 'jpeg']:
+                        output_kwargs['vcodec'] = 'mjpeg'
+
+                (
+                    ffmpeg
+                    .input(self.input_source, ss=timestamp)
+                    .output(output_path, **output_kwargs)
+                    .overwrite_output()
+                    .run(capture_stdout=True, capture_stderr=True)
+                )
+                print(f"帧提取成功: {output_path}")
+                return None
+            else:
+                # 输出到内存numpy数组
+                out, _ = (
+                    ffmpeg
+                    .input(self.input_source, ss=timestamp)
+                    .filter('scale', width, height)
+                    .output('pipe:', format='rawvideo', pix_fmt='rgb24', vframes=1)
+                    .run(capture_stdout=True, capture_stderr=True)
+                )
+                return np.frombuffer(out, np.uint8).reshape([height, width, 3])
+
+        except ffmpeg.Error as e:
+            print(f"FFmpeg Frame Extract Error: {e.stderr.decode()}")
+            raise
+
+    @staticmethod
+    def extract_frame_by_timestamp_in_memory(video_bytes: bytes, timestamp: Union[float, str],
+                                            output_path: Optional[str] = None,
+                                            format: str = 'png', quality: int = 2) -> Optional[np.ndarray]:
+        """
+        【纯内存版本】根据时间戳从视频字节流中提取帧
+        :param video_bytes: 输入视频字节流
+        :param timestamp: 时间戳，可以是秒数（float）或 'HH:MM:SS' 格式字符串
+        :param output_path: 输出文件路径，如果为None则返回numpy数组
+        :param format: 输出格式，默认'png'，支持'jpg'、'jpeg'、'png'等
+        :param quality: 输出质量，1-31，越小质量越高，默认2
+        :return: 如果output_path为None返回numpy数组，否则返回None
+        """
+        import os
+        try:
+            # 先获取视频元数据
+            meta = FFmpegVideoProcessor.probe_in_memory(video_bytes)
+            width, height = meta['width'], meta['height']
+
+            if output_path:
+                # 输出到文件
+                # 处理路径：如果是目录则自动生成文件名
+                if os.path.isdir(output_path):
+                    # 目录情况下，自动生成文件名
+                    timestamp_str = str(timestamp).replace(':', '-').replace('.', '_')
+                    output_path = os.path.join(output_path, f"frame_{timestamp_str}.{format}")
+                else:
+                    # 检查是否有扩展名，如果没有则添加
+                    ext = os.path.splitext(output_path)[1].lower()
+                    if not ext:
+                        output_path = f"{output_path}.{format}"
+                    else:
+                        # 从扩展名推断格式
+                        ext = ext.lstrip('.')
+                        if ext in ['jpg', 'jpeg', 'png']:
+                            format = ext
+
+                # 确保输出目录存在
+                os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+
+                # 输出图片时不需要指定format，ffmpeg会自动从扩展名识别
+                # 对于单帧输出，使用image2 muxer
+                output_kwargs = {'vframes': 1, 'q:v': quality}
+                if format:
+                    # 如果指定了format，使用正确的muxer名称
+                    output_kwargs['format'] = 'image2'
+                    # 对于jpg/jpeg需要额外指定编码器
+                    if format.lower() in ['jpg', 'jpeg']:
+                        output_kwargs['vcodec'] = 'mjpeg'
+
+                (
+                    ffmpeg
+                    .input('pipe:', ss=timestamp)
+                    .output(output_path, **output_kwargs)
+                    .overwrite_output()
+                    .run(input=video_bytes, capture_stdout=True, capture_stderr=True)
+                )
+                print(f"内存帧提取成功: {output_path}")
+                return None
+            else:
+                # 输出到内存numpy数组
+                out, _ = (
+                    ffmpeg
+                    .input('pipe:', ss=timestamp)
+                    .filter('scale', width, height)
+                    .output('pipe:', format='rawvideo', pix_fmt='rgb24', vframes=1)
+                    .run(input=video_bytes, capture_stdout=True, capture_stderr=True)
+                )
+                return np.frombuffer(out, np.uint8).reshape([height, width, 3])
+
+        except ffmpeg.Error as e:
+            print(f"FFmpeg Memory Frame Extract Error: {e.stderr.decode()}")
+            raise
+
+

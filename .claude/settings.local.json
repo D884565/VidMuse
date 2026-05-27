@@ -12,7 +12,12 @@
       "mcp__ide__getDiagnostics",
       "Bash(PYTHONPATH=. python backend/tests/cheng/test_search.py)",
       "Bash(PYTHONPATH=/e/project/py/byte/VidMuse python *)",
-      "Bash(ffmpeg *)"
+      "Bash(ffmpeg *)",
+      "Bash(git reset *)",
+      "Bash(git restore *)",
+      "Bash(PYTHONPATH=. python *)",
+      "Bash(set PYTHONIOENCODING=utf-8)",
+      "Bash(dir *)"
     ]
   }
 }

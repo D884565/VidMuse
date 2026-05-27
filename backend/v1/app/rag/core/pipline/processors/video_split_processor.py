@@ -39,9 +39,10 @@ class VideoSplitProcessor(BaseProcessor):
         ios = FFmpegVideoProcessor.split_into_segments_in_memory(ios, (10,20))
         slices = list()
 
-        # todo 后续变成异步任务 mysql也要落库
+        # todo 后续异步落库
         for i, by in enumerate(ios):
             slices.append(client.upload_fileobj(io.BytesIO(by), f"{video_id}_{i}.mp4"))
+
 
 
         context.set("slices", slices)

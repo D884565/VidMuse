@@ -50,8 +50,6 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         :return: 修改后的上下文，包含视频整体理解结果
         """
         aggregated_segments = context.get("aggregated_segments", {})
-        video_id = context.get("video_id", "vid_001")
-        video_duration = context.get("video_duration", 60000)
 
         if not aggregated_segments:
             raise ValueError("No aggregated segments found in context")
@@ -61,10 +59,6 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         prompt = self.prompt_template.format(segment_info=segment_info_str)
 
         # 构建大模型请求
-        response = self.llm.text_understanding(TextUnderstandingRequest(prompt=self.prompt, text=aggregated_segments))
-        context.set("VideoAggregation", response.content)
-
-
-
-        context.set("video_overall_info", response.content)
+        response = self.llm_client.text_understanding(TextUnderstandingRequest(prompt=self.prompt_template, text=aggregated_segments))
+        context.set("ai_features", response.content)
         return context
