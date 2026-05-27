@@ -2,12 +2,6 @@
 from pydantic import BaseModel
 
 
-class GenerateRequest(BaseModel):
-    """提交生成任务请求"""
-    target_duration: int = 30
-    voice_type: str = "zh-CN-XiaoxiaoNeural"
-
-
 class GenerateResponse(BaseModel):
     """提交生成任务响应"""
     project_id: int

@@ -13,6 +13,7 @@ FFMPEG_PATH = shutil.which("ffmpeg") or r"C:\Users\练轩成\AppData\Local\Micro
 
 from backend.providers import VolcanoLLM, VideoRequest
 from backend.v1.app.models.frame import Frame
+from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
 from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)
@@ -111,8 +112,8 @@ class VideoComposer:
                 if mood:
                     prompt += f"\n氛围：{mood}"
 
-                # 时长限制
-                duration = int(math.ceil(max(2, min(10, float(frame.duration)))))
+                # 时长限制（Seedance 1.5 i2v 模式固定 5 秒）
+                duration = 5
 
                 video_request = VideoRequest(
                     duration=duration,
@@ -138,6 +139,18 @@ class VideoComposer:
 
                 local_path = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}.mp4")
                 self._download_video(response.video_url, local_path)
+
+                # 按 LLM 规划时长裁剪（Seedance 固定生成 5 秒，需裁剪到目标时长）
+                target_dur = float(frame.duration)
+                if target_dur < 5:
+                    trimmed_path = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}_trimmed.mp4")
+                    try:
+                        ffmpeg_utils.split_video(local_path, trimmed_path, start=0, end=target_dur)
+                        local_path = trimmed_path
+                        logger.info(f"[视频裁剪] 帧 {frame.sequence} 裁剪到 {target_dur} 秒")
+                    except Exception as trim_err:
+                        logger.warning(f"[视频裁剪] 裁剪失败，使用原始 5 秒: {trim_err}")
+
                 video_paths.append(local_path)
 
                 frame.status = 2  # 已完成
@@ -179,9 +192,8 @@ class VideoComposer:
 
         # 获取时长
         duration = scene.get("duration", 5)
-        # 限制时长在模型支持的范围内（2-10 秒），向上取整确保不截断
-        import math
-        duration = int(math.ceil(max(2, min(10, duration))))
+        # Seedance 1.5 i2v 模式固定 5 秒
+        duration = 5
 
         # 构造视频生成请求
         video_request = VideoRequest(
