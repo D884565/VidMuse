@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     MINIO_BUCKET_NAME: str = "aigc-videos"
     MINIO_SECURE: bool = False
 
+    # 向量数据库配置
+    VECTOR_DB_TYPE: str = "chromadb"  # 可选值: chromadb, milvus
+
     # ChromaDB
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8001
@@ -73,6 +76,18 @@ class Settings(BaseSettings):
     VIDEO_COLLECTION: str = "video_knowledge"
     IMG_COLLECTION: str = "img_knowledge"
     AUDIO_COLLECTION: str = "audio_knowledge"
+
+    # Milvus配置
+    MILVUS_HOST: str = "localhost"
+    MILVUS_PORT: int = 19530
+    MILVUS_USERNAME: str = ""
+    MILVUS_PASSWORD: str = ""
+    MILVUS_PRODUCT_COLLECTION: str = "product_knowledge"
+    MILVUS_SLICE_COLLECTION: str = "slice_knowledge"
+    MILVUS_VIDEO_COLLECTION: str = "video_knowledge"
+    MILVUS_IMG_COLLECTION: str = "img_knowledge"
+    MILVUS_AUDIO_COLLECTION: str = "audio_knowledge"
+    MILVUS_VECTOR_DIMENSION: int = 1536  # 默认OpenAI embedding维度
 
     # OpenAI
     OPENAI_API_KEY: str = ""
