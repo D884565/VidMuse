@@ -28,6 +28,7 @@ from backend.v1.app.product.controller.product_controller import router as produ
 from backend.v1.app.rag.controller.asset_controller import router as asset_router
 from backend.v1.app.video.controller.video import router as video_router
 from backend.v1.app.merge.controller.merge import router as merge_router
+from backend.v1.app.agent.controller import agent_router
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ app.include_router(product_router, prefix="/generate/v1")
 app.include_router(asset_router, prefix="/rag/v1")
 app.include_router(video_router, prefix="/v1")
 app.include_router(merge_router, prefix="/v1")
+app.include_router(agent_router, prefix="/v1")
 
 
 @app.get("/", response_model=Response)
