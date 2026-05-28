@@ -1,6 +1,0 @@
-启动：
-python -m uvicorn backend.opencv.keyframesmaker:app --reload --host 0.0.0.0 --port 8000
-浏览器：http://localhost:8000/
-video.py是生成测试视频用的，可以调参数
-keyframesmaker.py是主程序
-VidMuse\backend\opencv\keyframes是关键帧的保存地点
