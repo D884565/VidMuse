@@ -2,12 +2,16 @@
 import json
 import asyncio
 import logging
+from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.providers import VolcanoLLM, ChatRequest, ChatMessage
+from backend.v1.app.generate.service._rag_temp.rag_service import (
+    RAGService, MockRAGService, RAGResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,33 +27,33 @@ SCENE_TYPE_MAP = {
 
 
 class ScriptGenerationService:
-    """剧本生成服务（接入火山引擎 LLM）"""
+    """剧本生成服务（接入火山引擎 LLM + RAG 检索）"""
 
-    def __init__(self):
-        """初始化 LLM 客户端"""
+    def __init__(self, rag_service: Optional[RAGService] = None):
+        """初始化 LLM 客户端和 RAG 服务"""
         self.llm = VolcanoLLM(key=None, model_name=None)
+        self.rag_service: RAGService = rag_service or MockRAGService()
 
     async def generate_script(
         self,
         db: AsyncSession,
         project_id: int,
-        target_duration: int = 15,
     ) -> list[Frame]:
         """
         生成带货剧本，逐帧写入 frames 表。
-
-        :returns: Frame 列表
+        target_duration 从 projects 表读取。
         """
-        # 限制总时长在 12-20 秒
-        target_duration = max(12, min(20, target_duration))
-
         result = await db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
 
-        # 检索相关参考资料
-        reference = self._mock_retrieve(project)
+        # 限制总时长在 12-20 秒
+        target_duration = max(12, min(20, project.target_duration or 30))
+
+        # RAG 检索参考资料（带降级）
+        rag_weight = float(project.rag_weight) if project.rag_weight else 0.3
+        reference = await self._retrieve_references(project, rag_weight)
 
         # 构造 Prompt
         prompt = self._build_prompt(project, target_duration, reference)
@@ -106,34 +110,77 @@ class ScriptGenerationService:
         logger.info(f"[剧本生成] 已写入 {len(frames)} 个帧，project_id={project_id}")
         return frames
 
-    def _mock_retrieve(self, project: Project) -> str:
-        """
-        检索相关参考资料（Mock）。
+    # ========== RAG 检索 ==========
 
-        TODO: 接入知识库检索（ChromaDB），根据商品信息检索：
-        - 同类商品的热门带货文案
-        - 带货视频脚本模板
-        - 行业话术和转化技巧
-        """
-        return (
-            f"## 参考资料（同品类热门带货文案）\n\n"
-            f"### 热门文案模板\n"
-            f"1. 开场hook：「还在为选XX发愁？这款XX让你一步到位！」\n"
-            f"2. 卖点展示：「采用XX工艺，XX材质，用过的都说好」\n"
-            f"3. 价格锚定：「原价XX，今天直播间专属价只要XX」\n"
-            f"4. 紧迫感：「库存只剩最后XX件，拍完就恢复原价」\n"
-            f"5. 行动号召：「点击下方小黄车，立即下单！」\n\n"
-            f"### 带货视频拍摄要点\n"
-            f"- 前3秒必须抓住注意力（提出痛点或制造悬念）\n"
-            f"- 每个镜头不超过5秒，保持节奏紧凑\n"
-            f"- 产品特写镜头要展示细节质感\n"
-            f"- 结尾要有明确的行动指引\n\n"
-            f"### {project.title} 相关卖点参考\n"
-            f"- 品质保证，正品行货\n"
-            f"- 性价比高，同价位最优\n"
-            f"- 用户好评率98%\n"
-            f"- 支持7天无理由退换"
-        )
+    def _rag_top_k(self, rag_weight: float) -> int:
+        """根据 rag_weight 映射 top_k"""
+        if rag_weight <= 0:
+            return 0
+        if rag_weight <= 0.3:
+            return 3
+        if rag_weight <= 0.7:
+            return 5
+        return 10
+
+    async def _retrieve_references(self, project: Project, rag_weight: float) -> str:
+        """并行三路 RAG 检索，返回格式化的参考文本"""
+        top_k = self._rag_top_k(rag_weight)
+        if top_k == 0:
+            logger.info("[RAG] rag_weight=0，跳过检索")
+            return ""
+
+        query = project.user_prompt or project.title or ""
+        image_url = (project.reference_images or [None])[0] if project.reference_images else None
+
+        try:
+            scripts, assets, knowledge = await asyncio.gather(
+                self.rag_service.search_scripts(query, top_k=top_k),
+                self.rag_service.search_assets(query, image_url=image_url, top_k=top_k),
+                self.rag_service.search_product_knowledge(query, top_k=top_k),
+                return_exceptions=True,
+            )
+
+            sections = []
+            rag_detail = "摘要" if rag_weight <= 0.3 else ("关键内容" if rag_weight <= 0.7 else "完整内容")
+
+            if isinstance(scripts, list) and scripts:
+                sections.append(self._format_rag_section("参考剧本模板", scripts, rag_detail))
+            elif isinstance(scripts, Exception):
+                logger.warning(f"[RAG] 剧本检索异常: {scripts}")
+
+            if isinstance(assets, list) and assets:
+                sections.append(self._format_rag_section("参考视觉素材", assets, rag_detail))
+            elif isinstance(assets, Exception):
+                logger.warning(f"[RAG] 素材检索异常: {assets}")
+
+            if isinstance(knowledge, list) and knowledge:
+                sections.append(self._format_rag_section("商品知识参考", knowledge, rag_detail))
+            elif isinstance(knowledge, Exception):
+                logger.warning(f"[RAG] 商品知识检索异常: {knowledge}")
+
+            if not sections:
+                return ""
+
+            return "## 参考资料（仅供参考借鉴，不要照搬）\n\n" + "\n\n".join(sections)
+
+        except Exception as e:
+            logger.warning(f"[RAG] 检索整体异常，降级为无参考模式: {e}")
+            return ""
+
+    def _format_rag_section(self, title: str, results: list[RAGResult], detail: str) -> str:
+        """将 RAG 结果格式化为 prompt 参考区文本"""
+        lines = [f"### {title}"]
+        for i, r in enumerate(results, 1):
+            if detail == "摘要":
+                content = r.content[:50] + "..." if len(r.content) > 50 else r.content
+            elif detail == "关键内容":
+                content = r.content[:200] + "..." if len(r.content) > 200 else r.content
+            else:
+                content = r.content
+            lines.append(f"{i}. {content}")
+        return "\n".join(lines)
+
+    # ========== Prompt 组装 ==========
 
     def _format_product_info(self, product_info_json: str | None) -> str:
         """将 product_info JSON 格式化为可读文本"""
@@ -161,17 +208,67 @@ class ScriptGenerationService:
             return f"- 商品详情：{product_info_json}"
 
     def _build_prompt(self, project: Project, target_duration: int, reference: str = "") -> str:
-        """构造 LLM 生成 Prompt"""
-        # 解析 product_info JSON，格式化为可读文本
+        """构造 LLM 生成 Prompt（分区加权结构）"""
         product_detail = self._format_product_info(project.product_info)
 
-        return (
-            f"你是一个专业的带货视频编剧，擅长创作短视频带货剧本。请根据以下商品信息和参考资料，生成一个约{target_duration}秒的带货短视频剧本。\n\n"
+        # === 核心区：用户输入 + 商品信息（必须遵循） ===
+        core_sections = []
+
+        # 用户提示词（最高优先级）
+        if project.user_prompt:
+            core_sections.append(f"## 用户创作意图（必须严格遵循）\n{project.user_prompt}")
+
+        # 结构化字段
+        structured = []
+        if project.style:
+            structured.append(f"- 视频风格：{project.style}")
+        if project.target_audience:
+            structured.append(f"- 目标受众：{project.target_audience}")
+        if project.key_points:
+            key_points = project.key_points
+            if isinstance(key_points, list) and key_points:
+                structured.append(f"- 重点强调：{', '.join(key_points)}")
+        if project.avoid:
+            avoid = project.avoid
+            if isinstance(avoid, list) and avoid:
+                structured.append(f"- 需要避免：{', '.join(avoid)}")
+        if structured:
+            core_sections.append("## 补充要求\n" + "\n".join(structured))
+
+        # 商品信息
+        core_sections.append(
             f"## 商品信息\n"
             f"- 商品标题：{project.title}\n"
             f"- 商品描述：{project.description or '无'}\n"
-            f"{product_detail}\n\n"
-            f"{reference}\n\n"
+            f"{product_detail}"
+        )
+
+        # 参考图片
+        ref_images = project.reference_images
+        if ref_images and isinstance(ref_images, list) and ref_images:
+            imgs_text = "\n".join(f"- {url}" for url in ref_images)
+            core_sections.append(f"## 用户提供的参考图片\n{imgs_text}")
+
+        core_text = "\n\n".join(core_sections)
+
+        # === 组装完整 prompt ===
+        prompt_parts = [
+            f"你是一个专业的带货视频编剧，擅长创作短视频带货剧本。请根据以下信息，生成一个约{target_duration}秒的带货短视频剧本。\n",
+            core_text,
+        ]
+
+        # 参考区（仅在有内容时添加）
+        if reference:
+            prompt_parts.append(reference)
+
+        # 输出格式约束
+        prompt_parts.append(self._output_format_section(target_duration))
+
+        return "\n\n".join(prompt_parts)
+
+    def _output_format_section(self, target_duration: int) -> str:
+        """输出格式约束"""
+        return (
             f"## 输出要求\n"
             f"请严格按照以下 JSON 格式输出，不要输出其他内容：\n"
             f"```json\n"
@@ -191,48 +288,43 @@ class ScriptGenerationService:
             f'      "text": "配音文案（口语化，有感染力）",\n'
             f'      "voice_style": "excited",\n'
             f'      "visual": {{\n'
-            f'        "image_prompt": "图片生成提示词：详细描述画面内容，包括主体、背景、光线、色调、构图。例如：一位年轻女性手持木吉他坐在窗边，温暖的阳光洒在吉他面板上，背景是简约的白色墙壁，暖色调，竖屏构图",\n'
-            f'        "video_prompt": "视频生成提示词：描述镜头运动和动态效果。例如：镜头从吉他全景缓慢推近至面板特写，阳光光斑微微晃动，手指轻拨琴弦",\n'
+            f'        "image_prompt": "图片生成提示词：详细描述画面内容，包括主体、背景、光线、色调、构图",\n'
+            f'        "video_prompt": "视频生成提示词：描述镜头运动和动态效果",\n'
             f'        "camera": "镜头运动方式（push_in/pull_out/pan_left/pan_right/static/close_up/wide_shot）",\n'
             f'        "mood": "画面氛围（warm/bright/dark/energetic/elegant）",\n'
             f'        "overlay": {{\n'
-            f'          "text": "画面上叠加的关键文字（如价格、卖点、行动号召），不超过10个字，不需要叠加文字时留空字符串",\n'
-            f'          "position": "文字位置（top/center/bottom，默认bottom）",\n'
-            f'          "style": "文字风格（highlight/price_tag/call_to_action/subtle，默认highlight）"\n'
+            f'          "text": "画面上叠加的关键文字，不超过10个字，不需要时留空",\n'
+            f'          "position": "文字位置（top/center/bottom）",\n'
+            f'          "style": "文字风格（highlight/price_tag/call_to_action/subtle）"\n'
             f'        }}\n'
             f'      }}\n'
             f'    }}\n'
             f'  ],\n'
             f'  "audio": {{\n'
             f'    "tts_voice": "zh_female_cancan_mars_bigtts",\n'
-            f'    "bgm": "背景音乐风格描述或文件名",\n'
+            f'    "bgm": "背景音乐风格描述",\n'
             f'    "bgm_volume": 0.3\n'
             f'  }}\n'
             f'}}\n'
             f'```\n\n'
             f"## 场景类型说明\n"
-            f"- hook: 开场，前3秒抓住注意力，提出痛点或制造悬念（3-5秒）\n"
-            f"- selling_point: 卖点展示，展示产品核心优势（4-8秒）\n"
-            f"- detail: 细节特写，展示产品质感和工艺（3-6秒）\n"
-            f"- social_proof: 口碑背书，用户好评或权威认证（3-5秒）\n"
-            f"- price: 价格优惠，制造紧迫感（3-5秒）\n"
-            f"- cta: 行动号召，引导购买（3-5秒）\n\n"
+            f"- hook: 开场，前3秒抓住注意力（3-5秒）\n"
+            f"- selling_point: 卖点展示（4-8秒）\n"
+            f"- detail: 细节特写（3-6秒）\n"
+            f"- social_proof: 口碑背书（3-5秒）\n"
+            f"- price: 价格优惠（3-5秒）\n"
+            f"- cta: 行动号召（3-5秒）\n\n"
             f"## 注意事项\n"
-            f"1. 总时长必须在 12-20 秒之间（当前目标 {target_duration} 秒），scenes 数量 3-5 个，每个场景 duration 在 3-8 秒\n"
-            f"2. image_prompt 要足够详细，能独立生成高质量配图（包含主体、背景、光线、色调、构图）\n"
-            f"3. video_prompt 要描述具体的镜头运动和画面变化，让视频模型知道该怎么动\n"
-            f"4. 文案要口语化、有感染力，适合短视频带货，不要书面语\n"
+            f"1. 总时长 12-20 秒，scenes 3-5 个，每个场景 3-8 秒\n"
+            f"2. image_prompt 要详细（主体、背景、光线、色调、构图）\n"
+            f"3. video_prompt 要描述镜头运动和画面变化\n"
+            f"4. 文案口语化、有感染力，适合短视频带货\n"
             f"5. voice_style 可选：excited/confident/urgent/warm/professional\n"
             f"6. 前3秒是黄金时间，hook 必须足够吸引人\n"
-            f"7. camera 要和画面内容匹配，特写用 close_up，全景用 wide_shot\n"
-            f"8. overlay 用于在画面上叠加关键文字，提高转化率。以下场景建议添加 overlay：\n"
-            f"   - hook 场景：叠加商品名称或核心卖点（如「新手首选」）\n"
-            f"   - selling_point/detail 场景：叠加关键参数或卖点关键词（如「云杉木面板」「好评率98%」）\n"
-            f"   - price 场景：叠加价格信息（如「原价699 现价649」「限时特惠」）\n"
-            f"   - cta 场景：叠加行动号召（如「点击下单」「立即抢购」）\n"
-            f"   - 不需要叠加文字的场景（如纯画面展示），overlay.text 留空字符串\n"
-            f"   - overlay.text 必须简短有力，不超过10个字"
+            f"7. overlay.text 简短有力，不超过10个字"
         )
+
+    # ========== LLM 调用 ==========
 
     async def _call_llm(self, prompt: str) -> dict:
         """调用 LLM 生成剧本"""
