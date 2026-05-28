@@ -105,7 +105,8 @@ class Agent:
 
     def chat(self, session_context: SessionContext, user_message: str, tool_call_enabled: bool = True) -> ChatResponse:
         """
-        处理用户消息，返回回答
+        处理用户消息，返回回答（ReAct范式实现）
+        支持多轮思考-行动循环和并行工具调用
         :param session_context: 会话上下文
         :param user_message: 用户消息内容
         :param tool_call_enabled: 是否启用工具调用
@@ -118,96 +119,112 @@ class Agent:
         )
         session_context.add_message(user_msg)
 
-        # 构建消息
-        messages = self._build_chat_messages(session_context)
+        # 记录所有工具调用信息
+        all_tool_calls = []
+        all_tool_results = []
+        max_iterations = AGENT_CONFIG["react"]["max_iterations"]
+        enable_parallel = AGENT_CONFIG["react"]["enable_parallel_tools"]
 
-        # 调用大模型
         try:
-            # 第一次调用，判断是否需要工具调用
-            create_kwargs = {
-                "model": self.model,
-                "messages": messages,
-                "temperature": self.temperature,
-                "max_tokens": self.max_tokens,
-                "top_p": self.top_p,
-                "stream": False
-            }
+            # ReAct思考-行动循环
+            for iteration in range(max_iterations):
+                # 构建消息
+                messages = self._build_chat_messages(session_context)
 
-            # 如果启用工具调用，添加tools参数
-            if tool_call_enabled and self.tool_definitions:
-                create_kwargs["tools"] = self.tool_definitions
-                create_kwargs["tool_choice"] = "auto"
+                # 调用大模型
+                create_kwargs = {
+                    "model": self.model,
+                    "messages": messages,
+                    "temperature": self.temperature,
+                    "max_tokens": self.max_tokens,
+                    "top_p": self.top_p,
+                    "stream": False
+                }
 
-            response = self.client.chat.completions.create(**create_kwargs)
+                # 如果启用工具调用，添加tools参数
+                if tool_call_enabled and self.tool_definitions:
+                    create_kwargs["tools"] = self.tool_definitions
+                    create_kwargs["tool_choice"] = "auto" if iteration < max_iterations -1 else "none"
 
-            choice = response.choices[0]
-            finish_reason = choice.finish_reason
+                response = self.client.chat.completions.create(**create_kwargs)
+                choice = response.choices[0]
+                finish_reason = choice.finish_reason
 
-            # 处理工具调用
-            if finish_reason == "tool_calls" and choice.message.tool_calls:
-                tool_call = choice.message.tool_calls[0].function
-                tool_name, tool_result, tool_params = self._handle_function_call(tool_call)
-
-                if tool_name:
-                    # 添加助手的工具调用消息
+                # 情况1：没有工具调用，直接返回最终回答
+                if finish_reason != "tool_calls" or not choice.message.tool_calls:
+                    final_answer = choice.message.content
                     assistant_msg = Message(
                         role="assistant",
-                        content="",
-                        tool_call={
-                            "id": choice.message.tool_calls[0].id,
-                            "type": "function",
-                            "function": {
-                                "name": tool_name,
-                                "arguments": tool_call.arguments
-                            }
-                        }
+                        content=final_answer
                     )
                     session_context.add_message(assistant_msg)
 
-                    # 添加工具返回结果消息
+                    # 构造返回结果
+                    return ChatResponse(
+                        session_id=session_context.session_id,
+                        answer=final_answer,
+                        is_tool_call=len(all_tool_calls) > 0,
+                        tool_name=all_tool_calls[0]["name"] if len(all_tool_calls) == 1 else None,
+                        tool_params=all_tool_calls[0]["parameters"] if len(all_tool_calls) == 1 else None,
+                        tool_result=all_tool_results[0] if len(all_tool_results) == 1 else None,
+                        metadata={
+                            "iterations": iteration + 1,
+                            "tool_calls": all_tool_calls,
+                            "tool_results": all_tool_results
+                        }
+                    )
+
+                # 情况2：需要调用工具
+                tool_calls = choice.message.tool_calls
+                tool_call_count = len(tool_calls)
+
+                # 添加助手的工具调用消息
+                assistant_msg = Message(
+                    role="assistant",
+                    content=choice.message.content or "",
+                    tool_call={
+                        "id": tool_calls[0].id if tool_call_count == 1 else None,
+                        "type": "function",
+                        "function": tool_calls[0].function.dict() if tool_call_count == 1 else None,
+                        "parallel_calls": [tc.dict() for tc in tool_calls] if tool_call_count > 1 else None
+                    }
+                )
+                session_context.add_message(assistant_msg)
+
+                # 执行所有工具调用（支持并行）
+                current_tool_results = []
+                for tool_call in tool_calls:
+                    function_call = tool_call.function
+                    tool_name, tool_result, tool_params = self._handle_function_call(function_call)
+
+                    # 记录工具调用信息
+                    call_info = {
+                        "id": tool_call.id,
+                        "name": tool_name,
+                        "parameters": tool_params,
+                        "result": tool_result
+                    }
+                    all_tool_calls.append(call_info)
+                    all_tool_results.append(tool_result)
+                    current_tool_results.append(call_info)
+
+                # 添加工具返回结果消息（每个工具调用对应一个tool消息）
+                for result_info in current_tool_results:
                     tool_msg = Message(
                         role="tool",
-                        content=tool_result,
+                        content=result_info["result"],
                         tool_result={
-                            "tool_call_id": choice.message.tool_calls[0].id,
-                            "name": tool_name,
-                            "result": tool_result
+                            "tool_call_id": result_info["id"],
+                            "name": result_info["name"],
+                            "result": result_info["result"]
                         }
                     )
                     session_context.add_message(tool_msg)
 
-                    # 再次调用大模型，传入工具结果
-                    messages = self._build_chat_messages(session_context)
-                    second_response = self.client.chat.completions.create(
-                        model=self.model,
-                        messages=messages,
-                        temperature=self.temperature,
-                        max_tokens=self.max_tokens,
-                        top_p=self.top_p,
-                        stream=False
-                    )
+                # 继续下一轮迭代，让大模型基于工具结果继续思考
 
-                    second_choice = second_response.choices[0]
-                    final_answer = second_choice.message.content
-
-                    # 添加最终回答到上下文
-                    final_msg = Message(
-                        role="assistant",
-                        content=final_answer
-                    )
-                    session_context.add_message(final_msg)
-
-                    return ChatResponse(
-                        session_id=session_context.session_id,
-                        answer=final_answer,
-                        is_tool_call=True,
-                        tool_name=tool_name,
-                        tool_params=tool_params,
-                        tool_result=tool_result
-                    )
-
-            # 不需要工具调用，直接返回回答
-            final_answer = choice.message.content
+            # 达到最大迭代次数，强制返回
+            final_answer = "抱歉，我无法在有限步骤内回答您的问题，请重新提问。"
             assistant_msg = Message(
                 role="assistant",
                 content=final_answer
@@ -217,15 +234,31 @@ class Agent:
             return ChatResponse(
                 session_id=session_context.session_id,
                 answer=final_answer,
-                is_tool_call=False
+                is_tool_call=len(all_tool_calls) > 0,
+                metadata={
+                    "iterations": max_iterations,
+                    "tool_calls": all_tool_calls,
+                    "tool_results": all_tool_results,
+                    "max_iterations_reached": True
+                }
             )
 
         except Exception as e:
             error_msg = f"处理请求时发生错误：{str(e)}"
+            error_msg = Message(
+                role="assistant",
+                content=error_msg
+            )
+            session_context.add_message(error_msg)
+
             return ChatResponse(
                 session_id=session_context.session_id,
-                answer=error_msg,
-                is_tool_call=False
+                answer=error_msg.content,
+                is_tool_call=len(all_tool_calls) > 0,
+                metadata={
+                    "error": str(e),
+                    "tool_calls": all_tool_calls
+                }
             )
 
 

@@ -31,9 +31,10 @@ class ChatResponse(BaseModel):
     session_id: str = Field(description="会话ID")
     answer: str = Field(description="回答内容")
     is_tool_call: bool = Field(False, description="是否调用了工具")
-    tool_name: Optional[str] = Field(None, description="调用的工具名称")
-    tool_params: Optional[Dict[str, Any]] = Field(None, description="工具调用参数")
-    tool_result: Optional[str] = Field(None, description="工具返回结果")
+    tool_name: Optional[str] = Field(None, description="调用的工具名称（单工具调用时）")
+    tool_params: Optional[Dict[str, Any]] = Field(None, description="工具调用参数（单工具调用时）")
+    tool_result: Optional[str] = Field(None, description="工具返回结果（单工具调用时）")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="额外元数据（迭代次数、多工具调用信息等）")
     timestamp: datetime = Field(default_factory=datetime.now, description="响应时间")
 
     model_config = {

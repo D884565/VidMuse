@@ -4,10 +4,11 @@
 Agentic RAG系统是一个基于大模型和工具调用的智能问答系统，能够自主决定何时检索知识库信息，何时直接回答用户问题。系统将意图识别、上下文管理、检索决策等能力全部交给大模型Agent自主处理，提供更智能、更准确的问答体验。
 
 ## 功能特性
-- 🤖 **智能Agent**：基于豆包大模型，支持function calling能力
-- 🔧 **工具调用**：支持动态调用RAG检索工具，未来可扩展更多工具
-- 💬 **多轮对话**：自动管理会话上下文，支持连贯的多轮对话
+- 🤖 **ReAct智能Agent**：基于思考-行动-观察范式，支持多轮推理和工具调用
+- 🔧 **并行工具调用**：支持一次调用多个工具，提高复杂问题处理效率
+- 🛠️ **多轮工具调用**：支持多次工具调用，逐步解决复杂问题
 - 📚 **RAG集成**：无缝集成已有的RAG检索系统，获取知识库信息
+- 💬 **多轮对话**：自动管理会话上下文，支持连贯的多轮对话
 - 🧩 **可扩展架构**：插件式工具设计，新增工具无需修改核心代码
 - 🚀 **内部调用接口**：提供简洁的Python接口，方便其他模块直接调用
 
@@ -71,9 +72,14 @@ response = agent_service.chat(
 # ChatResponse包含字段：
 # - answer: str 回答内容
 # - is_tool_call: bool 是否调用了工具
-# - tool_name: Optional[str] 调用的工具名称
-# - tool_params: Optional[Dict] 工具调用参数
-# - tool_result: Optional[str] 工具返回结果
+# - tool_name: Optional[str] 调用的工具名称（仅单工具调用时存在）
+# - tool_params: Optional[Dict] 工具调用参数（仅单工具调用时存在）
+# - tool_result: Optional[str] 工具返回结果（仅单工具调用时存在）
+# - metadata: Optional[Dict] 额外元数据，包含：
+#   - iterations: int 迭代次数
+#   - tool_calls: List[Dict] 所有工具调用列表（多工具调用时可查看所有调用信息）
+#   - tool_results: List[str] 所有工具返回结果列表
+#   - max_iterations_reached: bool 是否达到最大迭代次数
 # - session_id: str 会话ID
 # - timestamp: datetime 响应时间
 
