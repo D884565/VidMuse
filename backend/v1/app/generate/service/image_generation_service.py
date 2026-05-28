@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # 火山引擎 Ark 平台图片生成 API 配置
 IMAGE_API_URL = "https://ark.cn-beijing.volces.com/api/v3/images/generations"
-IMAGE_MODEL = "doubao-seedream-5-0-260128"
+IMAGE_MODEL = "doubao-seedream-4-5-251128"
 
 
 class ImageGenerationService:
@@ -40,6 +40,15 @@ class ImageGenerationService:
                                例如：{"商品主图": "https://...", "商品细节图": ["https://...", "https://..."]}
         :returns: 图片 HTTP URL 列表
         """
+        # 提取第一张商品主图作为参考图
+        reference_image = None
+        if product_images:
+            main_imgs = product_images.get("商品主图", [])
+            if isinstance(main_imgs, list) and main_imgs:
+                reference_image = main_imgs[0]
+            elif isinstance(main_imgs, str) and main_imgs:
+                reference_image = main_imgs
+
         image_urls = []
         for i, scene in enumerate(scenes):
             try:
@@ -49,9 +58,6 @@ class ImageGenerationService:
 
                 # 优先使用 LLM 生成的 image_prompt，fallback 到旧格式
                 prompt = visual.get("image_prompt") or self._build_image_prompt(source, variables)
-
-                # 获取参考图片（如果有）
-                reference_image = self._get_reference_image(source, product_images)
 
                 # 调用图片生成 API
                 if reference_image:
@@ -88,16 +94,24 @@ class ImageGenerationService:
 
         :param frames: Frame 对象列表
         :param project_id: 项目 ID
-        :param product_images: 商品图片字典（可选）
+        :param product_images: 商品图片字典（可选），如 {"商品主图": ["url1", "url2"]}
         :returns: 更新后的 Frame 列表
         """
+        # 提取第一张商品主图作为参考图
+        reference_image = None
+        if product_images:
+            main_imgs = product_images.get("商品主图", [])
+            if isinstance(main_imgs, list) and main_imgs:
+                reference_image = main_imgs[0]
+            elif isinstance(main_imgs, str) and main_imgs:
+                reference_image = main_imgs
+
         for i, frame in enumerate(frames):
             try:
                 frame.status = 1  # 生成中
 
                 # 使用 Frame 的 description 作为图片生成 prompt
                 prompt = frame.description or ""
-                reference_image = self._get_reference_image(prompt, product_images)
 
                 if reference_image:
                     image_path = self._call_image_to_image(prompt, reference_image)
