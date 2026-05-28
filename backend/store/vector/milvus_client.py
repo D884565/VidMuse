@@ -47,10 +47,10 @@ class MilvusClientWrapper(VectorDatabase):
         if self.client.has_collection(self.collection_name):
             return self.client.get_collection(self.collection_name)
 
-        # 定义集合schema
+        # 定义集合schema,可以存图像和文本维度的向量
         fields = [
             FieldSchema(name="id", dtype=DataType.VARCHAR, is_primary=True, max_length=100),
-            FieldSchema(name="embedding", dtype=DataType.FLOAT_VECTOR, dim=self.vector_dimension),
+            FieldSchema(name="document_embedding", dtype=DataType.FLOAT_VECTOR, dim=self.vector_dimension),
             FieldSchema(name="metadata", dtype=DataType.JSON),
             FieldSchema(name="document", dtype=DataType.VARCHAR, max_length=65535)
         ]
@@ -90,7 +90,7 @@ class MilvusClientWrapper(VectorDatabase):
             for i in range(len(ids)):
                 item = {
                     "id": ids[i],
-                    "embedding": embeddings[i],
+                    "document_embedding": embeddings[i],
                     "metadata": metadatas[i] if metadatas else {},
                     "document": documents[i] if documents else ""
                 }

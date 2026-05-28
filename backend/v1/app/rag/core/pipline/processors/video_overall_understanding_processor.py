@@ -38,11 +38,10 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
            - 情绪曲线: 视频的情绪变化曲线数组，如["高涨→平稳", "平稳→微升"]
            - 视觉节奏: 整体视觉节奏描述
            - BGM节奏匹配: BGM与画面的匹配情况描述
+        
 
-        需要输出的分片信息：
-        {segment_info}
-
-        请保证所有字段完整，信息不足时可以生成合理的模拟值。
+        请严格按照如下json格式输出解析内容，请保证所有字段完整。
+        {json_template}
         """
 
     def process(self, context: PipelineContext) -> PipelineContext:
@@ -57,12 +56,15 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         if not slices:
             raise ValueError("No aggregated segments found in context")
 
-        # 构建请求prompt
+        # 将解析json铺平合成文本
         segment_info_str = ''.join([JsonFlattener.flatten(s) for s in slices])
-        prompts = self.prompt_template.format(segment_info=load_template("video"))
+
+        # json模板信息注入到prompt
+        prompts = self.prompt_template.format(json_template=load_template("video"))
 
         # 构建大模型请求
         response = self.llm_client.text_understanding(TextUnderstandingRequest(prompt=prompts, text=segment_info_str))
-        context.set("ai_features", response.content)
-        context.set("video",json.loads(response.content) )
+        resolve = json.loads(response.content)
+        context.set("ai_features",resolve)
+        context.set("embed_video",JsonFlattener.flatten(resolve))
         return context

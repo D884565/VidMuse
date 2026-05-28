@@ -45,15 +45,29 @@ class VideoSplitProcessor(BaseProcessor):
         slices = list()
         idx = 0
         images = list()
+        slices_images_name = list()
+        slices_video_name = list()
         # todo 后续异步落库
         for  out in ios:
-            slices.append(client.upload_fileobj(io.BytesIO(out["video_bytes"]), f"{video_id}_video_{idx}.mp4"))
-            images.append(client.upload_fileobj(io.BytesIO(out["frame_bytes"]), f"{video_id}_image_{idx}.jpg"))
+
+            # 对象存储name
+            slice_chunk_name = object_name + f"_slice_{idx}.mp4"
+            slice_img_name = object_name + f"_slice_{idx}.img"
+            slices_images_name.append(slice_img_name)
+            slices_video_name.append(slice_chunk_name)
+
+            # url
+            slices.append(client.upload_fileobj(io.BytesIO(out["video_bytes"]), slice_chunk_name))
+            images.append(client.upload_fileobj(io.BytesIO(out["frame_bytes"]), slice_img_name))
+
             idx += 1
 
 
-        context.set("slices", slices)
-        context.set("frames", images)
-        context.metadata["count"] = len(slices)
 
+
+        context.set("count",len(slices))
+        context.set("slices_url",slices)
+        context.set("images_url",images)
+        context.set("slices_object_name",slices_video_name)
+        context.set("images_object_name",slices_images_name)
         return context

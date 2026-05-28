@@ -67,32 +67,30 @@ class VolcanoLLM(LLMBase):
             return
 
         key =  os.getenv("DOUBAO_SEED_API_KEY")
-        self.default_model = model_name if model_name else os.getenv("DOUBAO_SEED", "doubao-1.5-pro")
-        self.video_model = os.getenv("DOUBAO_SEEDDANCE", "doubao-1.5-pro")
-        self.default_embedding_model = kwargs.get(
-            "default_embedding_model",
-            os.getenv("VOLC_EMBEDDING_MODEL", "bge-large-zh")
-        )
-
+        self.default_model = os.getenv("DOUBAO_SEED", "doubao-1.5-pro")
+        self.video_model = os.getenv("DOUBAO_SEEDDANCE")
+        self.default_embedding_model = os.getenv("EMBED_MODEL")
         # 向量模型可能使用单独的 API Key
-        embedding_key = os.getenv("VOLC_EMBEDDING_API_KEY") or key
+        embedding_key = os.getenv("EMBED_API_KEY")
+
+        url ="https://ark.cn-beijing.volces.com/api/v3"
 
         self.async_client = AsyncArk(
             api_key=key,
             # 豆包API的接入点
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            base_url=url
         )
 
         self.client = Ark(
             api_key=key,
             # 豆包API的接入点
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            base_url=url
         )
 
         # 向量模型客户端（可能使用不同的 API Key）
         self.embedding_client = Ark(
             api_key=embedding_key,
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            base_url=url
         )
 
         # 标记已初始化

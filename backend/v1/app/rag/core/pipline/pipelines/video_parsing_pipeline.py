@@ -1,4 +1,6 @@
 from typing import List, Optional
+
+from backend.v1.app.rag.core.pipline import VectorizationProcessor
 from backend.v1.app.rag.core.pipline.base import BasePipeline, BaseProcessor
 from backend.v1.app.rag.core.pipline.processors import (
     VideoSplitProcessor,
@@ -69,11 +71,14 @@ class VideoParsingPipeline(BasePipeline):
                 # 第一阶段：视频拆分和分片理解
                 VideoSplitProcessor(),
                 VideoUnderstandingProcessor(),
-                slice_validator,  # 校验切片结构
-
+                # todo 后期规则模板校验
+                # slice_validator,
+                # 分片向量处理
+                VectorizationProcessor(data_key="embed_slices"),
                 # 第二阶段：整体理解
                 VideoOverallUnderstandingProcessor(),
-                video_validator   # 校验整体视频结构
+                # video_validator   # 校验整体视频结构
+                VectorizationProcessor(data_key="embed_video"),
             ]
 
         super().__init__(processors)
