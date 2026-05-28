@@ -6,11 +6,17 @@ const iconMap = {
   audio: Music,
 }
 
-export default function MediaCard({ item }) {
+export default function MediaCard({ item, onDelete }) {
   const Icon = iconMap[item.type] || Image
+
+  const handleDelete = (e) => {
+    e.stopPropagation()
+    if (onDelete) onDelete(item.id)
+  }
 
   return (
     <article className="group overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[rgba(26,26,46,0.72)] transition hover:-translate-y-0.5 hover:border-[rgba(124,58,237,0.45)] hover:shadow-[0_4px_24px_rgba(124,58,237,0.15)]">
+      {/* 类型图标预览区域；若有 url 可展示缩略图 */}
       <div className="grid aspect-video place-items-center bg-[rgba(255,255,255,0.04)]">
         <Icon size={28} className="text-[#a78bfa]" />
       </div>
@@ -24,6 +30,7 @@ export default function MediaCard({ item }) {
             className="rounded-lg p-2 text-[var(--text-muted)] opacity-0 hover:bg-[rgba(255,255,255,0.08)] hover:text-white group-hover:opacity-100"
             type="button"
             aria-label="删除素材"
+            onClick={handleDelete}
           >
             <Trash2 size={15} />
           </button>

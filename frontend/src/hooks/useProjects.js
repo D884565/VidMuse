@@ -1,18 +1,34 @@
-export function useProjects() {
-  return [
-    {
-      id: 'p-001',
-      name: '产品宣传片',
-      createdAt: '今天',
-      videos: 3,
-      status: '生成中',
-    },
-    {
-      id: 'p-002',
-      name: '短视频脚本',
-      createdAt: '昨天',
-      videos: 8,
-      status: '已完成',
-    },
-  ]
+import { useState, useEffect, useCallback } from 'react'
+import { getProjects } from '../services/project.js'
+
+/**
+ * 项目列表 hook
+ * @param {Object} [initialParams] - 初始查询参数
+ * @returns {{ projects, loading, error, refetch }}
+ */
+export function useProjects(initialParams = {}) {
+  const [projects, setProjects] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const [params] = useState(initialParams)
+
+  const fetchProjects = useCallback(async () => {
+    try {
+      setLoading(true)
+      const data = await getProjects(params)
+      setProjects(data?.list ?? [])
+      setError(null)
+    } catch (err) {
+      console.error('加载项目列表失败:', err)
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [params])
+
+  useEffect(() => {
+    fetchProjects()
+  }, [fetchProjects])
+
+  return { projects, loading, error, refetch: fetchProjects }
 }
