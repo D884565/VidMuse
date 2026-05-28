@@ -1,6 +1,7 @@
 from typing import Dict, List
-from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 
+from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
+import io
 
 class VideoSplitProcessor(BaseProcessor):
     """
@@ -21,31 +22,52 @@ class VideoSplitProcessor(BaseProcessor):
         执行视频拆分逻辑
 
         :param context: 流水线上下文
-        :return: 修改后的上下文，包含拆分后的片段列表
+        :return: 修改后的上下文，包含拆分后的片段url列表
         """
+
+        # 先获取视频（素材）id，从对象存储中查出来，在内存里面分割，然后再上传对象存储，最后返回的是对象存储的url
         video_id = context.get("video_id")
-
-        video_duration = context.get("video_duration", 60000)  # 默认视频时长1分钟（Mock）
-
-        if not video_id:
+        object_name = context.get("object_name")
+        if not object_name or not video_id:
             raise ValueError("video_id is required in context")
 
-        # Mock 拆分逻辑：按固定时长拆分
-        slices: List[Dict] = []
-        start_time = 0
-        slice_index = 1
+        from backend.store import get_storage_client
+        client = get_storage_client()
+        ios = client.get_object(object_name)
 
-        while start_time < video_duration:
-            end_time = min(start_time + self.slice_duration, video_duration)
-            slices.append({
-                "slice_id": f"s_{slice_index:03d}",
-                "time_range": [start_time, end_time],
-                "video_id": video_id
-            })
-            start_time = end_time
-            slice_index += 1
+        from backend.ffmpeg import FFmpegVideoProcessor
+        ios = (FFmpegVideoProcessor
+                                   .split_into_segments_in_memory(ios,
+                                                                 segment_duration_range=
+                                                                 (self.slice_duration, self.slice_duration),
+                                                                 extract_first_frame=True,
+                                                                 return_frame_bytes=True))
+        slices = list()
+        idx = 0
+        images = list()
+        slices_images_name = list()
+        slices_video_name = list()
+        # todo 后续异步落库
+        for  out in ios:
 
-        context.set("slices", slices)
-        context.metadata["split_count"] = len(slices)
+            # 对象存储name
+            slice_chunk_name = object_name + f"_slice_{idx}.mp4"
+            slice_img_name = object_name + f"_slice_{idx}.img"
+            slices_images_name.append(slice_img_name)
+            slices_video_name.append(slice_chunk_name)
 
+            # url
+            slices.append(client.upload_fileobj(io.BytesIO(out["video_bytes"]), slice_chunk_name))
+            images.append(client.upload_fileobj(io.BytesIO(out["frame_bytes"]), slice_img_name))
+
+            idx += 1
+
+
+
+
+        context.set("count",len(slices))
+        context.set("slices_url",slices)
+        context.set("images_url",images)
+        context.set("slices_object_name",slices_video_name)
+        context.set("images_object_name",slices_images_name)
         return context

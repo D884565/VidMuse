@@ -1,8 +1,12 @@
-import json
 import os
-from typing import Dict, List, Tuple
-from jsonschema import validate, ValidationError
+from typing import Dict, List, Tuple, Optional
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
+from backend.v1.app.rag.core.pipline.utils.template_validator import (
+    load_json_file,
+    validate_with_schema,
+    load_template,
+    VALID_TEMPLATE_DIR
+)
 
 
 class SchemaValidationProcessor(BaseProcessor):
@@ -12,6 +16,7 @@ class SchemaValidationProcessor(BaseProcessor):
     """
 
     def __init__(self, schema_path: str = None,
+                 template_type: str = None,
                  data_key: str = "slice_data",
                  valid_key: str = "valid_slices",
                  invalid_key: str = "invalid_slices",
@@ -20,59 +25,29 @@ class SchemaValidationProcessor(BaseProcessor):
         """
         初始化结构校验处理器
 
-        :param schema_path: JSON Schema文件路径
+        :param schema_path: JSON Schema文件路径，优先级高于template_type
+        :param template_type: 模板类型，可选值：video, slice, product，与schema_path二选一
         :param data_key: 从上下文中获取待校验数据的键名
         :param valid_key: 校验通过数据存储的键名
         :param invalid_key: 校验失败数据存储的键名
         :param summary_key: 校验汇总信息存储的键名
         :param id_field: 数据中唯一标识的字段名，用于错误信息展示
         """
-        if schema_path is None:
-            # 动态构建schema文件路径，适配不同操作系统
-            current_dir = os.path.abspath(__file__)
-            # 从当前文件向上找到项目根目录（通过查找.git目录或requirements.txt判断）
-            project_root = current_dir
-            max_depth = 15
-            while max_depth > 0:
-                # 优先查找项目根目录的标志性文件/目录
-                if (os.path.exists(os.path.join(project_root, ".git")) or
-                    os.path.exists(os.path.join(project_root, "requirements.txt")) or
-                    os.path.exists(os.path.join(project_root, "pyproject.toml"))):
-                    # 检查根目录下是否有resources目录
-                    if os.path.exists(os.path.join(project_root, "resources")):
-                        break
-                project_root = os.path.dirname(project_root)
-                max_depth -= 1
-            if max_depth == 0:
-                # 如果没有找到标志性文件，回退到查找最近的resources目录
-                project_root = current_dir
-                max_depth = 15
-                while max_depth > 0 and not os.path.exists(os.path.join(project_root, "resources")):
-                    project_root = os.path.dirname(project_root)
-                    max_depth -= 1
-                if max_depth == 0:
-                    raise RuntimeError("Could not find project root directory with resources folder")
-            schema_path = os.path.join(project_root, "resources", "template", "resolve", "valid_template", "slice_valid.json")
-
-        self.schema = self._load_schema(schema_path)
+        # 加载Schema：优先使用schema_path，其次使用template_type，默认使用slice模板
+        if schema_path is not None:
+            # 使用指定路径加载Schema，自动验证有效性并缓存
+            self.schema = load_json_file(schema_path, validate_schema=True)
+        elif template_type is not None:
+            # 按模板类型加载
+            self.schema = load_template(template_type)
+        else:
+            # 默认使用slice模板
+            self.schema = load_template("slice")
         self.data_key = data_key
         self.valid_key = valid_key
         self.invalid_key = invalid_key
         self.summary_key = summary_key
         self.id_field = id_field
-
-    def _load_schema(self, schema_path: str) -> Dict:
-        """
-        加载JSON Schema文件
-
-        :param schema_path: Schema文件路径
-        :return: Schema字典
-        """
-        if not os.path.exists(schema_path):
-            raise FileNotFoundError(f"Schema file not found: {schema_path}")
-
-        with open(schema_path, "r", encoding="utf-8") as f:
-            return json.load(f)
 
     def _validate_data(self, data: Dict) -> Tuple[bool, str]:
         """
@@ -81,11 +56,8 @@ class SchemaValidationProcessor(BaseProcessor):
         :param data: 待校验的数据
         :return: (是否通过校验, 错误信息)
         """
-        try:
-            validate(instance=data, schema=self.schema)
-            return True, ""
-        except ValidationError as e:
-            return False, e.message
+        # 使用通用校验方法，支持更详细的错误信息
+        return validate_with_schema(data, self.schema)
 
     def process(self, context: PipelineContext) -> PipelineContext:
         """
@@ -127,3 +99,27 @@ class SchemaValidationProcessor(BaseProcessor):
         })
 
         return context
+
+    @classmethod
+    def for_slice(cls, **kwargs) -> "SchemaValidationProcessor":
+        """
+        创建切片数据校验处理器
+        """
+        return cls(template_type="slice", **kwargs)
+
+    @classmethod
+    def for_video(cls, **kwargs) -> "SchemaValidationProcessor":
+        """
+        创建视频数据校验处理器
+        """
+        return cls(template_type="video", data_key="video_data",
+                   valid_key="valid_videos", invalid_key="invalid_videos", **kwargs)
+
+    @classmethod
+    def for_product(cls, **kwargs) -> "SchemaValidationProcessor":
+        """
+        创建商品数据校验处理器
+        """
+        return cls(template_type="product", data_key="product_data",
+                   valid_key="valid_products", invalid_key="invalid_products",
+                   id_field="product_id", **kwargs)

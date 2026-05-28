@@ -1,9 +1,12 @@
 import asyncio
 import os
+from abc import ABC, abstractmethod
 from typing import Iterator, Optional
 
 from dotenv import load_dotenv
+from openai.resources.chat.completions import messages
 from volcenginesdkarkruntime import Ark, AsyncArk
+from volcenginesdkarkruntime.types.images import SequentialImageGenerationOptions
 from volcenginesdkcore.rest import ApiException
 from backend.framework.exceptions.exceptions import BaseAppException
 from backend.framework.exceptions.error_codes import (
@@ -14,7 +17,7 @@ from backend.framework.exceptions.error_codes import (
     THIRD_PARTY_TIMEOUT
 )
 
-from backend.providers.base import LLMBase
+from backend.providers.base import LLMBase, ImageCallback
 from backend.providers.dto.schema import (
     ChatRequest,
     ChatResponse,
@@ -29,7 +32,7 @@ from backend.providers.dto.schema import (
     TextUnderstandingRequest,
     TextUnderstandingResponse,
     VideoUnderstandingRequest,
-    VideoUnderstandingResponse
+    VideoUnderstandingResponse, ImageGenerateRequest, ImageGenerateResponse, ImageGenerateChunk
 )
 
 load_dotenv()
@@ -64,32 +67,30 @@ class VolcanoLLM(LLMBase):
             return
 
         key =  os.getenv("DOUBAO_SEED_API_KEY")
-        self.default_model = model_name if model_name else os.getenv("DOUBAO_SEED", "doubao-1.5-pro")
-        self.video_model = os.getenv("DOUBAO_SEEDDANCE", "doubao-1.5-pro")
-        self.default_embedding_model = kwargs.get(
-            "default_embedding_model",
-            os.getenv("VOLC_EMBEDDING_MODEL", "bge-large-zh")
-        )
-
+        self.default_model = os.getenv("DOUBAO_SEED", "doubao-1.5-pro")
+        self.video_model = os.getenv("DOUBAO_SEEDDANCE")
+        self.default_embedding_model = os.getenv("EMBED_MODEL")
         # 向量模型可能使用单独的 API Key
-        embedding_key = os.getenv("VOLC_EMBEDDING_API_KEY") or key
+        embedding_key = os.getenv("EMBED_API_KEY")
+
+        url ="https://ark.cn-beijing.volces.com/api/v3"
 
         self.async_client = AsyncArk(
             api_key=key,
             # 豆包API的接入点
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            base_url=url
         )
 
         self.client = Ark(
             api_key=key,
             # 豆包API的接入点
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            base_url=url
         )
 
         # 向量模型客户端（可能使用不同的 API Key）
         self.embedding_client = Ark(
             api_key=embedding_key,
-            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            base_url=url
         )
 
         # 标记已初始化
@@ -179,7 +180,7 @@ class VolcanoLLM(LLMBase):
 
 
 
-    async def generate_video(self, request: VideoRequest, prompt: str, image: str | None) -> VideoResponse | None:
+    async def _generate_video(self, request: VideoRequest, prompt: str, image: str | None) -> VideoResponse | None:
         """
         使用Seedance 1.5生成视频
 
@@ -382,10 +383,10 @@ class VolcanoLLM(LLMBase):
         try:
             # 调用嵌入API（使用单独的向量模型客户端）
             # 多模态嵌入接口要求 input 为 [{type, text}] 格式
-            embedding_input = [{'type': 'text', 'text': t} for t in request.texts]
+            input_content = [text.model_dump() for text in request.texts]
             response = self.embedding_client.multimodal_embeddings.create(
-                input=embedding_input,
-                model=request.model or self.default_embedding_model
+                input=input_content,
+                model=self.default_embedding_model
             )
 
             # 提取嵌入向量（response.data 可能是单个对象或列表）
@@ -417,7 +418,7 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
-    def image_understanding(self, request: ImageUnderstandingRequest) -> ImageUnderstandingResponse:
+    def _image_understanding(self, request: ImageUnderstandingRequest) -> ImageUnderstandingResponse:
         """
         图片理解接口(chat)
         :param request: 图片理解请求对象
@@ -465,7 +466,7 @@ class VolcanoLLM(LLMBase):
             raise  # 确保方法总是抛出异常，不会返回None
 
 
-    async def image_understanding_response(self, request: ImageUnderstandingRequest) -> ImageUnderstandingResponse:
+    async def _image_understanding_response(self, request: ImageUnderstandingRequest) -> ImageUnderstandingResponse:
         """
         图片理解接口(chat)
         :param request: 图片理解请求对象
@@ -536,7 +537,7 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
-    def text_understanding(self, request: TextUnderstandingRequest) -> TextUnderstandingResponse:
+    def _text_understanding(self, request: TextUnderstandingRequest) -> TextUnderstandingResponse:
         """
         文本理解接口
         :param request: 文本理解请求对象
@@ -578,7 +579,7 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
-    async def video_understanding_response(self, request: VideoUnderstandingRequest) -> VideoUnderstandingResponse:
+    async def _video_understanding_response(self, request: VideoUnderstandingRequest) -> VideoUnderstandingResponse:
         """
         视频理解接口(responses)
         :param request: 视频理解请求对象
@@ -648,7 +649,7 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
-    async def video_understanding(self, request: VideoUnderstandingRequest) -> VideoUnderstandingResponse:
+    async def _video_understanding(self, request: VideoUnderstandingRequest) -> VideoUnderstandingResponse:
         """
         视频理解接口（异步）
         :param request: 视频理解请求对象
@@ -696,7 +697,7 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
-    async def video_understanding_response_file(self, request: VideoUnderstandingRequest) -> None:
+    async def _video_understanding_response_file(self, request: VideoUnderstandingRequest) -> None:
         """
         视频理解接口（异步）
         :param request: 视频理解请求对象
@@ -744,6 +745,106 @@ class VolcanoLLM(LLMBase):
             self._handle_api_exception(e)
             raise  # 确保方法总是抛出异常，不会返回None
 
+    def _image_create_stream(self,request: ImageGenerateRequest, callback: ImageCallback):
+
+        stream = self.embedding_client.images.generate(
+            # Replace with Model ID
+            model="doubao-seedream-4-5-251128",
+            prompt=request.prompt,
+            image=request.image,
+            size=request.size,
+            sequential_image_generation=request.sequential_image_generation,
+            sequential_image_generation_options=SequentialImageGenerationOptions(max_images=request.max_images),
+            output_format=request.output_format,
+            response_format=request.response_format,
+            stream=request.stream,
+            watermark=request.watermark
+        )
+
+        image_urls = []
+        total_usage = None
+        for event in stream:
+            if event is None:
+                continue
+            if event.type == "image_generation.partial_failed":
+                callback.on_error(Exception(event.error.message if hasattr(event, 'error') and event.error else "图片生成失败"))
+            elif event.type == "image_generation.partial_succeeded":
+                if event.error is None and event.url:
+                    # 获取图片索引，如果不存在则使用当前列表长度作为索引
+                    partial_image_index = getattr(event, 'partial_image_index', len(image_urls))
+                    chunk = ImageGenerateChunk(
+                        url=event.url,
+                        partial_image_index=partial_image_index)
+                    image_urls.append(chunk)
+                    callback.on_next(chunk)
+            elif event.type == "image_generation.completed":
+                # 构造usage信息，如果响应中包含的话
+                usage = None
+                if hasattr(event, 'usage') and event.usage:
+                    usage_data = event.usage
+                    if isinstance(usage_data, dict):
+                        usage = ChatUsage(
+                            prompt_tokens=usage_data.get('prompt_tokens', 0),
+                            completion_tokens=usage_data.get('completion_tokens', 0),
+                            total_tokens=usage_data.get('total_tokens', 0)
+                        )
+                    else:
+                        usage = ChatUsage(
+                            prompt_tokens=getattr(usage_data, 'prompt_tokens', 0),
+                            completion_tokens=getattr(usage_data, 'completion_tokens', 0),
+                            total_tokens=getattr(usage_data, 'total_tokens', 0)
+                        )
+
+                callback.on_complete(ImageGenerateResponse(
+                    urls=image_urls,
+                    usage=usage
+                ))
+
+    def _image_create(self, request: ImageGenerateRequest):
+
+        response = self.embedding_client.images.generate(
+            # Replace with Model ID
+            model="doubao-seedream-4-5-251128",
+            prompt=request.prompt,
+            image=request.image,
+            size=request.size,
+            response_format=request.response_format,
+            stream=False,
+            watermark=request.watermark
+        )
+        chunks = []
+        for image in response.data:
+            chunks.append(ImageGenerateChunk(
+                url=image.url
+            ))
+
+        # 构造usage信息，如果响应中包含的话
+        usage = None
+        if hasattr(response, 'usage') and response.usage:
+            usage_data = response.usage
+            if isinstance(usage_data, dict):
+                usage = ChatUsage(
+                    prompt_tokens=usage_data.get('prompt_tokens', 0),
+                    completion_tokens=usage_data.get('completion_tokens', 0),
+                    total_tokens=usage_data.get('total_tokens', 0)
+                )
+            else:
+                usage = ChatUsage(
+                    prompt_tokens=getattr(usage_data, 'prompt_tokens', 0),
+                    completion_tokens=getattr(usage_data, 'completion_tokens', 0),
+                    total_tokens=getattr(usage_data, 'total_tokens', 0)
+                )
+
+        return ImageGenerateResponse(
+            urls=chunks,
+            usage=usage
+        )
+
+
+
+
+
+
 
 
 
@@ -774,8 +875,6 @@ class VolcanoLLM(LLMBase):
             raise BaseAppException(THIRD_PARTY_TIMEOUT, message=f"火山引擎服务超时: {error_msg}")
         else:
             raise BaseAppException(AI_GENERATE_FAILED, message=f"生成失败: {error_msg} (错误码: {error_code})")
-
-
 
 
 

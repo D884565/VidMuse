@@ -157,11 +157,13 @@ class VideoResponse(BaseModel):
 class ImageUnderstandingRequest(BaseModel):
     """图片理解请求"""
     image_url: str = Field(description="图片URL")
-    prompt: Optional[str] = Field("请描述这张图片的内容", description="理解提示词")
+    prompt: str = Field("请描述这张图片的内容", description="理解提示词")
     model: Optional[str] = Field(None, description="模型名称，不指定则使用默认多模态模型")
     max_tokens: Optional[int] = Field(2048, description="最大生成token数")
     temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0, description="温度参数")
     top_p: Optional[float] = Field(0.9, ge=0.0, le=1.0, description="核采样参数")
+
+
 
 
 class ImageUnderstandingResponse(BaseModel):
@@ -170,6 +172,39 @@ class ImageUnderstandingResponse(BaseModel):
     usage: ChatUsage = Field(description="token使用情况")
     model: str = Field(description="使用的模型名称")
     id: Optional[str] = Field(None, description="请求ID")
+
+
+class ImageGenerateRequest(BaseModel):
+    """图片生成请求"""
+
+    prompt: str = Field(description="图片生成提示词，描述想要生成的图片内容")
+    image: Optional[List[str]]  = Field(None,description="图文生成可以指定多个图片URL作为参考")
+    model: Optional[str] = Field(None, description="模型名称，不指定则使用默认图片生成模型")
+    size: Optional[str] = Field(None, description="生成图片的尺寸，如1024x1024、2K等")
+    output_format: Optional[str] = Field(None, description="生成图片的文件格式，如jpeg、png等")
+    response_format: Optional[str] = Field("url", description="返回格式：url返回下载地址，b64_json返回base64编码的字节流")
+    watermark: Optional[bool] = Field(False,description="是否生成水印")
+    max_tokens: Optional[int] = Field(2048, description="最大生成token数")
+    temperature: Optional[float] = Field(0.7, ge=0.0, le=2.0, description="温度参数，控制生成的随机性")
+    top_p: Optional[float] = Field(0.9, ge=0.0, le=1.0, description="核采样参数")
+
+    sequential_image_generation: Optional[str] = Field("disabled",description="是否自动生成图序列：disabled/auto")
+    max_images: Optional[int] = Field(3,description="生成组图的数量")
+    stream: bool = Field(False,description="是否流式生图")
+
+
+
+
+class ImageGenerateChunk(BaseModel):
+    """图片生成响应"""
+    url: Optional[str] = Field("http:\\example.com",description="图片生成url")
+    partial_image_index: Optional[int] = Field(0,description="图片在组中的索引")
+
+class ImageGenerateResponse(BaseModel):
+    """图片生成响应"""
+    urls: Optional[List[ImageGenerateChunk]] = Field([],description="生成的图片列表")
+    usage: Optional[ChatUsage] = Field(None,description="token使用情况")
+
 
 
 class VideoUnderstandingRequest(BaseModel):
