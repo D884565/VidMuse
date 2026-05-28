@@ -150,14 +150,17 @@ class FFmpegUtils:
             raise FileNotFoundError(f"音频文件不存在: {audio_path}")
 
         # 构建 FFmpeg 命令
+        video_duration = self.get_video_info(video_path)["duration"]
+
         cmd = [
             FFMPEG_PATH, "-y",
             "-i", video_path,
             "-i", audio_path,
+            "-filter_complex", f"[1:a]apad=whole_dur={video_duration}[a]",
             "-c:v", "copy",
             "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-shortest",
+            "-map", "[a]",
+            "-t", str(video_duration),
             output_path,
         ]
 

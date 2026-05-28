@@ -3,15 +3,15 @@ import { create } from 'zustand'
 export const useAppStore = create((set) => ({
   activeView: 'chat',
   sidebarCollapsed: false,
-  activeProjectId: 'p-001',
+  activeProjectId: null,
   isLoggedIn: !!localStorage.getItem('token'),
   // 用户信息（会话内有效，可通过 /users/me 刷新）
   user: null,
   // refresh_token 存 localStorage 实现跨会话持久化
   parameters: {
-    aspectRatio: '16:9',
-    duration: 10,
-    quality: 'cinematic',
+    style: 'cinematic',
+    target_duration: 15,
+    rag_weight: 0.3,
   },
   setActiveView: (activeView) => set({ activeView }),
   toggleSidebar: () =>

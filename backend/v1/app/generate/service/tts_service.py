@@ -111,8 +111,20 @@ class TtsService:
             clip.close()
         except Exception:
             # 如果 moviepy 失败，创建一个空文件
-            with open(output_path, "wb") as f:
-                f.write(b"\x00" * 1024)
+            import subprocess
+            cmd = [
+                "ffmpeg",
+                "-y",
+                "-f", "lavfi",
+                "-i", "anullsrc=r=44100:cl=mono",
+                "-t", str(duration_sec),
+                "-q:a", "9",
+                "-acodec", "libmp3lame",
+                output_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            if result.returncode != 0:
+                raise RuntimeError(f"create silent mp3 failed: {result.stderr}")
 
         return output_path
 

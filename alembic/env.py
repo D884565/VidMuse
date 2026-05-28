@@ -5,7 +5,6 @@ from alembic import context
 
 # 导入所有模型以便 Alembic 能够检测到
 from backend.v1.app.models.project import Project
-from backend.v1.app.models.script import Script
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.user import User
 from backend.v1.app.models.product import Product

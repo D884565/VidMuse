@@ -43,6 +43,8 @@ def generate_video_task(self, project_id: int):
     """
     logger.info(f"[任务启动] project_id={project_id}")
     temp_dir = tempfile.mkdtemp()
+    db = None
+    audio_path = None
 
     try:
         db = _get_sync_db()
@@ -70,13 +72,13 @@ def generate_video_task(self, project_id: int):
                 texts.append(text)
         full_text = " ".join(texts)
         tts_voice = (frames[0].ai_params or {}).get("voice_style", "")
-        # voice_style 是 excited/confident 等风格，映射到 TTS 音色
+        # voice_style 映射到火山引擎 TTS 音色
         voice_map = {
             "excited": "zh_female_cancan_mars_bigtts",
-            "confident": "zh_female_cancan_mars_bigtts",
-            "urgent": "zh_female_cancan_mars_bigtts",
-            "warm": "zh_female_cancan_mars_bigtts",
-            "professional": "zh_female_cancan_mars_bigtts",
+            "confident": "zh_female_shuangkuai_moon_bigtts",
+            "urgent": "zh_male_chunhou_mars_bigtts",
+            "warm": "zh_female_tianmei_mars_bigtts",
+            "professional": "zh_male_yangguang_mars_bigtts",
         }
         tts_voice = voice_map.get(tts_voice, "zh_female_cancan_mars_bigtts")
         audio_path = tts_service.generate_audio(full_text, tts_voice)
@@ -86,7 +88,32 @@ def generate_video_task(self, project_id: int):
         audio_url = get_storage_client().upload_file(audio_path, audio_object)
         project.audio_url = audio_url
         db.commit()
-        logger.info(f"[TTS] 完成: {audio_object}")
+        logger.info(f"[TTS] 项目级配音完成: {audio_object}")
+
+        # ---- Step 2.5: 帧级 TTS 生成 ----
+        logger.info("[TTS] 开始生成帧级配音...")
+        for frame in frames:
+            frame_ai_params = frame.ai_params or {}
+            frame_text = frame_ai_params.get("text", "") or frame.description or ""
+            if not frame_text:
+                continue
+            frame_voice = frame_ai_params.get("voice_style", "")
+            frame_voice = voice_map.get(frame_voice, "zh_female_cancan_mars_bigtts")
+            try:
+                frame_audio_path = tts_service.generate_audio(frame_text, frame_voice)
+                if frame_audio_path and os.path.exists(frame_audio_path):
+                    frame_audio_object = f"projects/{project_id}/frame_{frame.id}_audio.mp3"
+                    frame_audio_url = get_storage_client().upload_file(frame_audio_path, frame_audio_object)
+                    frame.audio_url = frame_audio_url
+                    db.commit()
+                    logger.info(f"[TTS] 帧 {frame.id} 配音完成")
+                    try:
+                        os.remove(frame_audio_path)
+                    except OSError:
+                        pass
+            except Exception as e:
+                logger.warning(f"[TTS] 帧 {frame.id} 配音失败，跳过: {e}")
+        logger.info("[TTS] 帧级配音生成完成")
 
         # ---- Step 3: 为每个帧生成图片 ----
         logger.info("[图片] 开始生成帧配图...")
@@ -109,6 +136,7 @@ def generate_video_task(self, project_id: int):
         logger.info("[视频] 开始生成帧视频...")
         output_dir = os.path.join(temp_dir, f"project_{project_id}")
         video_path = video_composer.compose_frames(frames, output_dir)
+        db.commit()
 
         # ---- Step 5.5: 合并 TTS 音频到视频 ----
         if audio_path and os.path.exists(audio_path):
@@ -154,6 +182,7 @@ def generate_video_task(self, project_id: int):
             type=2,  # 视频
             title="成品视频",
             url=video_url,
+            duration=int(sum(float(frame.duration or 0) for frame in frames)),
             format="mp4",
             source_type=1,  # AI生成
         ))
@@ -169,17 +198,30 @@ def generate_video_task(self, project_id: int):
     except Exception as exc:
         logger.error(f"[失败] project_id={project_id}, error={exc}", exc_info=True)
         # 更新项目状态为失败
+        fail_db = None
         try:
-            db = _get_sync_db()
-            project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
+            if db:
+                db.rollback()
+            fail_db = _get_sync_db()
+            project = fail_db.execute(select(Project).where(Project.id == project_id)).scalar_one()
             project.status = "failed"
-            db.commit()
+            fail_db.commit()
         except Exception:
             pass
+        finally:
+            if fail_db:
+                fail_db.close()
         # 重试
         raise self.retry(exc=exc)
 
     finally:
+        if audio_path and os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+            except OSError:
+                pass
+        if db:
+            db.close()
         # 清理临时文件
         import shutil
         if os.path.exists(temp_dir):
