@@ -13,6 +13,7 @@ from backend.providers import VolcanoLLM, ChatRequest, ChatMessage
 from backend.v1.app.generate.service._rag_temp.rag_service import (
     MockRAGService, RAGService, RAGResult,
 )
+from backend.v1.app.generate.service.video_generation import video_generation_service
 
 logger = logging.getLogger(__name__)
 
@@ -70,9 +71,18 @@ class ChatService:
         ))
         await db.commit()
 
+        # 自动触发重新生成（仅当有帧被更新时）
+        updated_frames = new_content.get("updated_frames", [])
+        if updated_frames:
+            try:
+                await video_generation_service.submit_generation_task(db, project_id)
+                logger.info(f"[自动重新生成] 已提交任务，project_id={project_id}")
+            except Exception as e:
+                logger.warning(f"[自动重新生成] 提交失败: {e}")
+
         return {
             "message": summary,
-            "updated_frames": new_content.get("updated_frames", []),
+            "updated_frames": updated_frames,
         }
 
     async def regenerate_frame(
@@ -99,6 +109,13 @@ class ChatService:
             frame.status = 0
             await db.commit()
             await db.refresh(frame)
+
+            # 自动触发重新生成
+            try:
+                await video_generation_service.submit_generation_task(db, project_id)
+                logger.info(f"[自动重新生成] 已提交任务，project_id={project_id}, frame_id={frame_id}")
+            except Exception as e:
+                logger.warning(f"[自动重新生成] 提交失败: {e}")
 
             return {
                 "frame_id": frame.id,
@@ -128,6 +145,13 @@ class ChatService:
         frame.status = 0
         await db.commit()
         await db.refresh(frame)
+
+        # 自动触发重新生成
+        try:
+            await video_generation_service.submit_generation_task(db, project_id)
+            logger.info(f"[自动重新生成] 已提交任务，project_id={project_id}, frame_id={frame_id}")
+        except Exception as e:
+            logger.warning(f"[自动重新生成] 提交失败: {e}")
 
         return {
             "frame_id": frame.id,

@@ -8,6 +8,14 @@ from backend.v1.app.models.asset import Asset
 from backend.v1.app.generate.temp.celery_app import celery_app
 
 
+STATUS_TO_INT = {
+    "draft": 0,
+    "script_ready": 1,
+    "processing": 2,
+    "completed": 3,
+    "failed": 4,
+}
+
 
 class VideoGenerationService:
     """视频生成调度服务（编排剧本→TTS→图片→合成→入库）"""
@@ -28,7 +36,14 @@ class VideoGenerationService:
         project = result.scalar_one_or_none()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
-        if project.status not in ("script_ready", "draft"):
+        if project.status == "processing":
+            return {
+                "project_id": project_id,
+                "frames_count": 0,
+                "status": "processing",
+                "message": "generation already in progress",
+            }
+        if project.status not in ("script_ready", "draft", "completed", "failed"):
             raise ValueError(f"当前状态不允许生成: {project.status}")
 
         # 检查是否有帧数据
@@ -78,11 +93,26 @@ class VideoGenerationService:
             )
             assets = asset_result.scalars().all()
 
+        # 查找视频资产ID（用于 Merge 服务）
+        video_asset_id = None
+        if project.video_output_url:
+            video_asset_result = await db.execute(
+                select(Asset.id).where(
+                    Asset.url == project.video_output_url,
+                    Asset.type == 2,
+                ).limit(1)
+            )
+            video_asset_id_row = video_asset_result.scalar_one_or_none()
+            if video_asset_id_row:
+                video_asset_id = video_asset_id_row
+
         return {
             "id": project.id,
             "title": project.title,
             "status": project.status,
+            "status_code": STATUS_TO_INT.get(project.status, 0),
             "video_url": project.video_output_url,
+            "video_asset_id": video_asset_id,
             "audio_url": project.audio_url,
             "frames": [
                 {
@@ -90,15 +120,19 @@ class VideoGenerationService:
                     "sequence": f.sequence,
                     "scene_type": f.scene_type,
                     "description": f.description,
+                    "prompt": f.prompt,
                     "image_url": f.image_url,
+                    "audio_url": f.audio_url,
                     "duration": float(f.duration),
                     "status": f.status,
                     "text_overlay": f.text_overlay,
+                    "ai_params": f.ai_params,
                 }
                 for f in frames
             ],
             "assets": [
                 {
+                    "id": a.id,
                     "type": a.type,
                     "title": a.title,
                     "url": a.url,

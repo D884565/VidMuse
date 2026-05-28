@@ -4,13 +4,15 @@ import { useProjectPolling } from '../../hooks/useProjectPolling.js'
 import { useAppStore } from '../../store/appStore.js'
 import { regenerateFrame, regenerateFrameImage } from '../../services/frame.js'
 import MergePanel from '../Merge/MergePanel.jsx'
+import VideoPlayer from '../VideoPlayer.jsx'
 
 // 帧状态映射
 const STATUS_MAP = {
   0: { text: '待生成', color: 'text-yellow-400' },
-  1: { text: '生成中', color: 'text-blue-400' },
-  2: { text: '已完成', color: 'text-green-400' },
-  3: { text: '失败', color: 'text-red-400' },
+  1: { text: '剧本就绪', color: 'text-purple-400' },
+  2: { text: '生成中', color: 'text-blue-400' },
+  3: { text: '已完成', color: 'text-green-400' },
+  4: { text: '失败', color: 'text-red-400' },
 }
 
 // 场景类型映射
@@ -24,7 +26,7 @@ const SCENE_TYPE_MAP = {
 
 export default function FrameGrid() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
-  const { frames, videoUrl, assets, loading, error } = useProjectPolling(activeProjectId)
+  const { frames, videoUrl, videoAssetId, assets, loading, error } = useProjectPolling(activeProjectId)
   const [regenerating, setRegenerating] = useState({}) // { [frameId]: 'script' | 'image' }
 
   // 重新生成脚本+图片
@@ -96,6 +98,13 @@ export default function FrameGrid() {
           查看和重新生成视频帧
         </p>
       </header>
+
+      {/* 视频预览 */}
+      {videoUrl && (
+        <div className="mb-6">
+          <VideoPlayer src={videoUrl} />
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-4">
         {frames.map((frame) => {
@@ -182,7 +191,7 @@ export default function FrameGrid() {
 
       {/* 音视频合成面板 */}
       <div className="mt-8">
-        <MergePanel videoId={videoUrl ? activeProjectId : null} assets={assets} />
+        <MergePanel videoId={videoAssetId || null} assets={assets} />
       </div>
     </section>
   )

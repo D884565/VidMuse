@@ -5,6 +5,8 @@ RAG搜索功能测试类
 import os
 import pytest
 from dotenv import load_dotenv
+
+pytestmark = pytest.mark.skip(reason="集成测试：需要真实 API 凭据和向量数据库")
 from typing import List, Dict, Any
 
 # 加载环境变量

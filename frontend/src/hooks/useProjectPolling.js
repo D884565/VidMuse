@@ -14,6 +14,7 @@ export function useProjectPolling(projectId) {
   const [project, setProject] = useState(null)
   const [frames, setFrames] = useState([])
   const [videoUrl, setVideoUrl] = useState(null)
+  const [videoAssetId, setVideoAssetId] = useState(null)
   const [audioUrl, setAudioUrl] = useState(null)
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -32,6 +33,7 @@ export function useProjectPolling(projectId) {
         setProject(data)
         setFrames(data.frames || [])
         setVideoUrl(data.video_url || null)
+        setVideoAssetId(data.video_asset_id || null)
         setAudioUrl(data.audio_url || null)
         setAssets(data.assets || [])
         setError(null)
@@ -58,5 +60,5 @@ export function useProjectPolling(projectId) {
     }
   }, [projectId])
 
-  return { project, frames, videoUrl, audioUrl, assets, loading, error }
+  return { project, frames, videoUrl, videoAssetId, audioUrl, assets, loading, error }
 }

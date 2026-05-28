@@ -2,18 +2,22 @@
 import json
 import logging
 
+from typing import Optional
+
 from fastapi import APIRouter, Body, Depends, Path
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.store.database.async_database import get_db
 from backend.v1.app.generate.dao.project import ProjectCreate
+from backend.v1.app.generate.service.project_service import ProjectService
 from backend.v1.app.generate.service.script_generation import script_generation_service
 from backend.v1.app.generate.service.video_generation import video_generation_service
 from backend.v1.app.generate.service.chat_service import chat_service
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
 from backend.framework.web import Response
+from backend.framework.web.auth import get_current_user_id
 from backend.framework.exceptions import BusinessException
-from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR
+from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR, UNAUTHORIZED
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +25,11 @@ router = APIRouter(prefix="/generate/v1/projects", tags=["视频生成"])
 
 
 @router.post("", response_model=Response)
-async def create_project(project: ProjectCreate, db: AsyncSession = Depends(get_db)):
+async def create_project(
+    project: ProjectCreate,
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
     """创建视频项目，自动触发剧本+视频生成"""
     from backend.v1.app.models.project import Project
 
@@ -41,6 +49,7 @@ async def create_project(project: ProjectCreate, db: AsyncSession = Depends(get_
         description=project.description,
         product_url=project.product_url,
         product_info=product_info_str,
+        user_id=current_user_id,
         user_prompt=project.user_prompt,
         reference_images=project.reference_images or [],
         style=project.style,
@@ -68,18 +77,42 @@ async def create_project(project: ProjectCreate, db: AsyncSession = Depends(get_
         })
     except Exception as e:
         logger.warning(f"[项目创建] 自动触发生成失败: {e}")
+        await db.refresh(p)
         return Response.success(data={
             "id": p.id,
             "title": p.title,
             "product_info_crawled": product_info_str is not None,
-            "status": "draft",
+            "status": p.status,
             "generate_error": str(e),
         })
 
 
+@router.get("", response_model=Response)
+async def list_projects(
+    status: Optional[int] = None,
+    keyword: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """项目列表（分页，仅返回当前用户的项目）"""
+    result = await ProjectService.list_projects(
+        db=db, user_id=current_user_id, status=status, keyword=keyword, page=page, page_size=page_size
+    )
+    return Response.success(data=result)
+
+
 @router.get("/{project_id}", response_model=Response)
-async def get_project(project_id: int = Path(..., gt=0), db: AsyncSession = Depends(get_db)):
+async def get_project(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
     """查询项目详情（含状态、帧、素材），前端轮询用"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权访问该项目")
     try:
         detail = await video_generation_service.get_project_detail(db, project_id)
         return Response.success(data=detail)
@@ -87,13 +120,56 @@ async def get_project(project_id: int = Path(..., gt=0), db: AsyncSession = Depe
         raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
 
 
+@router.put("/{project_id}", response_model=Response)
+async def update_project(
+    update_data: dict = Body(...),
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """更新项目信息"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权修改该项目")
+    try:
+        result = await ProjectService.update_project(db, project_id, update_data)
+        return Response.success(data=result)
+    except BusinessException:
+        raise
+    except Exception as e:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"更新失败: {e}")
+
+
+@router.delete("/{project_id}", response_model=Response)
+async def delete_project(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """删除项目"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权删除该项目")
+    try:
+        await ProjectService.delete_project(db, project_id)
+        return Response.success(data={"deleted": True})
+    except BusinessException:
+        raise
+    except Exception as e:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"删除失败: {e}")
+
+
 @router.post("/{project_id}/chat", response_model=Response)
 async def chat_refinement(
     req: dict = Body(...),
     project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """对话式调整：用户发送指令，系统重新生成受影响的部分"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
     try:
         content = req.get("content", "")
         frame_id = req.get("frame_id")
@@ -108,9 +184,13 @@ async def chat_refinement(
 @router.get("/{project_id}/conversations", response_model=Response)
 async def get_conversations(
     project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """获取项目对话历史"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权访问该项目")
     from sqlalchemy import select
     from backend.v1.app.models.conversation import Conversation
 
@@ -137,9 +217,13 @@ async def regenerate_frame(
     req: dict | None = Body(None),
     project_id: int = Path(..., gt=0),
     frame_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """重新生成指定帧的脚本+图片"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
     try:
         instruction = (req or {}).get("instruction")
         result = await chat_service.regenerate_frame(db, project_id, frame_id, instruction)
@@ -153,9 +237,13 @@ async def regenerate_frame_image(
     req: dict | None = Body(None),
     project_id: int = Path(..., gt=0),
     frame_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """只重新生成指定帧的图片（脚本不变）"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
     try:
         instruction = (req or {}).get("instruction")
         result = await chat_service.regenerate_frame_image(db, project_id, frame_id, instruction)

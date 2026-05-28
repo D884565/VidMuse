@@ -3,12 +3,17 @@ import os
 import uuid
 import json
 import asyncio
+import tempfile
+import logging
+import aiohttp
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.merge_task import MergeTask
 from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
+
+logger = logging.getLogger(__name__)
 
 
 class MergeService:
@@ -232,76 +237,108 @@ class MergeService:
         self, task_id: str, video_path: str, audio_path: str
     ):
         """执行音频替换任务"""
+        temp_files = []
         try:
-            # 生成输出文件路径
-            output_path = self._generate_output_path(video_path, "replaced")
+            video_local, video_is_temp = await self._resolve_local_path(video_path)
+            if video_is_temp:
+                temp_files.append(video_local)
+            audio_local, audio_is_temp = await self._resolve_local_path(audio_path)
+            if audio_is_temp:
+                temp_files.append(audio_local)
 
-            # 执行音频替换
-            ffmpeg_utils.replace_audio(video_path, audio_path, output_path)
+            output_path = self._generate_output_path(video_local, "replaced")
+            await asyncio.to_thread(
+                ffmpeg_utils.replace_audio,
+                video_local,
+                audio_local,
+                output_path,
+            )
 
-            # 更新任务状态为完成
             await self._update_task_status(task_id, "completed", {
                 "output_path": output_path,
             })
 
         except Exception as e:
-            # 更新任务状态为失败
             await self._update_task_status(task_id, "failed", error_message=str(e))
+        finally:
+            self._cleanup_temp_files(temp_files)
 
     async def _execute_add_bgm(
         self, task_id: str, video_path: str, bgm_path: str,
         bgm_volume: float, original_volume: float
     ):
         """执行添加BGM任务"""
+        temp_files = []
         try:
-            # 生成输出文件路径
-            output_path = self._generate_output_path(video_path, "bgm")
+            video_local, video_is_temp = await self._resolve_local_path(video_path)
+            if video_is_temp:
+                temp_files.append(video_local)
+            bgm_local, bgm_is_temp = await self._resolve_local_path(bgm_path)
+            if bgm_is_temp:
+                temp_files.append(bgm_local)
 
-            # 执行BGM添加
-            ffmpeg_utils.add_bgm(
-                video_path, bgm_path, output_path,
-                bgm_volume, original_volume
+            output_path = self._generate_output_path(video_local, "bgm")
+            await asyncio.to_thread(
+                ffmpeg_utils.add_bgm,
+                video_local,
+                bgm_local,
+                output_path,
+                bgm_volume,
+                original_volume,
             )
 
-            # 更新任务状态为完成
             await self._update_task_status(task_id, "completed", {
                 "output_path": output_path,
             })
 
         except Exception as e:
-            # 更新任务状态为失败
             await self._update_task_status(task_id, "failed", error_message=str(e))
+        finally:
+            self._cleanup_temp_files(temp_files)
 
     async def _execute_mix_audio(
         self, task_id: str, video_path: str,
         audio_paths: list[str], volumes: list[float] | None
     ):
         """执行音频混合任务"""
+        temp_files = []
         try:
-            # 生成输出文件路径
-            output_path = self._generate_output_path(video_path, "mixed")
+            video_local, video_is_temp = await self._resolve_local_path(video_path)
+            if video_is_temp:
+                temp_files.append(video_local)
 
-            # 执行音频混合
-            ffmpeg_utils.mix_audio_tracks(
-                video_path, audio_paths, output_path, volumes
+            local_audio_paths = []
+            for ap in audio_paths:
+                local_p, is_temp = await self._resolve_local_path(ap)
+                if is_temp:
+                    temp_files.append(local_p)
+                local_audio_paths.append(local_p)
+
+            output_path = self._generate_output_path(video_local, "mixed")
+            await asyncio.to_thread(
+                ffmpeg_utils.mix_audio_tracks,
+                video_local,
+                local_audio_paths,
+                output_path,
+                volumes,
             )
 
-            # 更新任务状态为完成
             await self._update_task_status(task_id, "completed", {
                 "output_path": output_path,
             })
 
         except Exception as e:
-            # 更新任务状态为失败
             await self._update_task_status(task_id, "failed", error_message=str(e))
+        finally:
+            self._cleanup_temp_files(temp_files)
 
     async def _update_task_status(
         self, task_id: str, status: str,
         result: dict | None = None, error_message: str | None = None
     ):
         """更新任务状态"""
-        from backend.store.database.async_database import async_session_factory
-        async with async_session_factory() as session:
+        from backend.store.database.async_database import SessionLocal
+        async with SessionLocal() as session:
             result_query = await session.execute(
                 select(MergeTask).where(MergeTask.task_id == task_id)
             )
@@ -320,13 +357,54 @@ class MergeService:
         asset = result.scalar_one_or_none()
         if not asset:
             raise ValueError(f"资产不存在: {asset_id}")
-        if not asset.url or not os.path.exists(asset.url):
-            raise ValueError(f"文件不存在: {asset_id}")
+        if not asset.url:
+            raise ValueError(f"资产URL为空: {asset_id}")
         return asset
+
+    async def _resolve_local_path(self, url: str) -> tuple[str, bool]:
+        """将URL解析为本地路径。返回 (local_path, is_temp_file)"""
+        if url.startswith(("http://", "https://")):
+            local_path = await self._download_to_temp(url)
+            return local_path, True
+        if not os.path.exists(url):
+            raise ValueError(f"文件不存在: {url}")
+        return url, False
+
+    async def _download_to_temp(self, url: str) -> str:
+        """下载远程文件到临时目录"""
+        ext = os.path.splitext(url.split("?")[0])[1] or ".tmp"
+        fd, local_path = tempfile.mkstemp(suffix=ext, prefix="merge_")
+        os.close(fd)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=300)) as resp:
+                    if resp.status != 200:
+                        raise ValueError(f"下载失败: HTTP {resp.status} for {url}")
+                    with open(local_path, "wb") as f:
+                        async for chunk in resp.content.iter_chunked(8192):
+                            f.write(chunk)
+            logger.info(f"已下载远程文件到本地: {url} -> {local_path}")
+            return local_path
+        except Exception:
+            if os.path.exists(local_path):
+                os.unlink(local_path)
+            raise
+
+    @staticmethod
+    def _cleanup_temp_files(paths: list[str]):
+        """清理临时文件"""
+        for p in paths:
+            try:
+                if p and os.path.exists(p):
+                    os.unlink(p)
+            except OSError:
+                pass
 
     def _generate_output_path(self, video_path: str, suffix: str) -> str:
         """生成输出文件路径"""
         directory = os.path.dirname(video_path)
+        if not directory:
+            directory = tempfile.gettempdir()
         filename = os.path.basename(video_path)
         name, ext = os.path.splitext(filename)
         output_filename = f"{name}_{suffix}_{uuid.uuid4().hex[:8]}{ext}"

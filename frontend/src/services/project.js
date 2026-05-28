@@ -21,5 +21,15 @@ export async function getProjectDetail(projectId) {
  * @param {number} [params.page_size] - 每页数量
  */
 export async function getProjects(params = {}) {
-  return api.get('/rag/v1/projects', { params })
+  return api.get('/generate/v1/projects', { params })
+}
+
+// 更新项目
+export async function updateProject(projectId, data) {
+  return api.put(`/generate/v1/projects/${projectId}`, data)
+}
+
+// 删除项目
+export async function deleteProject(projectId) {
+  return api.delete(`/generate/v1/projects/${projectId}`)
 }

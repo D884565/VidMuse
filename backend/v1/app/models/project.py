@@ -30,8 +30,8 @@ class Project(Base):
     key_points: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="强调卖点列表")
     avoid: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="避免内容列表")
     rag_weight: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False, default=0.3, comment="RAG权重0.00~1.00")
-    target_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=30, comment="目标视频时长(秒)")
-    voice_type: Mapped[str] = mapped_column(String(50), nullable=False, default="zh-CN-XiaoxiaoNeural", comment="语音类型")
+    target_duration: Mapped[int] = mapped_column(Integer, nullable=False, default=15, comment="目标视频时长(秒)")
+    voice_type: Mapped[str] = mapped_column(String(50), nullable=False, default="zh_female_cancan_mars_bigtts", comment="语音类型")
 
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
@@ -43,4 +43,3 @@ class Project(Base):
     # 关联
     frames = relationship("Frame", back_populates="project", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="project", cascade="all, delete-orphan")
-    scripts = relationship("Script", back_populates="project", cascade="all, delete-orphan")

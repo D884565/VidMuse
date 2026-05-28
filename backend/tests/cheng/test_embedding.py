@@ -5,9 +5,12 @@ Embedding 接口测试类
 """
 import unittest
 import os
+import pytest
 from dotenv import load_dotenv
 
 from backend.providers import VolcanoLLM, EmbeddingRequest
+
+pytestmark = pytest.mark.skip(reason="集成测试：需要真实 API 凭据")
 
 
 class TestEmbedding(unittest.TestCase):

@@ -3,9 +3,10 @@ import { useAppStore } from '../../store/appStore.js'
 // 后端状态映射
 const STATUS_DISPLAY = {
   0: { text: '待生成', color: 'bg-[rgba(234,179,8,0.14)] text-[#fbbf24]' },
-  1: { text: '生成中', color: 'bg-[rgba(124,58,237,0.22)] text-[#c4b5fd]' },
-  2: { text: '已完成', color: 'bg-[rgba(16,185,129,0.14)] text-[#6ee7b7]' },
-  3: { text: '失败', color: 'bg-[rgba(239,68,68,0.14)] text-[#f87171]' },
+  1: { text: '剧本就绪', color: 'bg-[rgba(168,85,247,0.14)] text-[#c4b5fd]' },
+  2: { text: '生成中', color: 'bg-[rgba(124,58,237,0.22)] text-[#c4b5fd]' },
+  3: { text: '已完成', color: 'bg-[rgba(16,185,129,0.14)] text-[#6ee7b7]' },
+  4: { text: '失败', color: 'bg-[rgba(239,68,68,0.14)] text-[#f87171]' },
 }
 
 export default function ProjectCard({ project }) {
