@@ -5,11 +5,11 @@ from ...core import BaseDataSourceChannel, DataSourceError, Document
 class HttpAPIChannel(BaseDataSourceChannel):
     """通用HTTP API通道"""
 
-    def __init__(self, config: Dict[str, Any]):
-        self.config = config
-        self.base_url = config.get("base_url", "")
-        self.api_key = config.get("api_key", "")
-        self.timeout = config.get("timeout", 10)
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        self.config = config or {}
+        self.base_url = self.config.get("base_url", "")
+        self.api_key = self.config.get("api_key", "")
+        self.timeout = self.config.get("timeout", 10)
         self._session = None
 
     def connect(self) -> None:
