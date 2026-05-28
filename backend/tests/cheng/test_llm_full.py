@@ -6,8 +6,11 @@ VolcanoLLM 全功能测试类
 import unittest
 import os
 import asyncio
+import pytest
 from dotenv import load_dotenv
 from typing import List, Optional
+
+pytestmark = pytest.mark.skip(reason="集成测试：需要真实 API 凭据")
 
 from backend.providers import StreamChatCallback, VolcanoLLM, ChatRequest, ChatMessage, ImageUnderstandingRequest, \
     TextUnderstandingRequest, VideoUnderstandingRequest, VideoRequest

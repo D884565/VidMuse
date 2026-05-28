@@ -20,7 +20,7 @@ services:
       - MYSQL_PORT=3306
       - MYSQL_DATABASE=aigc_video
       - MYSQL_USER=aigc_user
-      - MYSQL_PASSWORD=aigc_password
+      - MYSQL_PASSWORD=123456
       - MYSQL_ROOT_PASSWORD=root_password
 
       # MinIO 配置
@@ -86,7 +86,7 @@ services:
       - MYSQL_ROOT_PASSWORD=root_password
       - MYSQL_DATABASE=aigc_video
       - MYSQL_USER=aigc_user
-      - MYSQL_PASSWORD=aigc_password
+      - MYSQL_PASSWORD=123456
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init-scripts:/docker-entrypoint-initdb.d:ro

@@ -33,78 +33,62 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id')
     )
 
-    op.create_table('scripts',
-    sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
-    sa.Column('project_id', sa.BigInteger(), nullable=False),
-    sa.Column('content', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
-    sa.ForeignKeyConstraint(['project_id'], ['projects.id'], ),
-    sa.PrimaryKeyConstraint('id')
-    )
-
     op.create_table('assets',
     sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
     sa.Column('user_id', sa.BigInteger(), nullable=True, comment='用户id'),
-    sa.Column('type', sa.String(length=20), nullable=False, comment='video/audio/image'),
+    sa.Column('type', sa.Integer(), nullable=False, comment='资产类型'),
     sa.Column('title', sa.String(length=200), nullable=True),
     sa.Column('url', sa.String(length=500), nullable=False),
-    sa.Column('duration', sa.Float(), nullable=True, comment='时长(秒)'),
     sa.Column('file_size', sa.BigInteger(), nullable=True, comment='文件大小(字节)'),
+    sa.Column('duration', sa.Integer(), nullable=True, comment='时长(秒)'),
+    sa.Column('format', sa.String(length=20), nullable=True, comment='文件格式'),
+    sa.Column('ai_features', sa.JSON(), nullable=True, comment='AI特征因子'),
+    sa.Column('source_type', sa.Integer(), server_default='0', comment='来源'),
     sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
 
     op.create_table('users',
     sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
     sa.Column('username', sa.String(length=50), nullable=False),
-    sa.Column('email', sa.String(length=100), nullable=True),
-    sa.Column('phone', sa.String(length=20), nullable=True),
-    sa.Column('password_hash', sa.String(length=128), nullable=False),
+    sa.Column('password_hash', sa.String(length=255), nullable=False),
+    sa.Column('avatar_url', sa.String(length=500), nullable=True),
+    sa.Column('role', sa.Integer(), nullable=False, server_default='1', comment='角色: 0-超级管理员, 1-普通用户, 2-VIP用户'),
     sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('username'),
-    sa.UniqueConstraint('email'),
-    sa.UniqueConstraint('phone')
+    sa.UniqueConstraint('username')
     )
 
     op.create_table('products',
     sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
-    sa.Column('title', sa.String(length=200), nullable=False),
-    sa.Column('description', sa.Text(), nullable=True),
-    sa.Column('url', sa.String(length=1000), nullable=True),
-    sa.Column('price', sa.Float(), nullable=True),
-    sa.Column('image_url', sa.String(length=500), nullable=True),
+    sa.Column('user_id', sa.BigInteger(), nullable=True, comment='所属用户id'),
+    sa.Column('name', sa.String(length=200), nullable=False, comment='商品名称'),
+    sa.Column('brand', sa.String(length=100), nullable=True, comment='品牌'),
+    sa.Column('category', sa.String(length=100), nullable=True, comment='商品分类'),
+    sa.Column('description', sa.Text(), nullable=True, comment='商品描述'),
+    sa.Column('selling_points', sa.Text(), nullable=True, comment='卖点列表JSON'),
+    sa.Column('specs', sa.Text(), nullable=True, comment='商品规格参数JSON'),
+    sa.Column('tags', sa.Text(), nullable=True, comment='标签JSON'),
+    sa.Column('price', sa.Numeric(precision=12, scale=2), nullable=True, comment='价格'),
+    sa.Column('main_image_url', sa.String(length=500), nullable=True, comment='主图URL'),
+    sa.Column('detail_url', sa.String(length=1000), nullable=True, comment='商品详情页链接'),
+    sa.Column('platform', sa.String(length=50), nullable=True, comment='来源平台'),
+    sa.Column('platform_id', sa.String(length=100), nullable=True, comment='平台商品ID'),
     sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
     sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
+    sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id')
     )
 
-    op.create_table('merge_tasks',
-    sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
-    sa.Column('task_id', sa.String(length=50), nullable=False, comment='任务ID'),
-    sa.Column('task_type', sa.String(length=20), nullable=False, comment='任务类型: audio_replace/bgm/mix'),
-    sa.Column('video_id', sa.BigInteger(), nullable=False, comment='视频资产ID'),
-    sa.Column('params', sa.Text(), nullable=False, comment='任务参数JSON'),
-    sa.Column('status', sa.String(length=20), nullable=False, comment='queued/processing/completed/failed/cancelled'),
-    sa.Column('result', sa.Text(), nullable=True, comment='任务结果JSON'),
-    sa.Column('error_message', sa.Text(), nullable=True, comment='错误信息'),
-    sa.Column('created_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(), server_default=sa.text('now()'), nullable=True),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('task_id')
-    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
-    op.drop_table('merge_tasks')
     op.drop_table('products')
     op.drop_table('users')
     op.drop_table('assets')
-    op.drop_table('scripts')
     op.drop_table('projects')
     # ### end Alembic commands ###
