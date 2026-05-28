@@ -80,7 +80,7 @@ class Settings(BaseSettings):
     # 火山引擎（豆包）
     DOUBAO_SEED_API_KEY: str = ""
     DOUBAO_SEED: str = "doubao-1.5-pro"
-    DOUBAO_SEEDDANCE: str = "doubao-1.5-pro"
+    DOUBAO_SEEDDANCE: str = "Doubao-Seedance-1.5-pro"
     VOLC_EMBEDDING_API_KEY: str = ""
     VOLC_EMBEDDING_MODEL: str = "bge-large-zh"
     VOLC_EMBEDDING_DIMENSION: int = 2048
@@ -103,6 +103,10 @@ class Settings(BaseSettings):
 
     # 火山引擎图片生成 (Seedream 4.5)
     IMAGE_API_KEY: str = ""
+
+    # FFmpeg
+    FFMPEG_PATH: str = ""
+    FFPROBE_PATH: str = ""
 
     # Suno 音乐生成
     SUNO_API_KEY: str = ""
