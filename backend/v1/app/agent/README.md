@@ -8,8 +8,8 @@ Agentic RAG系统是一个基于大模型和工具调用的智能问答系统，
 - 🔧 **工具调用**：支持动态调用RAG检索工具，未来可扩展更多工具
 - 💬 **多轮对话**：自动管理会话上下文，支持连贯的多轮对话
 - 📚 **RAG集成**：无缝集成已有的RAG检索系统，获取知识库信息
-- 🔌 **API接口**：提供标准HTTP API，方便其他服务集成
 - 🧩 **可扩展架构**：插件式工具设计，新增工具无需修改核心代码
+- 🚀 **内部调用接口**：提供简洁的Python接口，方便其他模块直接调用
 
 ## 快速开始
 
@@ -20,185 +20,82 @@ Agentic RAG系统是一个基于大模型和工具调用的智能问答系统，
 DOUBAO_SEED_API_KEY=your_api_key_here
 ```
 
-### 2. 接口使用
+### 2. 内部接口使用
+系统提供简洁的Python接口，其他模块可以直接导入使用，无需通过HTTP调用。
 
-#### 2.1 创建会话
-```http
-POST /v1/agent/session
-Content-Type: application/json
-
-{
-    "user_id": "user_123",
-    "metadata": {
-        "platform": "web",
-        "version": "1.0.0"
-    }
-}
-```
-
-**响应：**
-```json
-{
-    "code": "0000000",
-    "message": "会话创建成功",
-    "data": {
-        "session_id": "session_abc123def456",
-        "created_at": "2024-01-01T12:00:00"
-    }
-}
-```
-
-#### 2.2 发送消息聊天
-```http
-POST /v1/agent/chat
-Content-Type: application/json
-
-{
-    "session_id": "session_abc123def456",
-    "message": "什么是向量数据库？",
-    "stream": false,
-    "tool_call_enabled": true
-}
-```
-
-**响应（无工具调用）：**
-```json
-{
-    "code": "0000000",
-    "message": "请求成功",
-    "data": {
-        "session_id": "session_abc123def456",
-        "answer": "向量数据库是一种专门用于存储和查询向量数据的数据库系统...",
-        "is_tool_call": false,
-        "tool_name": null,
-        "tool_params": null,
-        "tool_result": null,
-        "timestamp": "2024-01-01T12:00:01"
-    }
-}
-```
-
-**响应（有工具调用）：**
-```json
-{
-    "code": "0000000",
-    "message": "请求成功",
-    "data": {
-        "session_id": "session_abc123def456",
-        "answer": "向量数据库是一种专门用于存储和查询向量数据的数据库系统...",
-        "is_tool_call": true,
-        "tool_name": "rag_search",
-        "tool_params": {
-            "query": "什么是向量数据库？",
-            "top_k": 10
-        },
-        "tool_result": "检索到以下相关信息：...",
-        "timestamp": "2024-01-01T12:00:01"
-    }
-}
-```
-
-#### 2.3 获取会话历史
-```http
-GET /v1/agent/session/{session_id}/history
-```
-
-**响应：**
-```json
-{
-    "code": "0000000",
-    "message": "获取成功",
-    "data": {
-        "session_id": "session_abc123def456",
-        "messages": [
-            {
-                "role": "system",
-                "content": "你是一个智能助手...",
-                "timestamp": "2024-01-01T12:00:00"
-            },
-            {
-                "role": "user",
-                "content": "什么是向量数据库？",
-                "timestamp": "2024-01-01T12:00:01"
-            },
-            {
-                "role": "assistant",
-                "content": "向量数据库是...",
-                "timestamp": "2024-01-01T12:00:02"
-            }
-        ],
-        "created_at": "2024-01-01T12:00:00",
-        "updated_at": "2024-01-01T12:00:02"
-    }
-}
-```
-
-#### 2.4 删除会话
-```http
-DELETE /v1/agent/session/{session_id}
-```
-
-**响应：**
-```json
-{
-    "code": "0000000",
-    "message": "会话删除成功",
-    "data": null
-}
-```
-
-## Python SDK 使用示例
+#### 推荐方式：直接使用全局服务实例
 ```python
-import requests
+from backend.v1.app.agent import agent_service
 
-BASE_URL = "http://localhost:8000/v1"
+# 方式一：快速聊天（自动管理会话，适合单轮查询）
+answer = agent_service.quick_chat("什么是向量数据库？")
+print(f"回答: {answer}")
 
+# 方式二：管理会话（适合多轮对话）
 # 1. 创建会话
-session_response = requests.post(
-    f"{BASE_URL}/agent/session",
-    json={"user_id": "test_user"}
-)
-session_id = session_response.json()["data"]["session_id"]
-print(f"创建会话成功: {session_id}")
+session_id = agent_service.create_session(user_id="user_123", metadata={"platform": "internal"})
+print(f"会话ID: {session_id}")
 
-# 2. 发送消息
-chat_response = requests.post(
-    f"{BASE_URL}/agent/chat",
-    json={
-        "session_id": session_id,
-        "message": "什么是向量数据库？"
-    }
-)
-result = chat_response.json()["data"]
-print(f"回答: {result['answer']}")
-print(f"是否调用工具: {result['is_tool_call']}")
-if result['is_tool_call']:
-    print(f"调用工具: {result['tool_name']}")
-    print(f"工具参数: {result['tool_params']}")
+# 2. 多轮对话
+response1 = agent_service.chat(session_id, "什么是向量数据库？")
+print(f"问题1回答: {response1.answer}")
+print(f"是否调用工具: {response1.is_tool_call}")
 
-# 3. 多轮对话
-second_chat_response = requests.post(
-    f"{BASE_URL}/agent/chat",
-    json={
-        "session_id": session_id,
-        "message": "它有什么优势？"
-    }
-)
-second_result = second_chat_response.json()["data"]
-print(f"\n第二个问题回答: {second_result['answer']}")
+response2 = agent_service.chat(session_id, "它有什么优势？")
+print(f"问题2回答: {response2.answer}")
 
-# 4. 获取历史记录
-history_response = requests.get(
-    f"{BASE_URL}/agent/session/{session_id}/history"
-)
-history = history_response.json()["data"]
-print(f"\n历史消息数: {len(history['messages'])}")
+# 3. 获取会话历史
+messages = agent_service.get_session_history(session_id)
+print(f"历史消息数: {len(messages)}")
+for msg in messages:
+    print(f"[{msg.role}]: {msg.content[:50]}...")
 
-# 5. 删除会话
-delete_response = requests.delete(
-    f"{BASE_URL}/agent/session/{session_id}"
+# 4. 删除会话
+agent_service.delete_session(session_id)
+```
+
+#### 完整的接口说明
+```python
+# 创建会话
+session_id = agent_service.create_session(
+    user_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> str
+
+# 发送消息聊天
+response = agent_service.chat(
+    session_id: str,
+    message: str,
+    tool_call_enabled: bool = True
+) -> ChatResponse
+# ChatResponse包含字段：
+# - answer: str 回答内容
+# - is_tool_call: bool 是否调用了工具
+# - tool_name: Optional[str] 调用的工具名称
+# - tool_params: Optional[Dict] 工具调用参数
+# - tool_result: Optional[str] 工具返回结果
+# - session_id: str 会话ID
+# - timestamp: datetime 响应时间
+
+# 快速聊天（自动创建和销毁会话）
+answer: str = agent_service.quick_chat(
+    message: str,
+    tool_call_enabled: bool = True
+) -> str
+
+# 获取会话历史
+messages: Optional[List[Message]] = agent_service.get_session_history(
+    session_id: str
 )
-print(f"\n删除会话: {delete_response.json()['message']}")
+# Message包含字段：
+# - role: str 角色（user/assistant/system/tool）
+# - content: str 内容
+# - timestamp: datetime 时间戳
+# - tool_call: Optional[Dict] 工具调用信息
+# - tool_result: Optional[Dict] 工具结果信息
+
+# 删除会话
+success: bool = agent_service.delete_session(session_id: str)
 ```
 
 ## 系统架构
