@@ -3,16 +3,39 @@ import { create } from 'zustand'
 export const useAppStore = create((set) => ({
   activeView: 'chat',
   sidebarCollapsed: false,
-  activeProjectId: 'p-001',
+  activeProjectId: null,
+  isLoggedIn: !!localStorage.getItem('token'),
+  // 用户信息（会话内有效，可通过 /users/me 刷新）
+  user: null,
+  // refresh_token 存 localStorage 实现跨会话持久化
   parameters: {
-    aspectRatio: '16:9',
-    duration: 10,
-    quality: 'cinematic',
+    style: 'cinematic',
+    target_duration: 15,
+    rag_weight: 0.3,
   },
   setActiveView: (activeView) => set({ activeView }),
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
+  setUser: (user) => set({ user }),
+  setRefreshToken: (refreshToken) => {
+    if (refreshToken) {
+      localStorage.setItem('refresh_token', refreshToken)
+    } else {
+      localStorage.removeItem('refresh_token')
+    }
+  },
+  login: (token, refreshToken, userInfo) => {
+    localStorage.setItem('token', token)
+    if (refreshToken) localStorage.setItem('refresh_token', refreshToken)
+    set({ isLoggedIn: true, user: userInfo || null })
+  },
+  setIsLoggedIn: (isLoggedIn) => set({ isLoggedIn }),
+  logout: () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('refresh_token')
+    set({ isLoggedIn: false, user: null })
+  },
   updateParameters: (patch) =>
     set((state) => ({ parameters: { ...state.parameters, ...patch } })),
 }))

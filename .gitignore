@@ -53,4 +53,3 @@ test_*.html
 export_cookies.py
 
 # RAG 临时接口（RAG团队提供正式实现后删除）
-backend/v1/app/generate/service/_rag_temp/
