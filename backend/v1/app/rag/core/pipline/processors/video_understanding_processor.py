@@ -1,4 +1,6 @@
 import asyncio
+import json
+from email.mime import image
 from typing import Dict, List
 
 from volcenginesdkcore.interceptor.interceptors import request
@@ -6,6 +8,9 @@ from volcenginesdkcore.interceptor.interceptors import request
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM, VideoUnderstandingRequest
 from backend.providers.dto.schema import ChatRequest, ChatMessage, VideoUrlContent
+from backend.v1.app.rag.core.pipline.utils import load_template
+from backend.v1.app.rag.core.pipline.utils.json_flattener import JsonFlattener
+from backend.v1.app.rag.dao import AssetDAO
 
 
 class VideoUnderstandingProcessor(BaseProcessor):
@@ -35,27 +40,7 @@ class VideoUnderstandingProcessor(BaseProcessor):
         4. 生成Prompt完整模板：可以直接用于AI视频生成的完整Prompt描述
         
         完整的json模板如下:
-        {
-        "模板名称": "主播情绪开场",
-        "模板类型": "HOOK",
-        "机制": "mechanism",
-        "总结": "",
-
-        "创作要素": {
-        "画面": "主播半身中景，明亮直播间，暖色调",
-        "动作": "挥手打招呼，表情兴奋",
-        "台词": "家人们，谁懂啊！",
-        "运镜": "固定机位，平视角度",
-        "时长": "3-5秒",
-        "情绪评分": "0.5"
-        },
-
-
-        "一致性": {
-      "商品": [],
-      "置信度": 0.8
-        }
-        }
+        {json_info}
 
         请严格按照JSON格式输出，不要有其他内容。
         """
@@ -67,34 +52,35 @@ class VideoUnderstandingProcessor(BaseProcessor):
         :param context: 流水线上下文
         :return: 修改后的上下文，包含大模型理解结果
         """
-        slices = context.get("slices", [])
-        video_path = context.get("video_path")
 
-        if not slices:
+
+        # 遍历片段url,并行解析片段
+        slices = context.get("slices_url", [])
+        if not slices or len(context.get("slices_count")) == 0:
             raise ValueError("No slices found in context")
-        if not video_path:
-            raise ValueError("video_path is required in context")
 
-        understood_slices: List[Dict] = []
-
-        for slice_info in slices:
+        prompts = self.prompt_template.format(json_info=load_template("slice"))
+        slices = list(dict())
+        embed_slices = list()
+        for i in range(context.get("count")):
             # 构建大模型请求
             response =  asyncio.run(self.llm_client.video_understanding(VideoUnderstandingRequest(
-                video_url=video_path,
-                prompt=self.prompt_template,
-                max_tokens=1024,
+                video_url=slices[i],
+                prompt=prompts,
+                max_tokens=2048,
                 temperature=0.7,
                 top_p=0.9,
                 model=""
             )))
 
-            understanding = response.content
-            
-            # 合并理解结果到片段信息
-            understood_slice = {**slice_info, "understanding": understanding}
-            understood_slices.append(understood_slice)
 
-        context.set("understood_slices", understood_slices)
-        context.metadata["understanding_count"] = len(understood_slices)
+            # 返回就解析
+            # 直接添加模板
+            json_str =json.loads(response.content)
+            embed_slices.append(JsonFlattener.flatten(json_str))
+            slices.append(json_str)
+        # 合并理解结果到片段信息
+        context.set("understood_slices", slices)
+        context.set("embed_slices", embed_slices)
 
         return context

@@ -1,15 +1,82 @@
 {
-  "$schema": "/resources/template/resolve/product.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ProductTemplateSchema",
   "type": "object",
-  "required": ["商品基础信息", "卖点列表", "价格与服务"],
+  "required": ["目标人群", "卖点列表", "物理属性", "价格与服务", "竞争差异化", "合规限制"],
   "properties": {
+    "目标人群": {
+      "type": "object",
+      "required": ["核心人群", "消费心理", "使用场景"],
+      "properties": {
+        "核心人群": { "type": "array", "items": { "type": "string" } },
+        "消费心理": { "type": "array", "items": { "type": "string" } },
+        "使用场景": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+
+    "卖点列表": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["名称", "描述", "优先级", "视频表现手法", "口播参考"],
+        "properties": {
+          "名称": { "type": "string" },
+          "描述": { "type": "string" },
+          "优先级": { "type": "string" },
+          "视频表现手法": { "type": "string" },
+          "口播参考": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+
+    "物理属性": {
+      "type": "object",
+      "required": ["通用属性", "类目专属扩展字段"],
+      "properties": {
+        "通用属性": {
+          "type": "object"
+        },
+        "类目专属扩展字段": {
+          "type": "object"
+        }
+      }
+    },
+
     "价格与服务": {
       "type": "object",
-      "required": ["原价", "现价"],
+      "required": ["原价", "现价", "促销策略", "价格锚点", "服务保障"],
       "properties": {
         "原价": { "type": "number" },
-        "现价": { "type": "number" }
-      }
+        "现价": { "type": "number" },
+        "促销策略": { "type": "string" },
+        "价格锚点": { "type": "string" },
+        "服务保障": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+
+    "竞争差异化": {
+      "type": "object",
+      "required": ["对比维度", "独家优势"],
+      "properties": {
+        "对比维度": { "type": "string" },
+        "独家优势": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+
+    "合规限制": {
+      "type": "object",
+      "required": ["禁用话术", "必须声明"],
+      "properties": {
+        "禁用话术": { "type": "array", "items": { "type": "string" } },
+        "必须声明": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
     }
-  }
+  },
+  "additionalProperties": true
 }

@@ -9,16 +9,14 @@ from .processors import (
     SchemaValidationProcessor,
     ProductUnderstandingProcessor,
     ProductGenerateProcessor,
-    VideoAggregationProcessor,
-    VideoOverallUnderstandingProcessor,
-    VideoGenerateProcessor
+    VectorizationProcessor,
+    VideoOverallUnderstandingProcessor
 )
 
 # 导出流水线
 from .pipelines import (
     VideoParsingPipeline,
-    ProductParsingPipeline,
-    VideoOverallParsingPipeline
+    ProductParsingPipeline
 )
 
 __all__ = [
@@ -34,12 +32,10 @@ __all__ = [
     "SchemaValidationProcessor",
     "ProductUnderstandingProcessor",
     "ProductGenerateProcessor",
-    "VideoAggregationProcessor",
+    "VectorizationProcessor",
     "VideoOverallUnderstandingProcessor",
-    "VideoGenerateProcessor",
 
     # 流水线
     "VideoParsingPipeline",
-    "ProductParsingPipeline",
-    "VideoOverallParsingPipeline"
+    "ProductParsingPipeline"
 ]

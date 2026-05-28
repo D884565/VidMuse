@@ -1,7 +1,10 @@
+import json
 from typing import Dict, List
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
-from backend.providers.dto.schema import ChatRequest, ChatMessage, TextContent
+from backend.providers.dto.schema import ChatRequest, ChatMessage, TextContent, TextUnderstandingRequest
+from backend.v1.app.rag.core.pipline.utils import load_template
+from backend.v1.app.rag.core.pipline.utils.json_flattener import JsonFlattener
 
 
 class VideoOverallUnderstandingProcessor(BaseProcessor):
@@ -35,11 +38,10 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
            - 情绪曲线: 视频的情绪变化曲线数组，如["高涨→平稳", "平稳→微升"]
            - 视觉节奏: 整体视觉节奏描述
            - BGM节奏匹配: BGM与画面的匹配情况描述
+        
 
-        输入的分片信息：
-        {segment_info}
-
-        请保证所有字段完整，信息不足时可以生成合理的模拟值。
+        请严格按照如下json格式输出解析内容，请保证所有字段完整。
+        {json_template}
         """
 
     def process(self, context: PipelineContext) -> PipelineContext:
@@ -49,48 +51,20 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         :param context: 流水线上下文，需要包含 aggregated_segments 字段
         :return: 修改后的上下文，包含视频整体理解结果
         """
-        aggregated_segments = context.get("aggregated_segments", {})
-        video_id = context.get("video_id", "vid_001")
-        video_duration = context.get("video_duration", 60000)
+        slices = context.get("understood_slices")
 
-        if not aggregated_segments:
+        if not slices:
             raise ValueError("No aggregated segments found in context")
 
-        # 构建请求prompt
-        segment_info_str = str(aggregated_segments["segment_list"])
-        prompt = self.prompt_template.format(segment_info=segment_info_str)
+        # 将解析json铺平合成文本
+        segment_info_str = ''.join([JsonFlattener.flatten(s) for s in slices])
+
+        # json模板信息注入到prompt
+        prompts = self.prompt_template.format(json_template=load_template("video"))
 
         # 构建大模型请求
-        request = ChatRequest(
-            messages=[
-                ChatMessage(role="system", content=prompt),
-                ChatMessage(role="user", content=[TextContent(text="请输出视频整体分析结果")])
-            ]
-        )
-
-        # 调用大模型（Mock：实际调用时取消注释）
-        # response = self.llm_client.chat(request)
-        # video_overall_info = response.content
-
-        # Mock 响应（临时使用，实际调用时替换为真实响应）
-        video_overall_info = {
-            "视频基本信息": {
-                "video_id": video_id,
-                "tree_id": "020301",
-                "商品名称": "法式碎花连衣裙",
-                "目标人群": "25-35岁都市女性",
-                "总时长_ms": video_duration,
-                "$剧本scheme": "/",
-                "原片核心文案": aggregated_segments.get("all_copies", [])
-            },
-            "片段索引列表": aggregated_segments.get("segment_list", []),
-            "片段间关系": {
-                "转场序列": ["硬切"] * (len(aggregated_segments["segment_list"]) - 1),
-                "情绪曲线": ["高涨→平稳", "平稳→微升"],
-                "视觉节奏": "中景→近景→中景（无剧烈跳变）",
-                "BGM节奏匹配": "前5秒卡点重音，中段平缓过渡"
-            }
-        }
-
-        context.set("video_overall_info", video_overall_info)
+        response = self.llm_client.text_understanding(TextUnderstandingRequest(prompt=prompts, text=segment_info_str))
+        resolve = json.loads(response.content)
+        context.set("ai_features",resolve)
+        context.set("embed_video",JsonFlattener.flatten(resolve))
         return context

@@ -11,11 +11,10 @@ from backend.v1.app.config.config import settings
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.asset import Asset
-from backend.v1.app.generate.service.tts_service import tts_service
+from backend.providers.tts import tts_service
 from backend.v1.app.generate.service.image_generation_service import image_generation_service
 from backend.v1.app.generate.service.video_composer import video_composer
 from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
-from backend.v1.app.generate.service.music_generation_service import music_generation_service
 from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)

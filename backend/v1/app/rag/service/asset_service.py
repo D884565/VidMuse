@@ -3,11 +3,14 @@ import json
 import asyncio
 from typing import Optional, BinaryIO
 from fastapi import UploadFile, BackgroundTasks
+from pydantic.experimental import pipeline
 from sqlalchemy.orm import Session
+from volcenginesdkarkruntime.resources.context import context
 
 from backend.store import get_storage_client
 from backend.v1.app.config.config import settings
 from backend.store.obj.minio_client import get_minio_client
+from backend.v1.app.rag.core.pipline import VideoParsingPipeline, ProductParsingPipeline
 from backend.v1.app.rag.dao.asset_dao import AssetDAO
 from backend.framework.exceptions.exceptions import BusinessException, BaseAppException
 from backend.framework.exceptions.error_codes import PARAM_ERROR
@@ -50,7 +53,7 @@ class AssetService:
         return ext
 
     @staticmethod
-    def _generate_object_name(asset_type: int, ext: str, is_internal: bool = False) -> str:
+    def generate_object_name(asset_type: int, ext: str, is_internal: bool = False) -> str:
         """生成对象存储路径"""
         type_dir = {1: "img", 2: "video", 3: "audio"}.get(asset_type, "other")
         uuid_str = str(uuid.uuid4()).replace("-", "")
@@ -59,7 +62,7 @@ class AssetService:
         return f"assets/{type_dir}/{uuid_str[:2]}/{uuid_str[2:4]}/{uuid_str}.{ext}"
 
     @staticmethod
-    async def _extract_ai_features(file_url: str, asset_type: int) -> dict:
+    async def _extract_ai_features(id: int, asset_type: int) -> dict:
         """
         提取AI特征
         :param file_url: 文件的公网访问URL
@@ -67,36 +70,14 @@ class AssetService:
         :return: AI特征字典
         """
         try:
-            llm = VolcanoLLM(key=None, model_name=None)
-
-            base_prompt = """请分析这个{media_type}的内容，返回JSON格式结果，包含三个字段：
-1. scene：场景描述，10字以内
-2. mood：氛围描述，10字以内
-3. objects：相关的物体列表，3-5个物体，每个不超过5个字
-
-返回结果只需要JSON，不需要其他内容。"""
-
             if asset_type == 1:  # 图片
-                prompt = base_prompt.format(media_type="图片")
-                request = ImageUnderstandingRequest(
-                    image_url=file_url,
-                    prompt=prompt,
-                    max_tokens=1024,
-                    temperature=0.3,
-                    top_p=0.9
-                )
-                response = llm.image_understanding(request)
+                pipeline = ProductParsingPipeline ()
+                content = pipeline.run({"image": id})
             elif asset_type == 2:  # 视频
-                prompt = base_prompt.format(media_type="视频")
-                request = VideoUnderstandingRequest(
-                    video_url=file_url,
-                    prompt=prompt,
-                    max_tokens=1024,
-                    temperature=0.3,
-                    top_p=0.9
-                )
-                response = await llm.video_understanding(request)
+                pipeline = VideoParsingPipeline()
+                content = pipeline.run({"video": id})
             elif asset_type == 3:  # 音频
+                # todo 后期实现音频解析
                 return {
                     "scene": "音频",
                     "mood": "未知",
@@ -110,23 +91,17 @@ class AssetService:
                 }
 
             try:
-                content = response.content.strip()
-                if content.startswith("```json"):
-                    content = content[7:-3].strip()
-                elif content.startswith("```"):
-                    content = content[3:-3].strip()
 
-                result = json.loads(content)
-                if not isinstance(result, dict):
+                if not isinstance(content, dict):
                     raise ValueError("返回结果不是字典")
                 required_fields = ["scene", "mood", "objects"]
                 for field in required_fields:
-                    if field not in result:
+                    if field not in content:
                         raise ValueError(f"返回结果缺少必要字段: {field}")
-                if not isinstance(result["objects"], list):
-                    result["objects"] = [tag.strip() for tag in str(result["objects"]).split(",")]
+                if not isinstance(content["objects"], list):
+                    content["objects"] = [tag.strip() for tag in str(content["objects"]).split(",")]
 
-                return result
+                return content
             except (json.JSONDecodeError, ValueError):
                 return {
                     "scene": "未知",
@@ -136,35 +111,12 @@ class AssetService:
 
         except BaseAppException:
             return {
-                "scene": "未知",
-                "mood": "未知",
-                "objects": [AssetService.TYPE_NAME.get(asset_type, "素材")]
+                "error": "解析特征失败"
             }
 
-    @staticmethod
-    def _get_file_duration(file: UploadFile, asset_type: int) -> Optional[int]:
-        """获取音视频文件时长（模拟实现）"""
-        if asset_type in [2, 3]:
-            return 15
-        return None
 
-    @staticmethod
-    async def _process_ai_features_background(asset_id: int, presigned_url: str, asset_type: int):
-        """后台异步处理AI特征提取"""
-        try:
-            # 提取AI特征
-            ai_features = await AssetService._extract_ai_features(presigned_url, asset_type)
 
-            # 创建新的数据库会话
-            db = SessionLocal()
-            try:
-                # 更新资产的AI特征
-                AssetDAO.update_asset(db, asset_id, {"ai_features": ai_features})
-            finally:
-                db.close()
-        except Exception as e:
-            # 后台任务出错不影响主流程，只记录日志（这里可以添加日志记录）
-            print(f"提取资产{asset_id}的AI特征失败: {str(e)}")
+
 
     @staticmethod
     async def upload_user_asset(
@@ -186,7 +138,7 @@ class AssetService:
         ext = AssetService._validate_file(file, type)
 
         # 生成用户资产存储路径
-        object_name = AssetService._generate_object_name(type, ext, is_internal=False)
+        object_name = AssetService._generate_object_name(type, file.filename, ext,is_internal=False)
 
         # 上传到存储
         client = get_storage_client()
@@ -200,11 +152,6 @@ class AssetService:
         if not title:
             title = file.filename or f"{AssetService.TYPE_NAME.get(type, '素材')}_{uuid.uuid4().hex[:8]}"
 
-        # 获取预签名URL用于后续AI分析
-        presigned_url = client.get_presigned_url(object_name)
-
-        # 获取文件时长
-        duration = AssetService._get_file_duration(file, type)
 
         # 准备数据，AI特征先设为None，后续异步更新
         asset_data = {
@@ -212,7 +159,8 @@ class AssetService:
             "title": title.strip(),
             "url": file_url,
             "file_size": file.size,
-            "duration": duration,
+            # 时长由解析通道完成
+            "duration": None,
             "format": ext,
             "ai_features": None,
             "source_type": source_type,
@@ -223,13 +171,32 @@ class AssetService:
         asset = AssetDAO.create_asset(db, asset_data)
         asset_dict = asset.to_dict()
 
-        # 将AI特征提取任务添加到后台执行
-        background_tasks.add_task(
-            AssetService._process_ai_features_background,
-            asset_id=asset.id,
-            presigned_url=presigned_url,
-            asset_type=type
-        )
+
+        # 传入视频id
+        context = await AssetService._extract_ai_features(asset.id, asset.type)
+
+
+        # todo 目前先将解析结果落库，后续再优化
+        slices = []
+        for i in range(context["slice_len"]):
+            context["slice_id"] = i
+            response_data = {
+                "id": asset_dict["id"],
+                "type": asset_dict["type"],
+                "type_name": AssetService.TYPE_NAME.get(asset_dict["type"], "未知"),
+                "title": asset_dict["title"],
+                "url": asset_dict["url"],
+                "file_size": asset_dict["file_size"],
+                "duration": asset_dict["duration"],
+                "format": asset_dict["format"],
+                "ai_features": context["ai_features"],
+                "source_type": asset_dict["source_type"],
+                "created_at": asset_dict["created_at"]
+            }
+            slices.append(response_data)
+        AssetDAO.insert_batch_assets(db, slices)
+
+
 
         # 构造响应数据
         response_data = {
@@ -241,6 +208,7 @@ class AssetService:
             "file_size": asset_dict["file_size"],
             "duration": asset_dict["duration"],
             "format": asset_dict["format"],
+            "ai_features": context["ai_features"],
             "source_type": asset_dict["source_type"],
             "created_at": asset_dict["created_at"]
         }
@@ -267,7 +235,7 @@ class AssetService:
         ext = AssetService._validate_file(file, type)
 
         # 生成内部资产存储路径
-        object_name = AssetService._generate_object_name(type, ext, is_internal=True)
+        object_name = AssetService._generate_object_name(type, file.filename, ext,is_internal=True)
 
         # 上传到存储
         client = get_storage_client()
@@ -281,8 +249,7 @@ class AssetService:
         if not title:
             title = file.filename or f"系统{AssetService.TYPE_NAME.get(type, '素材')}_{uuid.uuid4().hex[:8]}"
 
-        # 获取文件时长
-        duration = AssetService._get_file_duration(file, type)
+
 
         # 准备数据
         asset_data = {
@@ -290,22 +257,23 @@ class AssetService:
             "title": title.strip(),
             "url": file_url,
             "file_size": file.size,
-            "duration": duration,
+            "duration": None,
             "format": ext,
             "ai_features": None,
             "source_type": source_type,
             "user_id": 0  # 系统用户ID，0表示内部资产
         }
 
-        # 如果不需要跳过AI分析，则同步提取特征（内部接口可以接受稍长时间）
-        if not skip_ai_analysis:
-            presigned_url = client.get_presigned_url(object_name)
-            ai_features = await AssetService._extract_ai_features(presigned_url, type)
-            asset_data["ai_features"] = ai_features
 
         # 创建资产记录
         asset = AssetDAO.create_asset(db, asset_data)
         asset_dict = asset.to_dict()
+
+
+        # 如果不需要跳过AI分析，则同步提取特征（内部接口可以接受稍长时间）
+        if not skip_ai_analysis:
+            context = await AssetService._extract_ai_features(asset_dict["id"], type)
+            asset_data["ai_features"] = context["ai_features"]
 
         # 构造响应数据
         response_data = {
@@ -465,3 +433,16 @@ class AssetService:
         success = AssetDAO.delete_asset(db, asset_id)
         if not success:
             raise BusinessException(PARAM_ERROR, "删除失败")
+
+    @classmethod
+    def _generate_object_name(cls, type,  file_name ,ext, is_internal) ->str:
+        mappings = {
+            1: "image",
+            2: "video",
+            3: "audio"
+        }
+        if is_internal:
+            return f"material/{mappings[type]}/{file_name}.{ext}"
+        else:
+            return f"assets/{mappings[type]}/{file_name}.{ext}"
+        return ""
