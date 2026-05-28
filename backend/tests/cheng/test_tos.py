@@ -3,8 +3,11 @@ TOS 客户端测试脚本
 注意：运行前请确保已在 .env 文件中配置正确的 TOS 参数
 """
 import os
+import pytest
 from dotenv import load_dotenv
 from backend.store import get_tos_client
+
+pytestmark = pytest.mark.skip(reason="集成测试：需要真实 TOS 凭据")
 
 # 加载环境变量
 

@@ -1,6 +1,10 @@
-DROP TABLE IF EXISTS scripts;
+DROP TABLE IF EXISTS conversations;
+DROP TABLE IF EXISTS frames;
+DROP TABLE IF EXISTS merge_tasks;
+DROP TABLE IF EXISTS assets;
+DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS projects;
-DROP TABLE IF EXISTS materials;
+DROP TABLE IF EXISTS users;
 
 
 
@@ -23,11 +27,21 @@ CREATE TABLE IF NOT EXISTS projects (
     title           VARCHAR(200) NOT NULL COMMENT '项目标题',
     description     TEXT COMMENT '项目描述',
     product_url     VARCHAR(1000) COMMENT '商品链接',
+    product_info    TEXT COMMENT '商品信息(爬取/LLM整理)',
     video_output_url VARCHAR(500) COMMENT '最终成片URL',
     audio_url       VARCHAR(500) COMMENT 'TTS配音音频URL',
-    status          VARCHAR(50) DEFAULT 'draft' COMMENT '项目状态: draft/script_ready/processing/completed/failed',
+    status          VARCHAR(20) DEFAULT 'draft' COMMENT '项目状态: draft/script_ready/processing/completed/failed',
     user_id         BIGINT COMMENT '用户id',
-  	product_id      BIGINT COMMENT '商品id',
+    product_id      BIGINT COMMENT '商品id',
+    user_prompt     TEXT COMMENT '用户创作意图',
+    reference_images JSON COMMENT '参考图片URL列表',
+    style           VARCHAR(50) COMMENT '视频风格',
+    target_audience VARCHAR(100) COMMENT '目标受众',
+    key_points      JSON COMMENT '强调卖点列表',
+    avoid           JSON COMMENT '避免内容列表',
+    rag_weight      DECIMAL(3,2) NOT NULL DEFAULT 0.30 COMMENT 'RAG权重',
+    target_duration INT NOT NULL DEFAULT 30 COMMENT '目标视频时长(秒)',
+    voice_type      VARCHAR(50) NOT NULL DEFAULT 'zh_female_cancan_mars_bigtts' COMMENT '语音类型',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -101,3 +115,33 @@ CREATE TABLE IF NOT EXISTS products (
     INDEX idx_category (category),
     FULLTEXT INDEX ft_name_desc (name, description)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
+
+
+
+CREATE TABLE IF NOT EXISTS merge_tasks (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    task_id         VARCHAR(50) NOT NULL COMMENT '任务ID',
+    task_type       VARCHAR(20) NOT NULL COMMENT '任务类型: audio_replace/bgm/mix',
+    video_id        BIGINT NOT NULL COMMENT '视频资产ID',
+    params          TEXT NOT NULL COMMENT '任务参数JSON',
+    status          VARCHAR(20) NOT NULL DEFAULT 'queued' COMMENT 'queued/processing/completed/failed/cancelled',
+    result          TEXT COMMENT '任务结果JSON',
+    error_message   TEXT COMMENT '错误信息',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_task_id (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='音视频合成任务表';
+
+
+
+CREATE TABLE IF NOT EXISTS conversations (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    project_id      BIGINT NOT NULL COMMENT '项目id',
+    role            VARCHAR(20) NOT NULL COMMENT 'user/assistant',
+    content         TEXT NOT NULL COMMENT '消息内容',
+    frame_id        BIGINT COMMENT '关联帧ID',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE SET NULL,
+    INDEX idx_conversations_project (project_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话记录表';

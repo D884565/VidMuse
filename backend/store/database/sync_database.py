@@ -1,8 +1,10 @@
 """同步数据库连接（RAG 模块使用）"""
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.orm import sessionmaker
 
 from backend.v1.app.config.config import settings
+# 复用 async_database 的 Base，确保模型元数据一致
+from backend.store.database.async_database import Base
 
 engine = create_engine(
     settings.sync_db_url,
@@ -12,8 +14,6 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
-Base = declarative_base()
 
 
 def get_db():

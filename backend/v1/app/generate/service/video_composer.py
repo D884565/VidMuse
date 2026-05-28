@@ -113,10 +113,11 @@ class VideoComposer:
                     prompt += f"\n氛围：{mood}"
 
                 # 时长限制（Seedance 1.5 i2v 模式固定 5 秒）
-                duration = 5
+                generation_duration = 5
+                target_dur = max(1.0, float(frame.duration or generation_duration))
 
                 video_request = VideoRequest(
-                    duration=duration,
+                    duration=generation_duration,
                     ratio="9:16",
                     generate_audio=False,
                     draft=False,
@@ -150,6 +151,27 @@ class VideoComposer:
                         logger.info(f"[视频裁剪] 帧 {frame.sequence} 裁剪到 {target_dur} 秒")
                     except Exception as trim_err:
                         logger.warning(f"[视频裁剪] 裁剪失败，使用原始 5 秒: {trim_err}")
+
+                if target_dur > 5:
+                    extended_path = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}_extended.mp4")
+                    try:
+                        loops = max(1, math.ceil(target_dur / 5) - 1)
+                        cmd = [
+                            FFMPEG_PATH,
+                            "-y",
+                            "-stream_loop", str(loops),
+                            "-i", local_path,
+                            "-t", str(target_dur),
+                            "-c", "copy",
+                            extended_path,
+                        ]
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                        if result.returncode != 0:
+                            raise RuntimeError(result.stderr)
+                        local_path = extended_path
+                        logger.info(f"[视频补时] 帧 {frame.sequence} 补足到 {target_dur} 秒")
+                    except Exception as extend_err:
+                        logger.warning(f"[视频补时] 补时失败，使用原始 5 秒: {extend_err}")
 
                 video_paths.append(local_path)
 
@@ -337,7 +359,7 @@ class VideoComposer:
         except Exception as e:
             logger.error(f"[视频拼接] moviepy concat 失败: {str(e)}")
             # 如果所有拼接方式都失败，返回第一个视频
-            return video_paths[0] if video_paths else self._generate_placeholder_video(output_dir, 30, 0)
+            raise RuntimeError(f"video concat failed: {e}") from e
 
     def _download_video(self, url: str, local_path: str):
         """
