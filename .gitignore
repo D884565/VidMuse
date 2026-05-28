@@ -42,6 +42,11 @@ openspec/
 test_output/
 localTest/
 
+
+
+__pycache__/
+*.py[cod]
+
 # Cookie 文件（包含登录信息）
 backend/v1/app/product/service/cookies/*.json
 
