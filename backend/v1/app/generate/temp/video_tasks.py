@@ -1,4 +1,5 @@
 """Celery 视频生成异步任务（基于 frames 表）"""
+import json
 import os
 import logging
 import tempfile
@@ -89,7 +90,18 @@ def generate_video_task(self, project_id: int):
 
         # ---- Step 3: 为每个帧生成图片 ----
         logger.info("[图片] 开始生成帧配图...")
-        frames = image_generation_service.generate_frame_images(frames, project_id)
+        # 解析商品图片，传给图片生成服务做参考图
+        product_images = None
+        if project.product_info:
+            try:
+                product_data = json.loads(project.product_info)
+                main_images = product_data.get("main_images", [])
+                if main_images:
+                    product_images = {"商品主图": main_images}
+                    logger.info(f"[图片] 已加载 {len(main_images)} 张商品主图作为参考")
+            except (json.JSONDecodeError, TypeError):
+                pass
+        frames = image_generation_service.generate_frame_images(frames, project_id, product_images=product_images)
         db.commit()
         logger.info(f"[图片] 完成: {len(frames)}张")
 
@@ -110,28 +122,27 @@ def generate_video_task(self, project_id: int):
         else:
             logger.warning("[音频合并] 无 TTS 音频文件，跳过合并")
 
-        # ---- Step 5.6: 生成 BGM 并混入视频 ----
-        bgm_desc = (frames[0].ai_params or {}).get("bgm", "")
-        if bgm_desc:
-            bgm_path = music_generation_service.generate_bgm(bgm_desc)
-            if bgm_path and os.path.exists(bgm_path):
-                try:
-                    bgm_output = os.path.join(output_dir, "bgm_output.mp4")
-                    ffmpeg_utils.add_bgm(video_path, bgm_path, bgm_output, bgm_volume=0.3, original_volume=1.0)
-                    video_path = bgm_output
-                    logger.info("[BGM] 背景音乐已混入视频")
-                except Exception as e:
-                    logger.warning(f"[BGM] 混音失败，降级上传无 BGM 视频: {e}")
-                finally:
-                    # 清理 BGM 临时文件
-                    try:
-                        os.remove(bgm_path)
-                    except OSError:
-                        pass
-            else:
-                logger.warning("[BGM] BGM 生成失败，跳过混音")
-        else:
-            logger.info("[BGM] 无 BGM 描述，跳过生成")
+        # ---- Step 5.6: 生成 BGM 并混入视频（暂时禁用，接口保留） ----
+        # bgm_desc = (frames[0].ai_params or {}).get("bgm", "")
+        # if bgm_desc:
+        #     bgm_path = music_generation_service.generate_bgm(bgm_desc)
+        #     if bgm_path and os.path.exists(bgm_path):
+        #         try:
+        #             bgm_output = os.path.join(output_dir, "bgm_output.mp4")
+        #             ffmpeg_utils.add_bgm(video_path, bgm_path, bgm_output, bgm_volume=0.3, original_volume=1.0)
+        #             video_path = bgm_output
+        #             logger.info("[BGM] 背景音乐已混入视频")
+        #         except Exception as e:
+        #             logger.warning(f"[BGM] 混音失败，降级上传无 BGM 视频: {e}")
+        #         finally:
+        #             try:
+        #                 os.remove(bgm_path)
+        #             except OSError:
+        #                 pass
+        #     else:
+        #         logger.warning("[BGM] BGM 生成失败，跳过混音")
+        # else:
+        #     logger.info("[BGM] 无 BGM 描述，跳过生成")
 
         # 上传成品视频到 TOS
         video_object = f"projects/{project_id}/output.mp4"
