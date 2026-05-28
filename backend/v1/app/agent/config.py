@@ -9,6 +9,11 @@ AGENT_CONFIG: Dict[str, Any] = {
         "max_tokens": 2000,        # 最大生成token数
         "top_p": 0.9,              # top_p参数
     },
+    # ReAct配置
+    "react": {
+        "max_iterations": 5,       # 最大思考-行动迭代次数，防止无限循环
+        "enable_parallel_tools": True,  # 是否启用并行工具调用
+    },
 
     # 工具配置
     "tools": {
