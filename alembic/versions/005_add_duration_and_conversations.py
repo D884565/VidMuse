@@ -14,8 +14,8 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("projects", sa.Column("target_duration", sa.Integer(), nullable=False, server_default="30", comment="目标视频时长(秒)"))
-    op.add_column("projects", sa.Column("voice_type", sa.String(50), nullable=False, server_default="zh-CN-XiaoxiaoNeural", comment="语音类型"))
+    op.add_column("projects", sa.Column("target_duration", sa.Integer(), nullable=False, server_default="15", comment="目标视频时长(秒)"))
+    op.add_column("projects", sa.Column("voice_type", sa.String(50), nullable=False, server_default="zh_female_cancan_mars_bigtts", comment="语音类型"))
     op.create_table(
         "conversations",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),

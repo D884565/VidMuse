@@ -37,7 +37,6 @@ class ProductCrawlService:
     """商品信息抓取服务"""
 
     def __init__(self):
-        self.storage = get_storage_client()
         os.makedirs(COOKIE_DIR, exist_ok=True)
 
     def _load_cookies(self, platform: str) -> list[dict]:
@@ -199,7 +198,7 @@ class ProductCrawlService:
                 response.raise_for_status()
 
                 # 上传到TOS
-                url = self.storage.upload_fileobj(io.BytesIO(response.content), object_key)
+                url = get_storage_client().upload_fileobj(io.BytesIO(response.content), object_key)
                 result["main"].append(url)
             except Exception as e:
                 logger.warning(f"[图片上传] 主图上传失败: {e}")
@@ -211,7 +210,7 @@ class ProductCrawlService:
                 response = requests.get(img_url, timeout=10)
                 response.raise_for_status()
 
-                url = self.storage.upload_fileobj(io.BytesIO(response.content), object_key)
+                url = get_storage_client().upload_fileobj(io.BytesIO(response.content), object_key)
                 result["detail"].append(url)
             except Exception as e:
                 logger.warning(f"[图片上传] 详情图上传失败: {e}")

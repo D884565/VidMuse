@@ -4,12 +4,11 @@
 所有业务逻辑委托给 UserService，自身不包含业务代码。
 """
 from typing import Optional
-from fastapi import APIRouter, Depends, Header
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.framework.web.response import Response
-from backend.framework.exceptions.exceptions import BusinessException
-from backend.framework.exceptions.error_codes import UNAUTHORIZED
+from backend.framework.web.auth import get_current_user_id
 from backend.store.database.sync_database import get_db
 from backend.v1.app.user.service.user_service import user_service
 from backend.v1.app.user.dao.schema import (
@@ -20,24 +19,6 @@ from backend.v1.app.user.dao.schema import (
 )
 
 router = APIRouter(tags=["用户模块"])
-
-
-# ==================== 认证依赖 ====================
-
-def _get_current_user_id(authorization: Optional[str] = Header(None)) -> int:
-    """从 Authorization 请求头解析当前登录用户的ID
-
-    用法：在路由函数参数中通过 Depends(_get_current_user_id) 注入。
-    请求头格式：Authorization: Bearer <access_token>
-
-    :param authorization: Authorization 请求头的值
-    :return: 当前用户ID
-    :raises BusinessException: 未携带 token 或 token 无效时抛出 UNAUTHORIZED
-    """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise BusinessException(UNAUTHORIZED)
-    token = authorization[7:]  # 去掉 "Bearer " 前缀
-    return user_service.get_user_id_from_token(token)
 
 
 # ==================== 认证接口（无需登录） ====================
@@ -64,7 +45,7 @@ def refresh(refresh_token: str, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/logout", response_model=Response, summary="退出登录")
-def logout(current_user_id: int = Depends(_get_current_user_id)):
+def logout(current_user_id: int = Depends(get_current_user_id)):
     """退出登录（JWT 无状态，客户端丢弃 token 即可）"""
     return Response.success(data=None, message="退出成功")
 
@@ -72,21 +53,21 @@ def logout(current_user_id: int = Depends(_get_current_user_id)):
 # ==================== 用户信息接口（需要登录） ====================
 
 @router.get("/users/me", response_model=Response, summary="获取当前用户信息")
-def get_me(current_user_id: int = Depends(_get_current_user_id), db: Session = Depends(get_db)):
+def get_me(current_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     """获取当前登录用户的详细信息"""
     result = user_service.get_user_info(db, current_user_id)
     return Response.success(data=result)
 
 
 @router.put("/users/me", response_model=Response, summary="更新用户信息")
-def update_me(req: UserUpdateRequest, current_user_id: int = Depends(_get_current_user_id), db: Session = Depends(get_db)):
+def update_me(req: UserUpdateRequest, current_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     """更新当前用户的用户名和头像"""
     result = user_service.update_user(db, current_user_id, req.username, req.avatar_url)
     return Response.success(data=result, message="更新成功")
 
 
 @router.put("/users/me/password", response_model=Response, summary="修改密码")
-def change_password(req: PasswordChangeRequest, current_user_id: int = Depends(_get_current_user_id), db: Session = Depends(get_db)):
+def change_password(req: PasswordChangeRequest, current_user_id: int = Depends(get_current_user_id), db: Session = Depends(get_db)):
     """修改当前用户的密码"""
     user_service.change_password(db, current_user_id, req.old_password, req.new_password)
     return Response.success(data=None, message="密码修改成功")
@@ -100,7 +81,7 @@ def list_users(
     keyword: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """获取所有用户列表，支持按角色筛选和关键词搜索"""

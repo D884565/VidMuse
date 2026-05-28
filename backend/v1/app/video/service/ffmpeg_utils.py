@@ -3,10 +3,20 @@ import os
 import shutil
 import subprocess
 import json
+import logging
 from typing import Optional
 
-FFMPEG_PATH = shutil.which("ffmpeg") or r"C:\Users\练轩成\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe"
-FFPROBE_PATH = shutil.which("ffprobe") or r"C:\Users\练轩成\AppData\Local\Microsoft\WinGet\Links\ffprobe.exe"
+from backend.v1.app.config.config import settings
+
+logger = logging.getLogger(__name__)
+
+FFMPEG_PATH = settings.FFMPEG_PATH or os.environ.get("FFMPEG_PATH") or shutil.which("ffmpeg") or "ffmpeg"
+FFPROBE_PATH = settings.FFPROBE_PATH or os.environ.get("FFPROBE_PATH") or shutil.which("ffprobe") or "ffprobe"
+
+# 各操作的超时秒数
+_TIMEOUT_PROBE = 30
+_TIMEOUT_SPLIT = 120
+_TIMEOUT_AUDIO = 180
 
 
 class FFmpegUtils:
@@ -30,8 +40,8 @@ class FFmpegUtils:
             FFPROBE_PATH,
             "-v", "quiet",
             "-print_format", "json",
-            "-show_format",
-            "-show_streams",
+            "-show_entries",
+            "format=duration,size,format_name:stream=codec_type,width,height,r_frame_rate",
             video_path,
         ]
 
@@ -39,10 +49,13 @@ class FFmpegUtils:
             result = subprocess.run(
                 cmd,
                 capture_output=True,
-                text=True,
+                text=False,
                 check=True,
+                timeout=_TIMEOUT_PROBE,
             )
-            data = json.loads(result.stdout)
+            data = json.loads(result.stdout.decode("utf-8", errors="replace"))
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"FFprobe 执行超时 ({_TIMEOUT_PROBE}s): {video_path}")
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"FFprobe 执行失败: {e.stderr}")
         except json.JSONDecodeError as e:
@@ -121,7 +134,10 @@ class FFmpegUtils:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_TIMEOUT_SPLIT,
             )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"视频分割超时 ({_TIMEOUT_SPLIT}s): {input_path}")
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"视频分割失败: {e.stderr}")
 
@@ -150,14 +166,17 @@ class FFmpegUtils:
             raise FileNotFoundError(f"音频文件不存在: {audio_path}")
 
         # 构建 FFmpeg 命令
+        video_duration = self.get_video_info(video_path)["duration"]
+
         cmd = [
             FFMPEG_PATH, "-y",
             "-i", video_path,
             "-i", audio_path,
+            "-filter_complex", f"[1:a]apad=whole_dur={video_duration}[a]",
             "-c:v", "copy",
             "-map", "0:v:0",
-            "-map", "1:a:0",
-            "-shortest",
+            "-map", "[a]",
+            "-t", str(video_duration),
             output_path,
         ]
 
@@ -167,7 +186,10 @@ class FFmpegUtils:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_TIMEOUT_AUDIO,
             )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"音频替换超时 ({_TIMEOUT_AUDIO}s): {video_path}")
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"音频替换失败: {e.stderr}")
 
@@ -218,7 +240,10 @@ class FFmpegUtils:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_TIMEOUT_AUDIO,
             )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"添加 BGM 超时 ({_TIMEOUT_AUDIO}s): {video_path}")
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"添加 BGM 失败: {e.stderr}")
 
@@ -284,7 +309,10 @@ class FFmpegUtils:
                 capture_output=True,
                 text=True,
                 check=True,
+                timeout=_TIMEOUT_AUDIO,
             )
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"音频混合超时 ({_TIMEOUT_AUDIO}s): {video_path}")
         except subprocess.CalledProcessError as e:
             raise RuntimeError(f"音频混合失败: {e.stderr}")
 
