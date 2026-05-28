@@ -24,21 +24,6 @@ class Message(BaseModel):
     }
 
 
-class CreateSessionResponse(BaseModel):
-    """创建会话响应"""
-    session_id: str = Field(description="会话ID")
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
-
-    model_config = {
-        "json_schema_extra": {
-            "examples": [
-                {
-                    "session_id": "session_abc123def456",
-                    "created_at": "2024-01-01T12:00:00"
-                }
-            ]
-        }
-    }
 
 
 class ChatResponse(BaseModel):
