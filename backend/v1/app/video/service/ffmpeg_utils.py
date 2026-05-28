@@ -1,8 +1,12 @@
 """FFmpeg 工具类"""
 import os
+import shutil
 import subprocess
 import json
 from typing import Optional
+
+FFMPEG_PATH = shutil.which("ffmpeg") or r"C:\Users\练轩成\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe"
+FFPROBE_PATH = shutil.which("ffprobe") or r"C:\Users\练轩成\AppData\Local\Microsoft\WinGet\Links\ffprobe.exe"
 
 
 class FFmpegUtils:
@@ -23,7 +27,7 @@ class FFmpegUtils:
 
         # 使用 ffprobe 获取视频信息
         cmd = [
-            "ffprobe",
+            FFPROBE_PATH,
             "-v", "quiet",
             "-print_format", "json",
             "-show_format",
@@ -98,7 +102,7 @@ class FFmpegUtils:
             raise FileNotFoundError(f"视频文件不存在: {input_path}")
 
         # 构建 FFmpeg 命令
-        cmd = ["ffmpeg", "-y", "-i", input_path]
+        cmd = [FFMPEG_PATH, "-y", "-i", input_path]
 
         # 设置开始时间
         if start > 0:
@@ -147,7 +151,7 @@ class FFmpegUtils:
 
         # 构建 FFmpeg 命令
         cmd = [
-            "ffmpeg", "-y",
+            FFMPEG_PATH, "-y",
             "-i", video_path,
             "-i", audio_path,
             "-c:v", "copy",
@@ -197,7 +201,7 @@ class FFmpegUtils:
 
         # 构建 FFmpeg 命令
         cmd = [
-            "ffmpeg", "-y",
+            FFMPEG_PATH, "-y",
             "-i", video_path,
             "-i", bgm_path,
             "-filter_complex",
@@ -266,7 +270,7 @@ class FFmpegUtils:
         filter_complex = ";".join(filter_parts)
 
         # 构建完整命令
-        cmd = ["ffmpeg", "-y"] + inputs + [
+        cmd = [FFMPEG_PATH, "-y"] + inputs + [
             "-filter_complex", filter_complex,
             "-map", "0:v:0",
             "-map", "[out]",
