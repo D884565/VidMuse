@@ -8,6 +8,7 @@ import logging
 import requests
 
 from backend.v1.app.config.config import settings
+from backend.v1.app.video.service.ffmpeg_utils import FFMPEG_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class TtsService:
         # TTS_ACCESS_KEY 作为 appid，TTS_SECRET_KEY 作为 access_token
         self.app_id = settings.TTS_ACCESS_KEY
         self.token = settings.TTS_SECRET_KEY
+        self.last_fallback = False
 
     def generate_audio(self, text: str, voice_type: str = "zh_female_cancan_mars_bigtts") -> str:
         """
@@ -33,9 +35,11 @@ class TtsService:
         :returns: 本地音频文件路径
         """
         try:
+            self.last_fallback = False
             return self._call_volcano_tts(text, voice_type)
         except Exception as e:
             logger.warning(f"[TTS] 火山引擎调用失败，使用静音音频: {str(e)}")
+            self.last_fallback = True
             return self._create_silent_audio(text)
 
     def _call_volcano_tts(self, text: str, voice_type: str) -> str:
@@ -113,7 +117,7 @@ class TtsService:
             # 如果 moviepy 失败，创建一个空文件
             import subprocess
             cmd = [
-                "ffmpeg",
+                FFMPEG_PATH,
                 "-y",
                 "-f", "lavfi",
                 "-i", "anullsrc=r=44100:cl=mono",

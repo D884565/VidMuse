@@ -1,5 +1,9 @@
-"""视频处理服务"""
+"""Video processing service."""
 import os
+import tempfile
+import uuid
+
+import requests
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,31 +12,21 @@ from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
 
 
 class VideoService:
-    """视频处理服务"""
+    """Video metadata and split operations for local or remote asset URLs."""
 
     async def get_video_info(self, db: AsyncSession, video_id: int) -> dict:
-        """
-        获取视频元数据信息
-
-        Args:
-            db: 数据库会话
-            video_id: 视频文件ID
-
-        Returns:
-            视频信息字典
-        """
-        # 查询视频资产
         result = await db.execute(select(Asset).where(Asset.id == video_id))
         asset = result.scalar_one_or_none()
         if not asset:
             raise ValueError(f"视频不存在: {video_id}")
 
-        # 检查文件是否存在
-        if not asset.url or not os.path.exists(asset.url):
-            raise ValueError(f"视频文件不存在: {video_id}")
+        local_path, is_temp = self._resolve_local_path(asset.url)
+        try:
+            info = ffmpeg_utils.get_video_info(local_path)
+        finally:
+            if is_temp:
+                self._cleanup_file(local_path)
 
-        # 使用 FFmpeg 获取视频信息
-        info = ffmpeg_utils.get_video_info(asset.url)
         return {
             "video_id": video_id,
             "duration": info["duration"],
@@ -46,66 +40,82 @@ class VideoService:
     async def split_video(
         self, db: AsyncSession, video_id: int, timestamps: list[float]
     ) -> dict:
-        """
-        按时间戳分段视频
-
-        Args:
-            db: 数据库会话
-            video_id: 视频文件ID
-            timestamps: 时间戳列表
-
-        Returns:
-            分段结果
-        """
-        # 查询视频资产
         result = await db.execute(select(Asset).where(Asset.id == video_id))
         asset = result.scalar_one_or_none()
         if not asset:
             raise ValueError(f"视频不存在: {video_id}")
 
-        # 检查文件是否存在
-        if not asset.url or not os.path.exists(asset.url):
-            raise ValueError(f"视频文件不存在: {video_id}")
+        local_path, is_temp = self._resolve_local_path(asset.url)
+        try:
+            info = ffmpeg_utils.get_video_info(local_path)
+            duration = info["duration"]
 
-        # 获取视频时长
-        info = ffmpeg_utils.get_video_info(asset.url)
-        duration = info["duration"]
+            sorted_timestamps = sorted(timestamps)
+            if sorted_timestamps and sorted_timestamps[-1] > duration:
+                raise ValueError(f"时间戳超出视频时长: {duration}")
 
-        # 验证时间戳
-        sorted_timestamps = sorted(timestamps)
-        if sorted_timestamps[-1] > duration:
-            raise ValueError(f"时间戳超出视频时长: {duration}")
+            output_dir = os.path.join(
+                tempfile.gettempdir(),
+                f"video_splits_{video_id}_{uuid.uuid4().hex[:8]}",
+            )
+            os.makedirs(output_dir, exist_ok=True)
 
-        # 创建输出目录
-        output_dir = os.path.join(os.path.dirname(asset.url), "splits")
-        os.makedirs(output_dir, exist_ok=True)
+            all_timestamps = [0.0] + sorted_timestamps + [None]
+            segments = []
+            for i in range(len(all_timestamps) - 1):
+                start = all_timestamps[i]
+                end = all_timestamps[i + 1]
+                output_file = os.path.join(output_dir, f"{video_id}_segment_{i:03d}.mp4")
+                ffmpeg_utils.split_video(local_path, output_file, start, end)
+                segments.append({
+                    "index": i,
+                    "start": start,
+                    "end": end,
+                    "file": output_file,
+                })
 
-        # 构建完整的时间点列表（包括开始和结束）
-        all_timestamps = [0.0] + sorted_timestamps + [None]
+            return {
+                "video_id": video_id,
+                "duration": duration,
+                "segments": segments,
+                "total_segments": len(segments),
+            }
+        finally:
+            if is_temp:
+                self._cleanup_file(local_path)
 
-        segments = []
-        for i in range(len(all_timestamps) - 1):
-            start = all_timestamps[i]
-            end = all_timestamps[i + 1]
+    def _resolve_local_path(self, url: str | None) -> tuple[str, bool]:
+        if not url:
+            raise ValueError("视频文件URL为空")
+        if url.startswith(("http://", "https://")):
+            return self._download_to_temp(url), True
+        if not os.path.exists(url):
+            raise ValueError(f"视频文件不存在: {url}")
+        return url, False
 
-            # 生成输出文件名
-            output_file = os.path.join(output_dir, f"{video_id}_segment_{i:03d}.mp4")
+    def _download_to_temp(self, url: str) -> str:
+        suffix = os.path.splitext(url.split("?")[0])[1] or ".mp4"
+        fd, local_path = tempfile.mkstemp(prefix="video_asset_", suffix=suffix)
+        os.close(fd)
+        try:
+            with requests.get(url, stream=True, timeout=120) as response:
+                response.raise_for_status()
+                with open(local_path, "wb") as f:
+                    for chunk in response.iter_content(chunk_size=8192):
+                        if chunk:
+                            f.write(chunk)
+            return local_path
+        except Exception:
+            self._cleanup_file(local_path)
+            raise
 
-            # 执行分段
-            ffmpeg_utils.split_video(asset.url, output_file, start, end)
-            segments.append({
-                "index": i,
-                "start": start,
-                "end": end,
-                "file": output_file,
-            })
-
-        return {
-            "video_id": video_id,
-            "duration": duration,
-            "segments": segments,
-            "total_segments": len(segments),
-        }
+    @staticmethod
+    def _cleanup_file(path: str):
+        try:
+            if path and os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
 
 
 video_service = VideoService()

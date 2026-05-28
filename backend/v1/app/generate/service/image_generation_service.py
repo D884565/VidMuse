@@ -23,7 +23,6 @@ class ImageGenerationService:
     def __init__(self):
         self.temp_dir = tempfile.gettempdir()
         self.api_key = settings.IMAGE_API_KEY
-        self.storage = get_storage_client()
 
     def generate_scene_images(
         self,
@@ -108,6 +107,10 @@ class ImageGenerationService:
 
         for i, frame in enumerate(frames):
             try:
+                if frame.image_url:
+                    logger.info(f"[图片生成] 帧 {frame.sequence} 已有图片，跳过重复生成: {frame.image_url}")
+                    continue
+
                 frame.status = 1  # 生成中
 
                 # 使用 Frame 的 description 作为图片生成 prompt
@@ -313,7 +316,7 @@ class ImageGenerationService:
         :returns: 图片 HTTP URL
         """
         object_key = f"projects/{project_id}/scene_{scene_index + 1}.png"
-        url = self.storage.upload_file(local_path, object_key)
+        url = get_storage_client().upload_file(local_path, object_key)
 
         # upload_file 已返回公共 URL，直接使用
         return url

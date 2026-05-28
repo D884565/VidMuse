@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.merge_task import MergeTask
 from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
+from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)
 
@@ -254,8 +255,11 @@ class MergeService:
                 output_path,
             )
 
+            output_url = self._upload_to_storage(output_path, task_id, "replaced")
+            self._cleanup_temp_files([output_path])
+
             await self._update_task_status(task_id, "completed", {
-                "output_path": output_path,
+                "output_url": output_url,
             })
 
         except Exception as e:
@@ -287,8 +291,11 @@ class MergeService:
                 original_volume,
             )
 
+            output_url = self._upload_to_storage(output_path, task_id, "bgm")
+            self._cleanup_temp_files([output_path])
+
             await self._update_task_status(task_id, "completed", {
-                "output_path": output_path,
+                "output_url": output_url,
             })
 
         except Exception as e:
@@ -323,8 +330,11 @@ class MergeService:
                 volumes,
             )
 
+            output_url = self._upload_to_storage(output_path, task_id, "mixed")
+            self._cleanup_temp_files([output_path])
+
             await self._update_task_status(task_id, "completed", {
-                "output_path": output_path,
+                "output_url": output_url,
             })
 
         except Exception as e:
@@ -409,6 +419,14 @@ class MergeService:
         name, ext = os.path.splitext(filename)
         output_filename = f"{name}_{suffix}_{uuid.uuid4().hex[:8]}{ext}"
         return os.path.join(directory, output_filename)
+
+    def _upload_to_storage(self, local_path: str, task_id: str, suffix: str) -> str:
+        """上传文件到对象存储，返回远程 URL"""
+        ext = os.path.splitext(local_path)[1] or ".mp4"
+        object_key = f"merge/{task_id}/{suffix}_{uuid.uuid4().hex[:8]}{ext}"
+        url = get_storage_client().upload_file(local_path, object_key)
+        logger.info(f"[Merge] 已上传到对象存储: {object_key}")
+        return url
 
 
 merge_service = MergeService()
