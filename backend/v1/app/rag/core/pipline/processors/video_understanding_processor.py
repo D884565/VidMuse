@@ -1,5 +1,6 @@
 import asyncio
 import json
+from email.mime import image
 from typing import Dict, List
 
 from volcenginesdkcore.interceptor.interceptors import request
@@ -8,6 +9,7 @@ from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM, VideoUnderstandingRequest
 from backend.providers.dto.schema import ChatRequest, ChatMessage, VideoUrlContent
 from backend.v1.app.rag.core.pipline.utils import load_template
+from backend.v1.app.rag.core.pipline.utils.json_flattener import JsonFlattener
 from backend.v1.app.rag.dao import AssetDAO
 
 
@@ -53,26 +55,32 @@ class VideoUnderstandingProcessor(BaseProcessor):
 
 
         # 遍历片段url,并行解析片段
-        slices = context.get("slices", [])
+        slices = context.get("slices_url", [])
         if not slices or len(context.get("slices_count")) == 0:
             raise ValueError("No slices found in context")
 
         prompts = self.prompt_template.format(json_info=load_template("slice"))
         slices = list(dict())
-        for i,slice_info in enumerate(slices):
+        embed_slices = list()
+        for i in range(context.get("count")):
             # 构建大模型请求
             response =  asyncio.run(self.llm_client.video_understanding(VideoUnderstandingRequest(
-                video_url=slice_info,
-                prompt=self.prompt_template,
+                video_url=slices[i],
+                prompt=prompts,
                 max_tokens=2048,
                 temperature=0.7,
                 top_p=0.9,
                 model=""
             )))
+
+
             # 返回就解析
             # 直接添加模板
-            slices.append(json.loads(response.content))
+            json_str =json.loads(response.content)
+            embed_slices.append(JsonFlattener.flatten(json_str))
+            slices.append(json_str)
         # 合并理解结果到片段信息
         context.set("understood_slices", slices)
+        context.set("embed_slices", embed_slices)
 
         return context
