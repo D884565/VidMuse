@@ -23,3 +23,9 @@ export async function regenerateFrameImage(projectId, frameId, instruction) {
     instruction,
   })
 }
+
+export async function retryFrame(projectId, frameId, instruction) {
+  return api.post(`/generate/v1/projects/${projectId}/frames/${frameId}/retry`, {
+    instruction,
+  })
+}

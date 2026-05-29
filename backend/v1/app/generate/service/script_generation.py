@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
+from backend.v1.app.models.generation_task import GenerationTask
 from backend.providers import VolcanoLLM, ChatRequest, ChatMessage
 from backend.v1.app.generate.service._rag_temp.rag_service import (
     RAGService, MockRAGService, RAGResult,
@@ -61,6 +62,19 @@ class ScriptGenerationService:
             )
             if not incomplete:
                 return frames_list
+
+            active_task_result = await db.execute(
+                select(GenerationTask)
+                .where(
+                    GenerationTask.project_id == project_id,
+                    GenerationTask.task_type.in_(["render", "frame_retry", "export"]),
+                    GenerationTask.status.in_(["queued", "running"]),
+                )
+                .limit(1)
+            )
+            if active_task_result.scalar_one_or_none():
+                raise ValueError("项目正在渲染，不能删除分镜并重新生成剧本")
+
             logger.warning(f"[script_generation] project {project_id} has incomplete frames; regenerating script")
             for frame in frames_list:
                 await db.delete(frame)

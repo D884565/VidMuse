@@ -124,6 +124,7 @@ class ImageGenerationService:
                 image_url = self._upload_to_tos(image_path, project_id, frame.sequence - 1)
                 frame.image_url = image_url
                 frame.status = 2  # 已完成
+                frame.error_message = None
 
                 logger.info(f"[图片生成] 帧 {frame.sequence} 生成成功: {image_url}")
             except Exception as e:
@@ -132,6 +133,7 @@ class ImageGenerationService:
                 placeholder_url = self._upload_to_tos(placeholder_path, project_id, frame.sequence - 1)
                 frame.image_url = placeholder_url
                 frame.status = 3  # 失败
+                frame.error_message = f"图片生成失败: {str(e)}"
 
         return frames
 

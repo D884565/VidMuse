@@ -47,7 +47,7 @@ class ProjectDAO:
     async def list_projects(
         db: AsyncSession,
         user_id: Optional[int] = None,
-        status: Optional[str] = None,
+        status: Optional[str | list[str]] = None,
         keyword: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
@@ -57,7 +57,10 @@ class ProjectDAO:
         if user_id is not None:
             query = query.where(Project.user_id == user_id)
         if status is not None:
-            query = query.where(Project.status == status)
+            if isinstance(status, list):
+                query = query.where(Project.status.in_(status))
+            else:
+                query = query.where(Project.status == status)
         if keyword:
             query = query.where(
                 Project.title.like(f"%{keyword}%")

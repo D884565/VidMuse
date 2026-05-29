@@ -6,12 +6,16 @@ from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.generate.temp.celery_app import celery_app
+from backend.v1.app.generate.service.task_service import generation_task_service
 
 
 STATUS_TO_INT = {
     "draft": 0,
+    "script_generating": 2,
     "script_ready": 1,
     "processing": 2,
+    "render_queued": 2,
+    "rendering": 2,
     "completed": 3,
     "failed": 4,
 }
@@ -36,14 +40,14 @@ class VideoGenerationService:
         project = result.scalar_one_or_none()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
-        if project.status == "processing":
+        if project.status in ("script_generating", "processing", "render_queued", "rendering"):
             return {
                 "project_id": project_id,
                 "frames_count": 0,
-                "status": "processing",
+                "status": project.status,
                 "message": "generation already in progress",
             }
-        if project.status not in ("script_ready", "draft", "completed", "failed"):
+        if project.status not in ("script_ready", "completed", "failed"):
             raise ValueError(f"当前状态不允许生成: {project.status}")
 
         # 检查是否有帧数据
@@ -54,20 +58,25 @@ class VideoGenerationService:
         if not frames:
             raise ValueError("请先生成剧本（无帧数据）")
 
-        # 更新状态
-        project.status = "processing"
+        task = await generation_task_service.create_task(db, project_id, "render", status="queued")
+
+        # 更新状态，避免前端重复提交渲染任务。
+        project.status = "render_queued"
         await db.commit()
 
         # 异步发送 Celery 任务
-        celery_app.send_task(
+        async_result = celery_app.send_task(
             "generate_video_task",
-            args=[project_id],
+            args=[project_id, task.id],
         )
+        await generation_task_service.set_celery_task_id(db, task.id, async_result.id)
 
         return {
             "project_id": project_id,
+            "task_id": task.id,
+            "celery_task_id": async_result.id,
             "frames_count": len(frames),
-            "status": "processing",
+            "status": "render_queued",
         }
 
     async def get_project_detail(self, db: AsyncSession, project_id: int) -> dict:
@@ -125,6 +134,7 @@ class VideoGenerationService:
                     "audio_url": f.audio_url,
                     "duration": float(f.duration),
                     "status": f.status,
+                    "error_message": f.error_message,
                     "text_overlay": f.text_overlay,
                     "ai_params": f.ai_params,
                 }

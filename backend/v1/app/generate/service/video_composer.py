@@ -176,10 +176,12 @@ class VideoComposer:
                 video_paths.append(local_path)
 
                 frame.status = 2  # 已完成
+                frame.error_message = None
                 logger.info(f"[视频生成] 帧 {frame.sequence} 生成成功: {local_path}")
             except Exception as e:
                 logger.error(f"[视频生成] 帧 {frame.sequence} 生成失败: {str(e)}")
                 frame.status = 3  # 失败
+                frame.error_message = f"视频生成失败: {str(e)}"
                 placeholder = self._generate_placeholder_video(
                     output_dir, int(float(frame.duration)), frame.sequence
                 )

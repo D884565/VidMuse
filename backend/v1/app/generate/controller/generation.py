@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Path
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.store.database.async_database import get_db
@@ -13,6 +14,7 @@ from backend.v1.app.generate.service.project_service import ProjectService
 from backend.v1.app.generate.service.script_generation import script_generation_service
 from backend.v1.app.generate.service.video_generation import video_generation_service
 from backend.v1.app.generate.service.chat_service import chat_service
+from backend.v1.app.generate.service.task_service import generation_task_service
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
 from backend.framework.web import Response
 from backend.framework.web.auth import get_current_user_id
@@ -21,16 +23,18 @@ from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_E
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/generate/v1/projects", tags=["视频生成"])
+router = APIRouter(prefix="/generate/v1", tags=["视频生成"])
+
+SCRIPT_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering", "processing"}
 
 
-@router.post("", response_model=Response)
+@router.post("/projects", response_model=Response)
 async def create_project(
     project: ProjectCreate,
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """创建视频项目，自动触发剧本+视频生成"""
+    """创建视频项目。默认只保存项目；auto_render=true 时保留一键成片体验。"""
     from backend.v1.app.models.project import Project
 
     product_info_str = None
@@ -64,30 +68,54 @@ async def create_project(
     await db.commit()
     await db.refresh(p)
 
-    try:
-        await script_generation_service.generate_script(db, p.id)
-        result = await video_generation_service.submit_generation_task(db, p.id)
-        logger.info(f"[项目创建] 自动触发生成成功: project_id={p.id}")
-        return Response.success(data={
-            "id": p.id,
-            "title": p.title,
-            "product_info_crawled": product_info_str is not None,
-            "frames_count": result.get("frames_count"),
-            "status": result.get("status", "processing"),
-        })
-    except Exception as e:
-        logger.warning(f"[项目创建] 自动触发生成失败: {e}")
-        await db.refresh(p)
-        return Response.success(data={
-            "id": p.id,
-            "title": p.title,
-            "product_info_crawled": product_info_str is not None,
-            "status": p.status,
-            "generate_error": str(e),
-        })
+    response_data = {
+        "id": p.id,
+        "project_id": p.id,
+        "title": p.title,
+        "product_info_crawled": product_info_str is not None,
+        "status": p.status,
+    }
+
+    if project.auto_render:
+        script_task = None
+        try:
+            script_task = await generation_task_service.create_task(db, p.id, "script", status="running")
+            p.status = "script_generating"
+            await db.commit()
+
+            frames = await script_generation_service.generate_script(db, p.id)
+            from datetime import datetime
+            script_task.status = "succeeded"
+            script_task.progress = 100
+            script_task.current_step = "SCRIPT_GENERATED"
+            script_task.finished_at = datetime.utcnow()
+            await db.commit()
+
+            result = await video_generation_service.submit_generation_task(db, p.id)
+            logger.info(f"[项目创建] 自动触发生成成功: project_id={p.id}")
+            response_data.update({
+                "task_id": result.get("task_id"),
+                "script_task_id": script_task.id,
+                "frames_count": len(frames),
+                "status": result.get("status", "render_queued"),
+            })
+        except Exception as e:
+            logger.warning(f"[项目创建] 自动触发生成失败: {e}")
+            p.status = "failed"
+            if script_task:
+                from datetime import datetime
+                script_task.status = "failed"
+                script_task.progress = 100
+                script_task.error_message = str(e)
+                script_task.finished_at = datetime.utcnow()
+                await db.commit()
+            await db.refresh(p)
+            response_data.update({"status": p.status, "generate_error": str(e)})
+
+    return Response.success(data=response_data)
 
 
-@router.get("", response_model=Response)
+@router.get("/projects", response_model=Response)
 async def list_projects(
     status: Optional[int] = None,
     keyword: Optional[str] = None,
@@ -103,7 +131,7 @@ async def list_projects(
     return Response.success(data=result)
 
 
-@router.get("/{project_id}", response_model=Response)
+@router.get("/projects/{project_id}", response_model=Response)
 async def get_project(
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
@@ -120,7 +148,7 @@ async def get_project(
         raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
 
 
-@router.put("/{project_id}", response_model=Response)
+@router.put("/projects/{project_id}", response_model=Response)
 async def update_project(
     update_data: dict = Body(...),
     project_id: int = Path(..., gt=0),
@@ -140,7 +168,7 @@ async def update_project(
         raise BusinessException(RESOURCE_NOT_FOUND, f"更新失败: {e}")
 
 
-@router.delete("/{project_id}", response_model=Response)
+@router.delete("/projects/{project_id}", response_model=Response)
 async def delete_project(
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
@@ -159,7 +187,109 @@ async def delete_project(
         raise BusinessException(RESOURCE_NOT_FOUND, f"删除失败: {e}")
 
 
-@router.post("/{project_id}/chat", response_model=Response)
+@router.post("/projects/{project_id}/script/generate", response_model=Response)
+async def generate_project_script(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """独立生成项目剧本。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    from backend.v1.app.models.project import Project
+
+    status_result = await db.execute(select(Project.status).where(Project.id == project_id))
+    current_status = status_result.scalar_one()
+    if current_status in SCRIPT_BLOCKED_STATUSES:
+        raise BusinessException(VIDEO_ERROR, f"当前状态不允许重新生成剧本: {current_status}")
+
+    task = await generation_task_service.create_task(db, project_id, "script", status="running")
+    try:
+        from datetime import datetime
+
+        result = await db.execute(select(Project).where(Project.id == project_id))
+        project_model = result.scalar_one()
+        project_model.status = "script_generating"
+        await db.commit()
+
+        frames = await script_generation_service.generate_script(db, project_id)
+        task.status = "succeeded"
+        task.progress = 100
+        task.current_step = "SCRIPT_GENERATED"
+        task.finished_at = datetime.utcnow()
+        await db.commit()
+
+        return Response.success(data={
+            "task_id": task.id,
+            "project_id": project_id,
+            "frames_count": len(frames),
+            "status": "script_ready",
+        })
+    except Exception as e:
+        from datetime import datetime
+        result = await db.execute(select(Project).where(Project.id == project_id))
+        project_model = result.scalar_one_or_none()
+        if project_model:
+            project_model.status = "failed"
+        task.status = "failed"
+        task.progress = 100
+        task.error_message = str(e)
+        task.finished_at = datetime.utcnow()
+        await db.commit()
+        raise BusinessException(VIDEO_ERROR, str(e))
+
+
+@router.post("/projects/{project_id}/render", response_model=Response)
+async def render_project(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """提交项目渲染任务。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    try:
+        result = await video_generation_service.submit_generation_task(db, project_id)
+        return Response.success(data=result)
+    except ValueError as e:
+        raise BusinessException(VIDEO_ERROR, str(e))
+
+
+@router.get("/tasks/{task_id}", response_model=Response)
+async def get_generation_task(
+    task_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询生成任务状态。"""
+    try:
+        result = await generation_task_service.get_task(db, task_id, current_user_id)
+        return Response.success(data=result)
+    except PermissionError:
+        raise BusinessException(UNAUTHORIZED, "无权访问该任务")
+    except ValueError:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"任务不存在: {task_id}")
+
+
+@router.get("/tasks/{task_id}/steps", response_model=Response)
+async def get_generation_task_steps(
+    task_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询生成任务步骤。"""
+    try:
+        result = await generation_task_service.list_steps(db, task_id, current_user_id)
+        return Response.success(data=result)
+    except PermissionError:
+        raise BusinessException(UNAUTHORIZED, "无权访问该任务")
+    except ValueError:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"任务不存在: {task_id}")
+
+
+@router.post("/projects/{project_id}/chat", response_model=Response)
 async def chat_refinement(
     req: dict = Body(...),
     project_id: int = Path(..., gt=0),
@@ -181,7 +311,7 @@ async def chat_refinement(
         raise BusinessException(VIDEO_ERROR, str(e))
 
 
-@router.get("/{project_id}/conversations", response_model=Response)
+@router.get("/projects/{project_id}/conversations", response_model=Response)
 async def get_conversations(
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
@@ -212,7 +342,7 @@ async def get_conversations(
     ])
 
 
-@router.post("/{project_id}/frames/{frame_id}/regenerate", response_model=Response)
+@router.post("/projects/{project_id}/frames/{frame_id}/regenerate", response_model=Response)
 async def regenerate_frame(
     req: dict | None = Body(None),
     project_id: int = Path(..., gt=0),
@@ -232,7 +362,7 @@ async def regenerate_frame(
         raise BusinessException(VIDEO_ERROR, str(e))
 
 
-@router.post("/{project_id}/frames/{frame_id}/regenerate-image", response_model=Response)
+@router.post("/projects/{project_id}/frames/{frame_id}/regenerate-image", response_model=Response)
 async def regenerate_frame_image(
     req: dict | None = Body(None),
     project_id: int = Path(..., gt=0),
@@ -250,3 +380,42 @@ async def regenerate_frame_image(
         return Response.success(data=result)
     except ValueError as e:
         raise BusinessException(VIDEO_ERROR, str(e))
+
+
+@router.post("/projects/{project_id}/frames/{frame_id}/retry", response_model=Response)
+async def retry_frame(
+    req: dict | None = Body(None),
+    project_id: int = Path(..., gt=0),
+    frame_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """重试失败分镜并提交整片重新渲染。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+
+    from sqlalchemy import select
+    from backend.v1.app.models.frame import Frame
+
+    result = await db.execute(select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id))
+    frame = result.scalar_one_or_none()
+    if not frame:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
+    if frame.status != 3:
+        raise BusinessException(VIDEO_ERROR, "只能重试失败的分镜")
+
+    instruction = (req or {}).get("instruction")
+    if instruction:
+        frame.description = f"{frame.description or ''}\n\n用户重试要求：{instruction}"
+    frame.status = 0
+    frame.error_message = None
+    await db.commit()
+
+    render_result = await video_generation_service.submit_generation_task(db, project_id)
+    return Response.success(data={
+        "frame_id": frame_id,
+        "project_id": project_id,
+        "task_id": render_result.get("task_id"),
+        "status": render_result.get("status"),
+    })

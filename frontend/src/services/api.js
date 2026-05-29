@@ -74,11 +74,8 @@ api.interceptors.response.use(
         return data
       } catch (refreshErr) {
         refreshPromise = null
-        // refresh 也失败，清除状态跳转登录
-        localStorage.removeItem('token')
-        localStorage.removeItem('refresh_token')
-        useAppStore.getState().setIsLoggedIn(false)
-        useAppStore.getState().setUser(null)
+        // refresh 也失败，统一走登出流程，避免遗漏 authLoading 等状态。
+        useAppStore.getState().logout()
         window.location.href = '/login'
         return Promise.reject(refreshErr)
       }

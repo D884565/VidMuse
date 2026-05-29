@@ -5,6 +5,22 @@ export async function createProject(data) {
   return api.post('/generate/v1/projects', data)
 }
 
+export async function generateProjectScript(projectId) {
+  return api.post(`/generate/v1/projects/${projectId}/script/generate`)
+}
+
+export async function renderProject(projectId) {
+  return api.post(`/generate/v1/projects/${projectId}/render`)
+}
+
+export async function getGenerationTask(taskId) {
+  return api.get(`/generate/v1/tasks/${taskId}`)
+}
+
+export async function getGenerationTaskSteps(taskId) {
+  return api.get(`/generate/v1/tasks/${taskId}/steps`)
+}
+
 // 获取项目详情（轮询用）
 export async function getProjectDetail(projectId) {
   return api.get(`/generate/v1/projects/${projectId}`)

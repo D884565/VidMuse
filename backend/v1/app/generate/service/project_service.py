@@ -85,12 +85,21 @@ class ProjectService:
 
 _STATUS_TO_INT = {
     "draft": 0,
+    "script_generating": 2,
     "script_ready": 1,
     "processing": 2,
+    "render_queued": 2,
+    "rendering": 2,
     "completed": 3,
     "failed": 4,
 }
-_INT_TO_STATUS = {0: "draft", 1: "script_ready", 2: "processing", 3: "completed", 4: "failed"}
+_INT_TO_STATUS = {
+    0: "draft",
+    1: "script_ready",
+    2: ["script_generating", "processing", "render_queued", "rendering"],
+    3: "completed",
+    4: "failed",
+}
 _STATUS_NAME = {0: "待生成", 1: "剧本就绪", 2: "生成中", 3: "已完成", 4: "失败"}
 
 

@@ -16,6 +16,7 @@ from backend.v1.app.generate.service.image_generation_service import image_gener
 from backend.v1.app.generate.service.video_composer import video_composer
 from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
 from backend.v1.app.generate.service.music_generation_service import music_generation_service
+from backend.v1.app.generate.service.task_service import generation_task_service
 from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ def _get_sync_db() -> Session:
 
 
 @celery_app.task(bind=True, max_retries=3, name="generate_video_task")
-def generate_video_task(self, project_id: int):
+def generate_video_task(self, project_id: int, task_id: int | None = None):
     """
     视频生成异步任务（基于 frames 表）。
 
@@ -48,8 +49,10 @@ def generate_video_task(self, project_id: int):
 
     try:
         db = _get_sync_db()
+        generation_task_service.start_task_sync(db, task_id, "PROJECT_VALIDATION") if task_id else None
 
         # ---- Step 1: 读取 frames ----
+        step = generation_task_service.start_step_sync(db, task_id, "PROJECT_VALIDATION", progress=5) if task_id else None
         frames = list(db.execute(
             select(Frame)
             .where(Frame.project_id == project_id)
@@ -59,9 +62,14 @@ def generate_video_task(self, project_id: int):
             raise ValueError(f"项目 {project_id} 没有帧数据，请先生成剧本")
 
         project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
+        project.status = "rendering"
+        db.commit()
+        generation_task_service.finish_step_sync(db, step, progress=10, output_snapshot={"frames_count": len(frames)}) if task_id else None
+        generation_task_service.update_task_sync(db, task_id, progress=10, current_step="PROJECT_VALIDATION") if task_id else None
         logger.info(f"[读取帧] project_id={project_id}, frames={len(frames)}")
 
         # ---- Step 2: TTS ----
+        step = generation_task_service.start_step_sync(db, task_id, "TTS_GENERATING", progress=10) if task_id else None
         logger.info("[TTS] 开始生成配音...")
         # 拼接所有帧的文案（从 ai_params 中取 text）
         texts = []
@@ -80,7 +88,7 @@ def generate_video_task(self, project_id: int):
             "warm": "zh_female_tianmei_mars_bigtts",
             "professional": "zh_male_yangguang_mars_bigtts",
         }
-        tts_voice = voice_map.get(tts_voice, "zh_female_cancan_mars_bigtts")
+        tts_voice = project.voice_type or voice_map.get(tts_voice, "zh_female_cancan_mars_bigtts")
         audio_path = tts_service.generate_audio(full_text, tts_voice)
 
         # 上传配音到 TOS，存入 project.audio_url
@@ -88,17 +96,20 @@ def generate_video_task(self, project_id: int):
         audio_url = get_storage_client().upload_file(audio_path, audio_object)
         project.audio_url = audio_url
         db.commit()
+        generation_task_service.finish_step_sync(db, step, progress=25, output_snapshot={"audio_url": audio_url}) if task_id else None
+        generation_task_service.update_task_sync(db, task_id, progress=25, current_step="TTS_GENERATING") if task_id else None
         logger.info(f"[TTS] 项目级配音完成: {audio_object}")
 
         # ---- Step 2.5: 帧级 TTS 生成 ----
         logger.info("[TTS] 开始生成帧级配音...")
-        for frame in frames:
+        frame_tts_total = len(frames) or 1
+        for index, frame in enumerate(frames, 1):
             frame_ai_params = frame.ai_params or {}
             frame_text = frame_ai_params.get("text", "") or frame.description or ""
             if not frame_text:
                 continue
             frame_voice = frame_ai_params.get("voice_style", "")
-            frame_voice = voice_map.get(frame_voice, "zh_female_cancan_mars_bigtts")
+            frame_voice = project.voice_type or voice_map.get(frame_voice, "zh_female_cancan_mars_bigtts")
             try:
                 frame_audio_path = tts_service.generate_audio(frame_text, frame_voice)
                 if frame_audio_path and os.path.exists(frame_audio_path):
@@ -113,9 +124,19 @@ def generate_video_task(self, project_id: int):
                         pass
             except Exception as e:
                 logger.warning(f"[TTS] 帧 {frame.id} 配音失败，跳过: {e}")
+            finally:
+                frame_progress = 25 + int(index / frame_tts_total * 5)
+                generation_task_service.update_task_sync(
+                    db,
+                    task_id,
+                    progress=frame_progress,
+                    current_step="FRAME_TTS_GENERATING",
+                    current_frame_id=frame.id,
+                ) if task_id else None
         logger.info("[TTS] 帧级配音生成完成")
 
         # ---- Step 3: 为每个帧生成图片 ----
+        step = generation_task_service.start_step_sync(db, task_id, "IMAGE_GENERATING", progress=30) if task_id else None
         logger.info("[图片] 开始生成帧配图...")
         # 解析商品图片，传给图片生成服务做参考图
         product_images = None
@@ -130,25 +151,36 @@ def generate_video_task(self, project_id: int):
                 pass
         frames = image_generation_service.generate_frame_images(frames, project_id, product_images=product_images)
         db.commit()
+        failed_images = [f.id for f in frames if f.status == 3]
+        generation_task_service.finish_step_sync(db, step, status="failed" if failed_images else "succeeded", progress=45, output_snapshot={"failed_frame_ids": failed_images}, error_message="部分分镜图片生成失败" if failed_images else None) if task_id else None
+        generation_task_service.update_task_sync(db, task_id, progress=45, current_step="IMAGE_GENERATING") if task_id else None
         logger.info(f"[图片] 完成: {len(frames)}张")
 
         # ---- Step 4+5: 为每个帧生成视频并拼接 ----
+        step = generation_task_service.start_step_sync(db, task_id, "VIDEO_GENERATING", progress=50) if task_id else None
         logger.info("[视频] 开始生成帧视频...")
         output_dir = os.path.join(temp_dir, f"project_{project_id}")
         video_path = video_composer.compose_frames(frames, output_dir)
         db.commit()
+        failed_videos = [f.id for f in frames if f.status == 3]
+        generation_task_service.finish_step_sync(db, step, status="failed" if failed_videos else "succeeded", progress=75, output_snapshot={"failed_frame_ids": failed_videos}, error_message="部分分镜视频生成失败" if failed_videos else None) if task_id else None
+        generation_task_service.update_task_sync(db, task_id, progress=75, current_step="VIDEO_GENERATING") if task_id else None
 
         # ---- Step 5.5: 合并 TTS 音频到视频 ----
+        step = generation_task_service.start_step_sync(db, task_id, "AUDIO_MIXING", progress=78) if task_id else None
         if audio_path and os.path.exists(audio_path):
             try:
                 merged_path = os.path.join(output_dir, "merged_output.mp4")
                 ffmpeg_utils.replace_audio(video_path, audio_path, merged_path)
                 video_path = merged_path
                 logger.info("[音频合并] TTS 配音已合并到视频")
+                generation_task_service.finish_step_sync(db, step, progress=85, output_snapshot={"merged": True}) if task_id else None
             except Exception as e:
                 logger.warning(f"[音频合并] 合并失败，降级上传无声视频: {e}")
+                generation_task_service.finish_step_sync(db, step, status="failed", progress=85, error_message=str(e)) if task_id else None
         else:
             logger.warning("[音频合并] 无 TTS 音频文件，跳过合并")
+            generation_task_service.finish_step_sync(db, step, status="skipped", progress=85, error_message="no audio file") if task_id else None
 
         # ---- Step 5.6: 生成 BGM 并混入视频（暂时禁用，接口保留） ----
         # bgm_desc = (frames[0].ai_params or {}).get("bgm", "")
@@ -173,6 +205,7 @@ def generate_video_task(self, project_id: int):
         #     logger.info("[BGM] 无 BGM 描述，跳过生成")
 
         # 上传成品视频到 TOS
+        step = generation_task_service.start_step_sync(db, task_id, "OUTPUT_UPLOADING", progress=88) if task_id else None
         video_object = f"projects/{project_id}/output.mp4"
         video_url = get_storage_client().upload_file(video_path, video_object)
 
@@ -187,32 +220,49 @@ def generate_video_task(self, project_id: int):
             source_type=1,  # AI生成
         ))
         db.commit()
+        generation_task_service.finish_step_sync(db, step, progress=95, output_snapshot={"video_url": video_url}) if task_id else None
         logger.info(f"[视频] 完成: {video_object}")
 
         # ---- Step 6: 更新项目状态 ----
         project.video_output_url = video_url
         project.status = "completed"
         db.commit()
+        generation_task_service.update_task_sync(db, task_id, status="succeeded", progress=100, current_step="COMPLETED") if task_id else None
         logger.info(f"[完成] project_id={project_id}, 视频已生成: {video_object}")
 
     except Exception as exc:
         logger.error(f"[失败] project_id={project_id}, error={exc}", exc_info=True)
-        # 更新项目状态为失败
+        will_retry = self.request.retries < self.max_retries
         fail_db = None
         try:
             if db:
                 db.rollback()
             fail_db = _get_sync_db()
-            project = fail_db.execute(select(Project).where(Project.id == project_id)).scalar_one()
-            project.status = "failed"
-            fail_db.commit()
+            if task_id:
+                task = generation_task_service.get_task_sync(fail_db, task_id)
+                if task:
+                    task.retry_count = self.request.retries + 1
+                    task.error_message = str(exc)
+                    task.current_step = "RETRYING" if will_retry else "FAILED"
+                    if will_retry:
+                        task.status = "queued"
+                    else:
+                        task.status = "failed"
+                        task.progress = 100
+                        task.error_code = "VIDEO_GENERATION_FAILED"
+                    fail_db.commit()
+            if not will_retry:
+                project = fail_db.execute(select(Project).where(Project.id == project_id)).scalar_one()
+                project.status = "failed"
+                fail_db.commit()
         except Exception:
-            pass
+            logger.warning("[失败处理] 更新任务失败状态失败", exc_info=True)
         finally:
             if fail_db:
                 fail_db.close()
-        # 重试
-        raise self.retry(exc=exc)
+        if will_retry:
+            raise self.retry(exc=exc)
+        raise exc
 
     finally:
         if audio_path and os.path.exists(audio_path):

@@ -15,10 +15,14 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "projects",
-        sa.Column("product_info", sa.Text(), nullable=True, comment="商品信息JSON（抓取结果）"),
-    )
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = {column["name"] for column in inspector.get_columns("projects")}
+    if "product_info" not in columns:
+        op.add_column(
+            "projects",
+            sa.Column("product_info", sa.Text(), nullable=True, comment="商品信息JSON（抓取结果）"),
+        )
 
 
 def downgrade() -> None:
