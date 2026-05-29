@@ -101,7 +101,7 @@ class FFmpegVideoProcessor:
         """
         try:
             # 关键：将 bytes 通过 input 参数传给 pipe:
-            probe = ffmpeg.probe('pipe:', input=video_bytes)
+            probe = ffmpeg.probe('pipe:', input=video_bytes, probesize='10M')
 
             video_stream = next((stream for stream in probe['streams'] if stream['codec_type'] == 'video'), None)
             if not video_stream:

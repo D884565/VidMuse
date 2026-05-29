@@ -11,9 +11,10 @@ from backend.v1.app.search.agent_config import AGENT_CONFIG
 class SessionContext:
     """会话上下文，管理单个会话的所有信息"""
 
-    def __init__(self, session_id: str, user_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None):
+    def __init__(self, session_id: str, user_id: Optional[str] = None, project_id: Optional[int] = None, metadata: Optional[Dict[str, Any]] = None):
         self.session_id = session_id
-        self.user_id = user_id
+        self.user_id = user_id  # 用户ID，可以是str或int
+        self.project_id = project_id  # 项目ID，整数类型
         self.metadata = metadata or {}
         self.created_at = datetime.now()
         self.updated_at = datetime.now()
@@ -64,13 +65,13 @@ class SessionManager:
     def __init__(self):
         pass
 
-    def create_session(self, user_id: Optional[str] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
+    def create_session(self, user_id: Optional[str] = None, project_id: Optional[int] = None, metadata: Optional[Dict[str, Any]] = None) -> str:
         """创建新会话，返回session_id"""
         # 先清理过期会话
         self._cleanup_expired_sessions()
 
         session_id = f"session_{uuid.uuid4().hex[:16]}"
-        session = SessionContext(session_id, user_id, metadata)
+        session = SessionContext(session_id, user_id, project_id, metadata)
 
         # 添加系统提示消息
         from .agent import system_prompt

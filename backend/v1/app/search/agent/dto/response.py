@@ -11,6 +11,32 @@ class Message(BaseModel):
     tool_call: Optional[Dict[str, Any]] = Field(None, description="工具调用信息")
     tool_result: Optional[Dict[str, Any]] = Field(None, description="工具返回结果")
 
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为大模型API所需的字典格式"""
+        message_dict = {
+            "role": self.role,
+            "content": self.content
+        }
+
+        # 添加工具调用信息
+        if self.tool_call:
+            # 处理并行工具调用格式
+            if self.tool_call.get("parallel_calls"):
+                message_dict["tool_calls"] = self.tool_call["parallel_calls"]
+            else:
+                message_dict["tool_calls"] = [{
+                    "id": self.tool_call["id"],
+                    "type": self.tool_call["type"],
+                    "function": self.tool_call["function"]
+                }]
+
+        # 添加工具返回结果信息
+        if self.tool_result:
+            message_dict["tool_call_id"] = self.tool_result.get("tool_call_id")
+            message_dict["name"] = self.tool_result.get("name")
+
+        return message_dict
+
     model_config = {
         "json_schema_extra": {
             "examples": [

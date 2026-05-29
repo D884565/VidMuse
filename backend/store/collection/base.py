@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 from abc import ABC
 
-from backend.store.vector import VectorDatabase, get_vector_db_client, VectorDBType
+from backend.store.vector import VectorDatabase, get_vector_db_client, VectorDBType, ChromaDBClient
 from backend.v1.app.config.config import settings
 
 
@@ -15,7 +15,6 @@ class CollectionDAO(ABC):
     milvus_collection_name: str = None  # Milvus集合名
 
     _vector_client: VectorDatabase = None
-    _collection_instance: VectorDatabase = None
 
     def __init__(self):
         # 根据当前配置的向量数据库类型获取对应的集合名
@@ -32,13 +31,8 @@ class CollectionDAO(ABC):
 
         # 获取向量数据库客户端（单例）
         if CollectionDAO._vector_client is None:
-            CollectionDAO._vector_client = get_vector_db_client()
+            CollectionDAO._vector_client = get_vector_db_client(self.collection_name)
 
-        # 获取或创建指定集合的实例
-        self._collection_instance = CollectionDAO._vector_client.get_collection(
-            collection_name=self.collection_name,
-            create_if_not_exists=True
-        )
 
     def add_embeddings(self, ids: List[str], embeddings: List[List[float]],
                       metadatas: Optional[List[Dict]] = None,
@@ -50,7 +44,7 @@ class CollectionDAO(ABC):
         :param metadatas: 元数据列表
         :param documents: 文档内容列表
         """
-        self._collection_instance.add_embeddings(ids, embeddings, metadatas, documents)
+        self._vector_client.add_embeddings(ids, embeddings, metadatas, documents)
 
     def query_similar(self, query_embeddings: List[List[float]], n_results: int = 10,
                      where: Optional[Dict] = None,
@@ -63,7 +57,7 @@ class CollectionDAO(ABC):
         :param where_document: 文档内容过滤条件
         :return: 查询结果，包含ids、distances、metadatas、documents
         """
-        return self._collection_instance.query_similar(query_embeddings, n_results, where, where_document)
+        return self._vector_client.query_similar(query_embeddings, n_results, where, where_document)
 
     def delete_embeddings(self, ids: Optional[List[str]] = None,
                          where: Optional[Dict] = None,
@@ -74,18 +68,18 @@ class CollectionDAO(ABC):
         :param where: 元数据过滤条件
         :param where_document: 文档内容过滤条件
         """
-        self._collection_instance.delete_embeddings(ids, where, where_document)
+        self._vector_client.delete_embeddings(ids, where, where_document)
 
     def get_stats(self) -> Dict:
         """
         获取当前集合的统计信息
         :return: 包含count、name、metadata等信息的字典
         """
-        return self._collection_instance.get_collection_stats()
+        return self._vector_client.get_collection_stats()
 
     def get_collection(self) -> VectorDatabase:
         """
         获取底层的集合操作实例
         :return: 绑定到当前集合的VectorDatabase实例
         """
-        return self._collection_instance
+        return self._vector_client

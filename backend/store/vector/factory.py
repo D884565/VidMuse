@@ -12,9 +12,10 @@ class VectorDBType:
     MILVUS = "milvus"
 
 
-def get_vector_db_client(db_type: Optional[str] = None) -> VectorDatabase:
+def get_vector_db_client(collection_name: str,db_type: Optional[str] = None) -> VectorDatabase:
     """
     获取向量数据库客户端实例
+    :param collection_name:
     :param db_type: 向量数据库类型，默认从配置中读取
     :return: 向量数据库客户端实例
     """
@@ -22,8 +23,8 @@ def get_vector_db_client(db_type: Optional[str] = None) -> VectorDatabase:
         db_type = getattr(settings, "VECTOR_DB_TYPE", VectorDBType.CHROMADB)
 
     if db_type == VectorDBType.CHROMADB:
-        return get_chromadb_client()
+        return get_chromadb_client(collection_name)
     elif db_type == VectorDBType.MILVUS:
-        return get_milvus_client()
+        return get_milvus_client(collection_name)
     else:
         raise ValueError(f"不支持的向量数据库类型: {db_type}")

@@ -30,6 +30,7 @@ from backend.v1.app.rag.controller.asset_controller import router as asset_route
 from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.video.controller.video import router as video_router
 from backend.v1.app.merge.controller.merge import router as merge_router
+from backend.v1.app.search.controller.trace_controller import router as trace_router
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ app.include_router(product_router, prefix="/rag/v1")
 app.include_router(product_category_router, prefix="/rag/v1")
 app.include_router(asset_router, prefix="/rag/v1")
 app.include_router(slice_router, prefix="/rag/v1")
+app.include_router(trace_router, prefix="/rag/v1")
 app.include_router(video_router, prefix="/v1")
 app.include_router(merge_router, prefix="/v1")
 

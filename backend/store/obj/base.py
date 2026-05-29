@@ -81,4 +81,3 @@ class ObjectStorage(ABC):
         :return: 存储桶名称
         """
         pass
-
