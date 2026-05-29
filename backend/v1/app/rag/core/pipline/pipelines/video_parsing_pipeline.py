@@ -26,6 +26,8 @@ class VideoParsingPipeline(BasePipeline):
         :param slice_schema_path: 切片校验Schema路径，可选，优先使用该路径而非默认模板
         :param video_schema_path: 视频整体校验Schema路径，可选，优先使用该路径而非默认模板
         """
+
+        """
         if custom_processors:
             processors = custom_processors
         else:
@@ -65,9 +67,10 @@ class VideoParsingPipeline(BasePipeline):
                     summary_key="video_validation_summary",
                     id_field="video_id"
                 )
+            """
 
-            # 默认处理器顺序：完整的端到端流程
-            processors = [
+        # 默认处理器顺序：完整的端到端流程
+        processors = [
                 # 第一阶段：视频拆分和分片理解
                 VideoSplitProcessor(),
                 VideoUnderstandingProcessor(),
