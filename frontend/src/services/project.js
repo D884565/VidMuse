@@ -5,8 +5,10 @@ export async function createProject(data) {
   return api.post('/generate/v1/projects', data)
 }
 
-export async function generateProjectScript(projectId) {
-  return api.post(`/generate/v1/projects/${projectId}/script/generate`)
+export async function generateProjectScript(projectId, options = {}) {
+  return api.post(`/generate/v1/projects/${projectId}/script/generate`, null, {
+    params: { force: !!options.force },
+  })
 }
 
 export async function renderProject(projectId) {
@@ -48,4 +50,8 @@ export async function updateProject(projectId, data) {
 // 删除项目
 export async function deleteProject(projectId) {
   return api.delete(`/generate/v1/projects/${projectId}`)
+}
+
+export async function getProjectScripts(projectId) {
+  return api.get(`/generate/v1/projects/${projectId}/scripts`)
 }

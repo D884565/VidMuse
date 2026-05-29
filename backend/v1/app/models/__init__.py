@@ -6,6 +6,7 @@ from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.conversation import Conversation
 from backend.v1.app.models.merge_task import MergeTask
 from backend.v1.app.models.generation_task import GenerationTask, GenerationTaskStep
+from backend.v1.app.models.script import Script
 
 __all__ = [
     "Project",
@@ -17,4 +18,5 @@ __all__ = [
     "MergeTask",
     "GenerationTask",
     "GenerationTaskStep",
+    "Script",
 ]

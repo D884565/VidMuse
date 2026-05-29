@@ -12,6 +12,7 @@ const STATUS_DISPLAY = {
 export default function ProjectCard({ project }) {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
+  const setActiveView = useAppStore((state) => state.setActiveView)
   const active = activeProjectId === project.id
 
   const status = STATUS_DISPLAY[project.status] || STATUS_DISPLAY[0]
@@ -28,7 +29,10 @@ export default function ProjectCard({ project }) {
           : 'border-transparent bg-transparent hover:border-[var(--border-soft)] hover:bg-[rgba(255,255,255,0.03)]'
       }`}
       type="button"
-      onClick={() => setActiveProjectId(project.id)}
+      onClick={() => {
+        setActiveProjectId(project.id)
+        setActiveView('keyframes')
+      }}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="truncate text-sm text-white">{project.title}</span>

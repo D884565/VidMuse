@@ -753,7 +753,7 @@ RAG 返回：
 
 建议任务：
 
-1. 新增 script version 或至少保存 prompt_snapshot 和 script_content。
+ 1. 新增 script version 或至少保存 prompt_snapshot 和 script_content。
 2. 分镜卡片支持编辑文案、字幕、画面 Prompt、时长。
 3. 编辑后标记 dirty，不立即重跑整片。
 4. 支持单分镜重生成图片、视频、配音。

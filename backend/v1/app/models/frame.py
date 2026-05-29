@@ -14,6 +14,9 @@ class Frame(Base):
     project_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("projects.id"), nullable=False, comment="项目id"
     )
+    script_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("scripts.id", ondelete="SET NULL"), nullable=True, comment="脚本版本id"
+    )
     sequence: Mapped[int] = mapped_column(Integer, nullable=False, comment="帧序号(第几帧)")
     scene_type: Mapped[int | None] = mapped_column(
         Integer, nullable=True,
@@ -21,6 +24,11 @@ class Frame(Base):
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="帧描述/画面描述")
     prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="生成该帧的AI提示词")
+    narration: Mapped[str | None] = mapped_column(Text, nullable=True, comment="配音文案")
+    subtitle_text: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="字幕文本")
+    subtitle_position: Mapped[str | None] = mapped_column(String(30), nullable=True, comment="字幕位置")
+    image_prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="图片生成提示词")
+    video_prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="视频生成提示词")
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧图片URL")
     audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧配音/音效URL")
     text_overlay: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="叠加文字内容")
@@ -37,6 +45,8 @@ class Frame(Base):
         Integer, nullable=False, server_default="0",
         comment="状态: 0-待生成, 1-生成中, 2-已完成, 3-失败"
     )
+    dirty: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", comment="是否存在待合成修改")
+    last_edited_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     ai_params: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="AI生成参数")
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True, comment="额外元数据")
     created_at: Mapped[datetime.datetime] = mapped_column(
@@ -48,3 +58,4 @@ class Frame(Base):
 
     # 关联
     project = relationship("Project", back_populates="frames")
+    script = relationship("Script", back_populates="frames")

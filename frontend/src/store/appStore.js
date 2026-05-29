@@ -4,6 +4,7 @@ export const useAppStore = create((set) => ({
   activeView: 'chat',
   sidebarCollapsed: false,
   activeProjectId: null,
+  projectListVersion: 0,
   isLoggedIn: !!localStorage.getItem('token'),
   authLoading: !!localStorage.getItem('token'),
   // 用户信息（会话内有效，可通过 /users/me 刷新）
@@ -18,6 +19,7 @@ export const useAppStore = create((set) => ({
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
+  bumpProjectListVersion: () => set((state) => ({ projectListVersion: state.projectListVersion + 1 })),
   setUser: (user) => set({ user }),
   setAuthLoading: (authLoading) => set({ authLoading }),
   setRefreshToken: (refreshToken) => {
