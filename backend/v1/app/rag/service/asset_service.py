@@ -3,6 +3,8 @@ import uuid
 import json
 import asyncio
 from typing import Optional, BinaryIO
+from urllib.parse import urlparse
+
 from fastapi import UploadFile, BackgroundTasks
 from sqlalchemy.orm import Session
 
@@ -59,7 +61,7 @@ class AssetService:
         return f"assets/{type_dir}/{uuid_str[:2]}/{uuid_str[2:4]}/{uuid_str}.{ext}"
 
     @staticmethod
-    async def _extract_ai_features(id: int, asset_type: int, asset_url: str = None) -> dict:
+    async def _extract_ai_features(id: int, asset_type: int, asset_url: str) -> dict:
         """
         提取AI特征
         :param id: 资产ID
@@ -83,16 +85,11 @@ class AssetService:
                 }
             elif asset_type == 2:  # 视频
                 pipeline = VideoParsingPipeline()
-                # 从URL中提取object_name
                 from backend.store import get_storage_client
-                client = get_storage_client()
-                object_name = None
-                if asset_url and client.get_bucket_name() in asset_url:
-                    object_name = asset_url.split(f"{client.get_bucket_name()}/")[-1]
                 result = pipeline.run({
                     "video_id": id,
                     "video_url": asset_url,
-                    "object_name": object_name
+                    "object_name": AssetService.get_path_after_baseurl(asset_url)
                 })
                 if not result.get("success", False):
                     raise ValueError(f"视频解析失败: {result.get('errors', [])}")
@@ -612,9 +609,7 @@ class AssetService:
         client = get_storage_client()
         try:
             # 从URL中提取object_name
-            if asset.url and client.get_bucket_name() in asset.url:
-                object_name = asset.url.split(f"{client.get_bucket_name()}/")[-1]
-                client.delete_object(object_name)
+            client.delete_object(AssetService.get_path_after_baseurl(asset.url))
         except Exception:
             # 忽略存储删除失败的情况，继续删除数据库记录
             pass
@@ -623,6 +618,24 @@ class AssetService:
         success = AssetDAO.delete_asset(db, asset_id)
         if not success:
             raise BusinessException(PARAM_ERROR, "删除失败")
+
+    @staticmethod
+    def get_path_after_baseurl(url: str, baseurl: str = "https://vidmuse.tos-cn-beijing.volces.com") -> str:
+        """
+        从完整URL中，提取 baseurl 之后的路径字符串（TOS对象key）
+
+        :param url: 完整的URL地址
+        :param baseurl: 域名前缀（默认是你的TOS域名）
+        :return: baseurl 后面的路径字符串
+        """
+        # 方法1：直接替换（最简单、最稳定）
+        if url.startswith(baseurl):
+            return url[len(baseurl):].lstrip("/")  # 去掉前面多余的 /
+
+        # 方法2：通用解析（兼容各种格式）
+        parsed = urlparse(url)
+        return parsed.path.lstrip("/")
+
 
 
 

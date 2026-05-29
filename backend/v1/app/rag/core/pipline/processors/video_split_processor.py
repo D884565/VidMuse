@@ -1,13 +1,13 @@
 from typing import Dict, List
 import io
 from backend.store import get_storage_client
-from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
+from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext, constants
 from backend.ffmpeg import FFmpegVideoProcessor
 
 class VideoSplitProcessor(BaseProcessor):
     """
     视频拆分处理器
-    将长视频拆分为多个短视频片段（Mock实现）
+    将长视频拆分为多个短视频片段
     """
 
     def __init__(self, slice_duration: int = 5000):
@@ -27,10 +27,10 @@ class VideoSplitProcessor(BaseProcessor):
         """
 
         # 先获取视频（素材）id，从对象存储中查出来，在内存里面分割，然后再上传对象存储，最后返回的是对象存储的url
-        video_id = context.get("video_id")
-        object_name = context.get("object_name")
+        video_id = context.get(constants.VIDEO_ID)
+        object_name = context.get(constants.OBJECT_NAME)
         if not object_name or not video_id:
-            raise ValueError("video_id is required in context")
+            raise ValueError("video_id and object_name are required in context")
 
         client = get_storage_client()
         ios = client.get_object(object_name)
@@ -64,9 +64,9 @@ class VideoSplitProcessor(BaseProcessor):
 
 
 
-        context.set("count",len(slices))
-        context.set("slices_url",slices)
-        context.set("images_url",images)
-        context.set("slices_object_name",slices_video_name)
-        context.set("images_object_name",slices_images_name)
+        context.set(constants.SLICE_COUNT, len(slices))
+        context.set(constants.SLICES_URL, slices)
+        context.set(constants.IMAGES_URL, images)
+        context.set(constants.SLICES_OBJECT_NAME, slices_video_name)
+        context.set(constants.IMAGES_OBJECT_NAME, slices_images_name)
         return context

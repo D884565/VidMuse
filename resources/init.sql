@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS agent_traces;
 DROP TABLE IF EXISTS conversations;
 DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS merge_tasks;
@@ -185,3 +186,32 @@ CREATE TABLE IF NOT EXISTS conversations (
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE SET NULL,
     INDEX idx_conversations_project (project_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话记录表';
+
+
+CREATE TABLE IF NOT EXISTS agent_traces (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '推理轨迹ID',
+    session_id      VARCHAR(64) NOT NULL COMMENT '会话ID',
+    user_id         BIGINT COMMENT '用户ID',
+    project_id      BIGINT COMMENT '项目ID',
+    user_input      TEXT NOT NULL COMMENT '用户原始输入',
+    system_prompt   TEXT NOT NULL COMMENT '系统提示词',
+    model           VARCHAR(64) NOT NULL COMMENT '使用的模型名称',
+    temperature     FLOAT NOT NULL COMMENT '模型温度参数',
+    max_tokens      BIGINT NOT NULL COMMENT '最大生成长度',
+    top_p           FLOAT NOT NULL COMMENT '核采样参数',
+    messages_history JSON NOT NULL COMMENT '完整的消息历史',
+    iterations      BIGINT NOT NULL DEFAULT 0 COMMENT '推理迭代次数',
+    tool_calls      JSON COMMENT '所有工具调用信息',
+    tool_results    JSON COMMENT '所有工具返回结果',
+    final_answer    TEXT COMMENT '最终回答内容',
+    cost_time       FLOAT NOT NULL COMMENT '执行耗时(秒)',
+    success         TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否执行成功：1-成功，0-失败',
+    error_msg       TEXT COMMENT '错误信息',
+    meta_data        JSON COMMENT '扩展元数据',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+
+    INDEX idx_agent_traces_session_id (session_id),
+    INDEX idx_agent_traces_user_id (user_id),
+    INDEX idx_agent_traces_project_id (project_id),
+    INDEX idx_agent_traces_created_at (created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent推理轨迹表';

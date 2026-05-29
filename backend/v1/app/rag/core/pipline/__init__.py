@@ -16,7 +16,8 @@ from .processors import (
 # 导出流水线
 from .pipelines import (
     VideoParsingPipeline,
-    ProductParsingPipeline
+    ProductParsingPipeline,
+    VideoOverallParsingPipeline
 )
 
 __all__ = [
@@ -37,5 +38,6 @@ __all__ = [
 
     # 流水线
     "VideoParsingPipeline",
-    "ProductParsingPipeline"
+    "ProductParsingPipeline",
+    "VideoOverallParsingPipeline"
 ]

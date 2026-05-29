@@ -2,6 +2,8 @@ import chromadb
 from chromadb import Settings
 from typing import Dict
 
+from chromadb.api.models import Collection
+
 from backend.v1.app.config.config import settings
 from .base import VectorDatabase
 
@@ -122,6 +124,6 @@ class ChromaDBClient(VectorDatabase):
 
 
 
-def get_chromadb_client():
+def get_chromadb_client(collection_name: str = None):
     """获取ChromaDB客户端实例"""
-    return ChromaDBClient()
+    return ChromaDBClient(collection_name)

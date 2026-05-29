@@ -41,8 +41,7 @@ from .post_processing import (
     Merger,
     Reranker
 )
-from .service import SearchService
-from .agent import agent, session_manager, system_prompt
+from .agent import agent, session_manager, system_prompt, TraceStorage, trace_storage
 from .agent.service.agent_service import AgentService, agent_service
 from .agent.dto.response import Message, ChatResponse
 from .agent.context import SessionContext, SessionManager
@@ -63,6 +62,15 @@ from .config import (
     POST_PROCESSING_CONFIG,
     SUPPORTED_SOURCES,
     SUPPORTED_RETRIEVAL_TYPES
+)
+from .service import AgentTraceService, agent_trace_service
+from .dao import AgentTraceDAO, agent_trace_dao
+from .dto import (
+    AgentTraceBase,
+    AgentTraceDetail,
+    AgentTraceListResponse,
+    TraceQueryRequest,
+    TraceStatResponse
 )
 
 __version__ = "1.0.0"
@@ -111,8 +119,6 @@ __all__ = [
     "Merger",
     "Reranker",
 
-    # Service
-    "SearchService",
 
     # Agent
     "agent",
@@ -125,6 +131,8 @@ __all__ = [
     "ChatResponse",
     "AGENT_CONFIG",
     "system_prompt",
+    "TraceStorage",
+    "trace_storage",
 
     # Tools
     "BaseSearchTool",
@@ -142,4 +150,15 @@ __all__ = [
     "POST_PROCESSING_CONFIG",
     "SUPPORTED_SOURCES",
     "SUPPORTED_RETRIEVAL_TYPES",
+
+    # 观测系统
+    "AgentTraceService",
+    "agent_trace_service",
+    "AgentTraceDAO",
+    "agent_trace_dao",
+    "AgentTraceBase",
+    "AgentTraceDetail",
+    "AgentTraceListResponse",
+    "TraceQueryRequest",
+    "TraceStatResponse",
 ]

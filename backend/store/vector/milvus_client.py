@@ -253,6 +253,6 @@ class MilvusClientWrapper(VectorDatabase):
             raise RuntimeError(f"释放Milvus集合失败: {str(e)}")
 
 
-def get_milvus_client():
+def get_milvus_client(collection_name: str = None):
     """获取Milvus客户端实例"""
-    return MilvusClientWrapper()
+    return MilvusClientWrapper(collection_name)
