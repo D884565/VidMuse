@@ -2,17 +2,16 @@ import { useState } from 'react'
 import { RefreshCw, Image, Loader2 } from 'lucide-react'
 import { useProjectPolling } from '../../hooks/useProjectPolling.js'
 import { useAppStore } from '../../store/appStore.js'
-import { regenerateFrame, regenerateFrameImage } from '../../services/frame.js'
+import { regenerateFrame, regenerateFrameImage, retryFrame } from '../../services/frame.js'
 import MergePanel from '../Merge/MergePanel.jsx'
 import VideoPlayer from '../VideoPlayer.jsx'
 
 // 帧状态映射
 const STATUS_MAP = {
   0: { text: '待生成', color: 'text-yellow-400' },
-  1: { text: '剧本就绪', color: 'text-purple-400' },
-  2: { text: '生成中', color: 'text-blue-400' },
-  3: { text: '已完成', color: 'text-green-400' },
-  4: { text: '失败', color: 'text-red-400' },
+  1: { text: '生成中', color: 'text-blue-400' },
+  2: { text: '已完成', color: 'text-green-400' },
+  3: { text: '失败', color: 'text-red-400' },
 }
 
 // 场景类型映射
@@ -57,6 +56,23 @@ export default function FrameGrid() {
       await regenerateFrameImage(activeProjectId, frameId, instruction || undefined)
     } catch (err) {
       alert(`重新生成图片失败: ${err.message}`)
+    } finally {
+      setRegenerating((prev) => {
+        const next = { ...prev }
+        delete next[frameId]
+        return next
+      })
+    }
+  }
+
+  const handleRetryFrame = async (frameId) => {
+    const instruction = prompt('请输入重试要求（可选）')
+    if (instruction === null) return
+    setRegenerating((prev) => ({ ...prev, [frameId]: 'retry' }))
+    try {
+      await retryFrame(activeProjectId, frameId, instruction || undefined)
+    } catch (err) {
+      alert(`重试失败: ${err.message}`)
     } finally {
       setRegenerating((prev) => {
         const next = { ...prev }
@@ -158,6 +174,11 @@ export default function FrameGrid() {
                     <audio controls src={frame.audio_url} className="w-full h-7" />
                   </div>
                 )}
+                {frame.status === 3 && frame.error_message && (
+                  <p className="mb-2 rounded-lg border border-red-500/30 bg-red-500/10 px-2 py-1.5 text-xs text-red-200">
+                    {frame.error_message}
+                  </p>
+                )}
                 {/* 操作按钮 */}
                 <div className="flex gap-2">
                   <button
@@ -183,6 +204,19 @@ export default function FrameGrid() {
                     重生成图片
                   </button>
                 </div>
+                {frame.status === 3 && (
+                  <button
+                    onClick={() => handleRetryFrame(frame.id)}
+                    disabled={!!isRegenerating}
+                    className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg border border-red-500/40 px-2 py-1.5 text-xs text-red-200 hover:bg-red-500/10 disabled:opacity-50"
+                  >
+                    <RefreshCw
+                      size={12}
+                      className={isRegenerating === 'retry' ? 'animate-spin' : ''}
+                    />
+                    重试失败分镜
+                  </button>
+                )}
               </div>
             </div>
           )

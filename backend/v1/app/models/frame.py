@@ -24,6 +24,7 @@ class Frame(Base):
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧图片URL")
     audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧配音/音效URL")
     text_overlay: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="叠加文字内容")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True, comment="生成失败原因")
     duration: Mapped[float] = mapped_column(
         Numeric(6, 3), nullable=False, server_default="3.000",
         comment="该帧持续时间(秒)"

@@ -20,7 +20,7 @@ export default function ChatContainer() {
         </div>
         <div className="flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[rgba(26,26,46,0.65)] px-3 py-1.5 text-xs text-[var(--text-muted)]">
           <WandSparkles size={14} className="text-[#a78bfa]" />
-          Phantom Render Ready
+          生成服务已就绪
         </div>
       </header>
 
