@@ -53,6 +53,9 @@ def create_product(
 def list_products(
     keyword: Optional[str] = None,
     category: Optional[str] = None,
+    category1: Optional[int] = None,
+    category2: Optional[int] = None,
+    category3: Optional[int] = None,
     platform: Optional[str] = None,
     min_price: Optional[float] = None,
     max_price: Optional[float] = None,
@@ -62,9 +65,15 @@ def list_products(
     current_user_id: int = Depends(_get_current_user_id),
     db: Session = Depends(get_db),
 ):
-    """获取商品列表，返回自己的商品 + 平台公共商品"""
+    """获取商品列表，返回自己的商品 + 平台公共商品
+    支持按三级分类筛选：
+    - category1: 一级分类ID
+    - category2: 二级分类ID
+    - category3: 三级分类ID
+    """
     result = product_service.list_products(
         db, user_id=current_user_id, keyword=keyword, category=category,
+        category1=category1, category2=category2, category3=category3,
         platform=platform, min_price=min_price, max_price=max_price,
         only_public=only_public, page=page, page_size=page_size,
     )

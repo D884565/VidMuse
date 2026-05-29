@@ -73,11 +73,12 @@ class Settings(BaseSettings):
     # ChromaDB
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8001
-    PRODUCT_COLLECTION: str = "product_knowledge"
-    SLICE_COLLECTION: str = "slice_knowledge"
-    VIDEO_COLLECTION: str = "video_knowledge"
-    IMG_COLLECTION: str = "img_knowledge"
-    AUDIO_COLLECTION: str = "audio_knowledge"
+    CHROMADB_PRODUCT_COLLECTION: str = "product_knowledge"
+    CHROMADB_SLICE_COLLECTION: str = "slice_knowledge"
+    CHROMADB_VIDEO_COLLECTION: str = "video_knowledge"
+    CHROMADB_IMAGE_COLLECTION: str = "img_knowledge"
+    CHROMADB_AUDIO_COLLECTION: str = "audio_knowledge"
+
 
     # Milvus配置
     MILVUS_HOST: str = "localhost"

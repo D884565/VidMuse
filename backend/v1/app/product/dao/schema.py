@@ -8,6 +8,8 @@ from typing import Optional, List, Dict, Any
 from decimal import Decimal
 from pydantic import BaseModel, Field
 
+from backend.v1.app.product_category.dao.schema import CategoryInfo
+
 
 # ==================== 请求模型 ====================
 
@@ -15,7 +17,8 @@ class ProductCreateRequest(BaseModel):
     """创建商品请求体"""
     name: str = Field(..., min_length=1, max_length=200, description="商品名称")
     brand: Optional[str] = Field(None, max_length=100, description="品牌")
-    category: Optional[str] = Field(None, max_length=100, description="分类")
+    category: Optional[str] = Field(None, max_length=100, description="分类（兼容旧版，传入category_id时会自动覆盖此字段）")
+    category_id: Optional[int] = Field(None, description="关联分类ID，对应三级分类ID")
     description: Optional[str] = Field(None, description="商品描述")
     selling_points: Optional[List[str]] = Field(None, description="卖点列表，如['SPF50+高倍防晒', '防水防汗']")
     price: Optional[Decimal] = Field(None, description="价格（元，保留2位小数）")
@@ -31,7 +34,8 @@ class ProductUpdateRequest(BaseModel):
     """更新商品请求体（所有字段可选）"""
     name: Optional[str] = Field(None, min_length=1, max_length=200, description="商品名称")
     brand: Optional[str] = Field(None, max_length=100, description="品牌")
-    category: Optional[str] = Field(None, max_length=100, description="分类")
+    category: Optional[str] = Field(None, max_length=100, description="分类（兼容旧版，传入category_id时会自动覆盖此字段）")
+    category_id: Optional[int] = Field(None, description="关联分类ID，对应三级分类ID")
     description: Optional[str] = Field(None, description="商品描述")
     selling_points: Optional[List[str]] = Field(None, description="卖点列表")
     price: Optional[Decimal] = Field(None, description="价格")
@@ -65,21 +69,24 @@ def _parse_json_field(value, default=None):
     return value
 
 
-def product_to_dict(product) -> dict:
+def product_to_dict(product, include_category_info: bool = False) -> dict:
     """将 Product ORM 对象转换为字典
 
     负责将数据库中的 JSON 字符串字段反序列化为 Python 对象，
     并格式化时间字段为 ISO 8601 字符串。
 
     :param product: Product ORM 对象
+    :param include_category_info: 是否包含完整的分类信息
     :return: 商品信息字典，可直接作为 API 响应
     """
-    return {
+    result = {
         "id": product.id,
         "user_id": product.user_id,
         "name": product.name,
         "brand": product.brand,
         "category": product.category,
+        "category_id": product.category_id,
+        "category_path": product.category_path,
         "description": product.description,
         "selling_points": _parse_json_field(product.selling_points, []),
         "price": float(product.price) if product.price is not None else None,
@@ -93,3 +100,18 @@ def product_to_dict(product) -> dict:
         "created_at": product.created_at.isoformat() if product.created_at else "",
         "updated_at": product.updated_at.isoformat() if product.updated_at else "",
     }
+
+    # 如果需要包含完整分类信息且有关联分类
+    if include_category_info and product.category_obj:
+        result["category_info"] = CategoryInfo(
+            id=product.category_obj.id,
+            name=product.category_obj.name,
+            parent_id=product.category_obj.parent_id,
+            level=product.category_obj.level,
+            path=product.category_obj.path,
+            sort=product.category_obj.sort,
+            created_at=product.category_obj.created_at.isoformat() if product.category_obj.created_at else "",
+            updated_at=product.category_obj.updated_at.isoformat() if product.category_obj.updated_at else ""
+        ).model_dump() if hasattr(product, 'category_obj') and product.category_obj else None
+
+    return result

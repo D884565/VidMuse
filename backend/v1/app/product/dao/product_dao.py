@@ -34,14 +34,19 @@ class ProductDAO:
         return product
 
     @staticmethod
-    def get_product_by_id(db: Session, product_id: int) -> Optional[Product]:
+    def get_product_by_id(db: Session, product_id: int, include_category: bool = False) -> Optional[Product]:
         """根据商品ID查询商品
 
         :param db: 数据库会话
         :param product_id: 商品ID
+        :param include_category: 是否预加载关联的分类信息
         :return: Product 对象，不存在返回 None
         """
-        return db.query(Product).filter(Product.id == product_id).first()
+        query = db.query(Product)
+        if include_category:
+            from sqlalchemy.orm import joinedload
+            query = query.options(joinedload(Product.category))
+        return query.filter(Product.id == product_id).first()
 
     @staticmethod
     def update_product(db: Session, product_id: int, update_data: dict) -> Product:
@@ -78,6 +83,9 @@ class ProductDAO:
         user_id: Optional[int] = None,
         keyword: Optional[str] = None,
         category: Optional[str] = None,
+        category1: Optional[int] = None,
+        category2: Optional[int] = None,
+        category3: Optional[int] = None,
         platform: Optional[str] = None,
         min_price: Optional[float] = None,
         max_price: Optional[float] = None,
@@ -93,7 +101,10 @@ class ProductDAO:
         :param db: 数据库会话
         :param user_id: 当前用户ID（用于筛选自己的商品 + 公共商品）
         :param keyword: 按名称/品牌/描述模糊搜索
-        :param category: 按分类筛选
+        :param category: 按分类名称筛选（兼容旧版）
+        :param category1: 按一级分类ID筛选
+        :param category2: 按二级分类ID筛选
+        :param category3: 按三级分类ID筛选（等效于category_id）
         :param platform: 按来源平台筛选
         :param min_price: 最低价格
         :param max_price: 最高价格
@@ -122,6 +133,15 @@ class ProductDAO:
             )
         if category:
             query = query.filter(Product.category == category)
+        if category1:
+            # 一级分类：路径以"/{category1}/"开头
+            query = query.filter(Product.category_path.like(f"/{category1}/%"))
+        if category2:
+            # 二级分类：路径包含"/{category2}/"且是二级
+            query = query.filter(Product.category_path.like(f"%/{category2}/%"))
+        if category3:
+            # 三级分类：直接匹配category_id
+            query = query.filter(Product.category_id == category3)
         if platform:
             query = query.filter(Product.platform == platform)
         if min_price is not None:

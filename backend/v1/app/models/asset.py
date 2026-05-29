@@ -2,7 +2,7 @@
 import datetime
 import json
 from sqlalchemy import String, BigInteger, Integer, DateTime, ForeignKey, func, JSON
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.store.database.async_database import Base
 
 
@@ -28,6 +28,9 @@ class Asset(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
     )
+
+    # 关系：资产拥有多个切片
+    slices = relationship("Slice", back_populates="asset", cascade="all, delete-orphan")
 
     def to_dict(self) -> dict:
         """转换为字典"""

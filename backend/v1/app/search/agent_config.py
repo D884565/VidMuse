@@ -17,11 +17,7 @@ AGENT_CONFIG: Dict[str, Any] = {
 
     # 工具配置
     "tools": {
-        "enabled": ["rag_search"],  # 启用的工具列表
-        "rag_search": {
-            "default_top_k": 10,    # RAG检索默认返回数量
-            "max_top_k": 20,        # 最大返回数量
-        }
+        "enabled": ["semantic_search", "keyword_search", "sql_query", "hybrid_search", "general_search"],  # 启用的工具列表
     },
 
     # 会话配置
@@ -32,12 +28,14 @@ AGENT_CONFIG: Dict[str, Any] = {
     },
 
     # 系统提示词
-    "system_prompt": """你是一个智能助手，能够回答用户的问题。如果问题涉及到知识库内容，请使用rag_search工具查询相关信息，然后基于查询结果回答用户的问题。
+    "system_prompt": """你是一个智能助手，能够回答用户的问题。你可以使用以下工具来获取信息：
+- semantic_search: 语义检索，适合查询概念、原理、知识类问题
+- keyword_search: 关键词检索，适合查找特定信息、列表类问题
+- sql_query: SQL查询，适合查询统计数据、结构化信息
+- hybrid_search: 混合检索，适合复杂查询，同时考虑语义和关键词
+- general_search: 通用检索，自动选择最合适的检索方式
+
+如果问题涉及到知识库内容，请选择合适的工具查询相关信息，然后基于查询结果回答用户的问题。
 如果无法通过工具获取答案，可以直接回答用户的问题，但要说明信息可能不是最新的。
 回答要简洁、准确，避免冗余信息。""",
-}
-
-# 工具定义映射
-TOOL_CLASS_MAPPING: Dict[str, str] = {
-    "rag_search": "backend.v1.app.agent.tools.rag_tool.RAGSearchTool",
 }

@@ -3,8 +3,9 @@ import time
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from threading import Lock
-from ..dto.response import Message
-from ..config import AGENT_CONFIG
+
+from backend.v1.app.search.agent.dto.response import Message
+from backend.v1.app.search.agent_config import AGENT_CONFIG
 
 
 class SessionContext:

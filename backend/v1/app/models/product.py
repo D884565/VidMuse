@@ -19,7 +19,9 @@ class Product(Base):
     # 基本信息
     name: Mapped[str] = mapped_column(String(200), nullable=False, comment="商品名称")
     brand: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="品牌")
-    category: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="分类")
+    category: Mapped[str | None] = mapped_column(String(100), nullable=True, comment="分类（冗余存储三级分类名称）")
+    category_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("product_categories.id", ondelete="SET NULL"), nullable=True, comment="关联分类ID，对应product_categories.id")
+    category_path: Mapped[str | None] = mapped_column(String(200), nullable=True, comment="分类路径，冗余存储方便检索，如\"/1/2/3/\"")
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="商品描述")
 
     # 卖点、规格、标签：以 JSON 字符串存储
@@ -42,3 +44,6 @@ class Product(Base):
 
     # 关系：商品属于某个用户
     user = relationship("User", back_populates="products")
+
+    # 关系：商品属于某个分类
+    category_obj = relationship("ProductCategory", back_populates="products")

@@ -213,6 +213,9 @@ class TOSClient(ObjectStorage):
         else:
             raise BaseAppException(OSS_ERROR, message=f"TOS未知错误: {str(e)}") from e
 
+    def get_bucket_name(self) -> str:
+        return self.bucket_name
+
 
 def get_tos_client() -> TOSClient:
     """获取TOS客户端实例"""

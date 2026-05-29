@@ -25,7 +25,9 @@ from backend.framework.exceptions.error_codes import (
 from backend.v1.app.generate.controller.generation import router as generation_router
 from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.product.controller.product_controller import router as product_router
+from backend.v1.app.product_category.controller.product_category_controller import router as product_category_router
 from backend.v1.app.rag.controller.asset_controller import router as asset_router
+from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.video.controller.video import router as video_router
 from backend.v1.app.merge.controller.merge import router as merge_router
 
@@ -72,8 +74,10 @@ register_exception_handlers(app)
 # 注册业务路由
 app.include_router(generation_router)
 app.include_router(user_router, prefix="/generate/v1")
-app.include_router(product_router, prefix="/generate/v1")
+app.include_router(product_router, prefix="/rag/v1")
+app.include_router(product_category_router, prefix="/rag/v1")
 app.include_router(asset_router, prefix="/rag/v1")
+app.include_router(slice_router, prefix="/rag/v1")
 app.include_router(video_router, prefix="/v1")
 app.include_router(merge_router, prefix="/v1")
 
