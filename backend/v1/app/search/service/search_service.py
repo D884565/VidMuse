@@ -26,28 +26,47 @@ from ..config import (
     POST_PROCESSING_CONFIG,
     SUPPORTED_RETRIEVAL_TYPES
 )
+from ..tools import (
+    BaseSearchTool,
+    ALL_TOOLS
+)
 
 class SearchService:
     """
     统一检索服务类
     编排完整的检索流程：问题增强 -> 检索执行 -> 结果后处理
+    重构版本：支持工具化调用，保持向下兼容
     """
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
 
-        # 初始化问题增强处理器
+        # 初始化问题增强处理器（保留原有逻辑，兼容现有代码）
         self.query_enhancers = self._init_query_enhancers()
 
-        # 初始化检索器
+        # 初始化检索器（保留原有逻辑，兼容现有代码）
         self.retrievers = self._init_retrievers()
 
-        # 初始化后处理器
+        # 初始化后处理器（保留原有逻辑，兼容现有代码）
         self.post_processors = self._init_post_processors()
 
         # 配置
         self.default_top_k = RETRIEVAL_CONFIG.get("default_top_k", 10)
         self.final_top_k = POST_PROCESSING_CONFIG.get("final_top_k", 10)
+
+    @staticmethod
+    def get_all_tools() -> List[BaseSearchTool]:
+        """获取所有可用的检索工具实例，方便Agent系统集成"""
+        return [tool_cls() for tool_cls in ALL_TOOLS]
+
+    @staticmethod
+    def get_tool_by_name(name: str) -> Optional[BaseSearchTool]:
+        """根据工具名称获取工具实例"""
+        for tool_cls in ALL_TOOLS:
+            tool = tool_cls()
+            if tool.name == name:
+                return tool
+        return None
 
     def _init_query_enhancers(self) -> List[Any]:
         """初始化问题增强处理器链"""

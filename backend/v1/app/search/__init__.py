@@ -42,6 +42,15 @@ from .post_processing import (
     Reranker
 )
 from .service import SearchService
+from .tools import (
+    BaseSearchTool,
+    SemanticSearchTool,
+    KeywordSearchTool,
+    SQLQueryTool,
+    HybridSearchTool,
+    GeneralSearchTool,
+    ALL_TOOLS
+)
 from .config import (
     DATA_SOURCE_CONFIG,
     RETRIEVAL_CONFIG,
@@ -99,6 +108,15 @@ __all__ = [
 
     # Service
     "SearchService",
+
+    # Tools
+    "BaseSearchTool",
+    "SemanticSearchTool",
+    "KeywordSearchTool",
+    "SQLQueryTool",
+    "HybridSearchTool",
+    "GeneralSearchTool",
+    "ALL_TOOLS",
 
     # Config
     "DATA_SOURCE_CONFIG",
