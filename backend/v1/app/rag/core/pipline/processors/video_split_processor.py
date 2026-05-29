@@ -1,7 +1,8 @@
 from typing import Dict, List
-
-from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 import io
+from backend.store import get_storage_client
+from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
+from backend.ffmpeg import FFmpegVideoProcessor
 
 class VideoSplitProcessor(BaseProcessor):
     """
@@ -31,11 +32,9 @@ class VideoSplitProcessor(BaseProcessor):
         if not object_name or not video_id:
             raise ValueError("video_id is required in context")
 
-        from backend.store import get_storage_client
         client = get_storage_client()
         ios = client.get_object(object_name)
 
-        from backend.ffmpeg import FFmpegVideoProcessor
         ios = (FFmpegVideoProcessor
                                    .split_into_segments_in_memory(ios,
                                                                  segment_duration_range=

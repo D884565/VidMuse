@@ -155,6 +155,9 @@ class MinioClient(ObjectStorage):
                 return False
             raise RuntimeError(f"检查MinIO对象是否存在失败: {str(e)}")
 
+    def get_bucket_name(self) -> str:
+        return self.bucket_name
+
 
 def get_minio_client() -> MinioClient:
     """获取MinIO客户端实例"""

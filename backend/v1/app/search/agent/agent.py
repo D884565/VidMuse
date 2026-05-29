@@ -3,11 +3,11 @@ import os
 from typing import List, Dict, Any, Optional, Tuple
 from volcenginesdkarkruntime import Ark
 from dotenv import load_dotenv
-from ..dto.response import Message, ChatResponse
-from ..tools.base import BaseTool
-from ..tools.rag_tool import RAGSearchTool
+from .dto.response import Message, ChatResponse
+from ..tools.base import BaseSearchTool
+from ..tools import ALL_TOOLS
 from .context import SessionContext
-from ..config import AGENT_CONFIG, TOOL_CLASS_MAPPING
+from ..agent_config import AGENT_CONFIG
 
 load_dotenv()
 
@@ -36,20 +36,15 @@ class Agent:
         self.tools: Dict[str, BaseTool] = self._load_tools()
         self.tool_definitions = [tool.get_function_definition() for tool in self.tools.values()]
 
-    def _load_tools(self) -> Dict[str, BaseTool]:
+    def _load_tools(self) -> Dict[str, BaseSearchTool]:
         """加载配置中启用的工具"""
         tools = {}
         enabled_tools = AGENT_CONFIG["tools"]["enabled"]
 
-        for tool_name in enabled_tools:
-            if tool_name not in TOOL_CLASS_MAPPING:
-                continue
-
-            # 动态导入工具类
-            module_path, class_name = TOOL_CLASS_MAPPING[tool_name].rsplit(".", 1)
-            module = __import__(module_path, fromlist=[class_name])
-            tool_class = getattr(module, class_name)
-            tools[tool_name] = tool_class()
+        for tool_cls in ALL_TOOLS:
+            tool = tool_cls()
+            if tool.name in enabled_tools:
+                tools[tool.name] = tool
 
         return tools
 

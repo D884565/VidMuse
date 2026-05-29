@@ -9,24 +9,44 @@ from .base import VectorDatabase
 class ChromaDBClient(VectorDatabase):
     """ChromaDB 向量数据库客户端封装"""
     _instance = None
+    _client = None  # 共享的ChromaDB客户端连接
 
-    def __new__(cls):
-        """单例模式"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    def __new__(cls, collection_name: str = None):
+        """支持指定collection的实例创建"""
+        if collection_name is None and cls._instance is not None:
+            # 返回默认collection的单例
+            return cls._instance
 
-    def __init__(self):
-        """初始化客户端（仅执行一次）"""
+        instance = super().__new__(cls)
+        instance._initialized = False
+        instance.collection_name = collection_name or settings.CHROMADB_COLLECTION
+
+        if collection_name is None:
+            # 保存默认collection的实例为单例
+            cls._instance = instance
+
+        return instance
+
+    def __init__(self, collection_name: str = None):
+        """初始化客户端（连接仅初始化一次）"""
         if self._initialized:
             return
-        self.client = chromadb.HttpClient(
-            host=settings.CHROMADB_HOST,
-            port=settings.CHROMADB_PORT,
-            settings=Settings(anonymized_telemetry=False)
-        )
-        self.collection = self._ensure_collection_exists()
+
+        # 初始化共享的ChromaDB客户端连接
+        if ChromaDBClient._client is None:
+            ChromaDBClient._client = chromadb.HttpClient(
+                host=settings.CHROMADB_HOST,
+                port=settings.CHROMADB_PORT,
+                settings=Settings(anonymized_telemetry=False)
+            )
+
+        self.client = ChromaDBClient._client
+
+        # 确保集合存在
+        if collection_name is None:
+            # 默认collection使用原来的_ensure_collection_exists方法
+            self.collection = self._ensure_collection_exists()
+
         self._initialized = True
 
     def _ensure_collection_exists(self):
@@ -98,6 +118,8 @@ class ChromaDBClient(VectorDatabase):
     def release_collection(self) -> None:
         """释放集合 - ChromaDB不支持，抛出未实现错误"""
         raise NotImplementedError("ChromaDB does not support collection releasing")
+
+
 
 
 def get_chromadb_client():

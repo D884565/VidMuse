@@ -42,6 +42,11 @@ from .post_processing import (
     Reranker
 )
 from .service import SearchService
+from .agent import agent, session_manager, system_prompt
+from .agent.service.agent_service import AgentService, agent_service
+from .agent.dto.response import Message, ChatResponse
+from .agent.context import SessionContext, SessionManager
+from .agent_config import AGENT_CONFIG
 from .tools import (
     BaseSearchTool,
     SemanticSearchTool,
@@ -108,6 +113,18 @@ __all__ = [
 
     # Service
     "SearchService",
+
+    # Agent
+    "agent",
+    "agent_service",
+    "AgentService",
+    "session_manager",
+    "SessionContext",
+    "SessionManager",
+    "Message",
+    "ChatResponse",
+    "AGENT_CONFIG",
+    "system_prompt",
 
     # Tools
     "BaseSearchTool",

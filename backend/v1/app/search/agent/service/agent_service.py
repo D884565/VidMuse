@@ -1,7 +1,7 @@
 from typing import Optional, List, Dict, Any
 from ..dto.response import ChatResponse, Message
-from ..core import session_manager, agent
-from ..core.context import SessionContext
+from .. import session_manager, agent
+from ..context import SessionContext
 
 
 class AgentService:

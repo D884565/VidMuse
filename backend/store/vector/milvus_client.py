@@ -8,37 +8,49 @@ from .base import VectorDatabase
 class MilvusClientWrapper(VectorDatabase):
     """Milvus 向量数据库客户端封装"""
     _instance = None
+    _client = None  # 共享的Milvus客户端连接
 
-    def __new__(cls):
-        """单例模式"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    def __new__(cls, collection_name: str = None):
+        """支持指定collection的实例创建"""
+        if collection_name is None and cls._instance is not None:
+            # 返回默认collection的单例
+            return cls._instance
 
-    def __init__(self):
-        """初始化客户端（仅执行一次）"""
+        instance = super().__new__(cls)
+        instance._initialized = False
+        instance.collection_name = collection_name or settings.MILVUS_COLLECTION
+
+        if collection_name is None:
+            # 保存默认collection的实例为单例
+            cls._instance = instance
+
+        return instance
+
+    def __init__(self, collection_name: str = None):
+        """初始化客户端（连接仅初始化一次）"""
         if self._initialized:
             return
 
-        # 连接Milvus服务
-        try:
-            self.client = MilvusClient(
-                uri=f"http://{settings.MILVUS_HOST}:{settings.MILVUS_PORT}",
-                user=settings.MILVUS_USERNAME,
-                password=settings.MILVUS_PASSWORD
-            )
-        except Exception as e:
-            raise RuntimeError(f"连接Milvus失败: {str(e)}")
+        # 初始化共享的Milvus客户端连接
+        if MilvusClientWrapper._client is None:
+            try:
+                MilvusClientWrapper._client = MilvusClient(
+                    uri=f"http://{settings.MILVUS_HOST}:{settings.MILVUS_PORT}",
+                    user=settings.MILVUS_USERNAME,
+                    password=settings.MILVUS_PASSWORD
+                )
+            except Exception as e:
+                raise RuntimeError(f"连接Milvus失败: {str(e)}")
 
-        self.collection_name = settings.MILVUS_COLLECTION
+        self.client = MilvusClientWrapper._client
         self.vector_dimension = settings.MILVUS_VECTOR_DIMENSION
 
         # 确保集合存在
-        self.collection = self._ensure_collection_exists()
-
-        # 加载集合到内存
-        self.load_collection()
+        if collection_name is None:
+            # 默认collection使用原来的_ensure_collection_exists方法
+            self.collection = self._ensure_collection_exists()
+            # 加载集合到内存
+            self.load_collection()
 
         self._initialized = True
 
@@ -71,7 +83,7 @@ class MilvusClientWrapper(VectorDatabase):
 
             # 创建默认IVF_FLAT索引
             self.create_index(
-                field_name="embedding",
+                field_name="document_embedding",
                 index_type="IVF_FLAT",
                 params={"nlist": 1024}
             )

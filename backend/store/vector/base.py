@@ -71,3 +71,4 @@ class VectorDatabase(ABC):
     def release_collection(self) -> None:
         """释放集合内存（Milvus特有方法）"""
         pass
+

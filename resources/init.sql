@@ -1,8 +1,10 @@
 DROP TABLE IF EXISTS conversations;
 DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS merge_tasks;
+DROP TABLE IF EXISTS slices;
 DROP TABLE IF EXISTS assets;
 DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS product_categories;
 DROP TABLE IF EXISTS projects;
 DROP TABLE IF EXISTS users;
 
@@ -20,6 +22,22 @@ CREATE TABLE IF NOT EXISTS users(
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
+
+CREATE TABLE IF NOT EXISTS product_categories (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '分类ID',
+    name            VARCHAR(100) NOT NULL COMMENT '分类名称',
+    parent_id       BIGINT NOT NULL DEFAULT 0 COMMENT '父分类ID，0表示一级分类',
+    level           TINYINT NOT NULL COMMENT '分类层级：1-一级分类，2-二级分类，3-三级分类',
+    path            VARCHAR(200) NOT NULL COMMENT '分类路径，如"/1/2/3/"，方便查询子树',
+    sort            INT NOT NULL DEFAULT 0 COMMENT '排序权重，数值越大越靠前',
+    is_deleted      TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_name_parent (name, parent_id, is_deleted),
+    INDEX idx_parent_id (parent_id),
+    INDEX idx_level (level),
+    INDEX idx_path (path)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品分类表';
 
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -66,6 +84,23 @@ CREATE TABLE IF NOT EXISTS assets (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='素材库';
 
 
+CREATE TABLE IF NOT EXISTS slices (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '切片id',
+    asset_id        BIGINT NOT NULL COMMENT '所属资产id',
+    `index`         INT NOT NULL COMMENT '切片序号(从1开始)',
+    title           VARCHAR(200) COMMENT '切片标题',
+    url             VARCHAR(500) NOT NULL COMMENT '切片视频URL',
+    cover_url       VARCHAR(500) COMMENT '切片封面图URL',
+    start_time      INT COMMENT '切片在原视频中的开始时间(毫秒)',
+    end_time        INT COMMENT '切片在原视频中的结束时间(毫秒)',
+    duration        INT COMMENT '切片时长(毫秒)',
+    ai_features     JSON COMMENT 'AI特征因子',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_asset_index (asset_id, `index`),
+    INDEX idx_asset_id (asset_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频切片表';
+
 
 CREATE TABLE IF NOT EXISTS frames (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '帧id',
@@ -97,9 +132,11 @@ CREATE TABLE IF NOT EXISTS products (
     user_id         BIGINT COMMENT '所属用户id(为空表示平台公共商品)',
     name            VARCHAR(200) NOT NULL COMMENT '商品名称',
     brand           VARCHAR(100) COMMENT '品牌',
-    category        VARCHAR(100) COMMENT '商品分类',
+    category        VARCHAR(100) COMMENT '商品分类（冗余存储三级分类名称）',
+    category_id     BIGINT COMMENT '关联分类ID，对应product_categories.id',
+    category_path   VARCHAR(200) COMMENT '分类路径，冗余存储方便检索，如"/1/2/3/"',
     description     TEXT COMMENT '商品描述',
-    selling_points  JSON COMMENT '卖点列表',
+    selling_points  JSON COMMENT 'ai解析特征',
     price           DECIMAL(12, 2) COMMENT '价格',
     main_image_url  VARCHAR(500) COMMENT '主图URL',
     detail_url      VARCHAR(1000) COMMENT '商品详情页链接',
@@ -110,9 +147,12 @@ CREATE TABLE IF NOT EXISTS products (
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL,
     INDEX idx_user (user_id),
     INDEX idx_platform (platform, platform_id),
     INDEX idx_category (category),
+    INDEX idx_category_id (category_id),
+    INDEX idx_category_path (category_path),
     FULLTEXT INDEX ft_name_desc (name, description)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
 
