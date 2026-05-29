@@ -22,6 +22,7 @@ from .query_enhancement import (
 )
 from .retrieval import (
     VectorRetriever,
+    ChromaDBRetriever,
     KeywordRetriever,
     HybridRetriever,
     SQLRetriever,
@@ -31,7 +32,8 @@ from .retrieval.channels import (
     MilvusChannel,
     ESChannel,
     MySQLChannel,
-    HttpAPIChannel
+    HttpAPIChannel,
+    ChromaDBChannel
 )
 from .post_processing import (
     Deduplicator,
@@ -76,6 +78,7 @@ __all__ = [
 
     # Retrieval
     "VectorRetriever",
+    "ChromaDBRetriever",
     "KeywordRetriever",
     "HybridRetriever",
     "SQLRetriever",
@@ -86,6 +89,7 @@ __all__ = [
     "ESChannel",
     "MySQLChannel",
     "HttpAPIChannel",
+    "ChromaDBChannel",
 
     # Post Processing
     "Deduplicator",

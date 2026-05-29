@@ -18,6 +18,10 @@ DATA_SOURCE_CONFIG: Dict[str, Dict[str, Any]] = {
         "user": "root",
         "password": "",
         "database": "vidmuse"
+    },
+    "chromadb": {
+        "persist_directory": "./chroma_db",
+        "default_collection": "documents"
     }
 }
 
