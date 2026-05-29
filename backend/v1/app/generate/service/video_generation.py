@@ -40,14 +40,14 @@ class VideoGenerationService:
         project = result.scalar_one_or_none()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
-        if project.status in ("script_generating", "processing", "render_queued", "rendering"):
+        if project.status in ("script_generating", "render_queued", "rendering"):
             return {
                 "project_id": project_id,
                 "frames_count": 0,
                 "status": project.status,
                 "message": "generation already in progress",
             }
-        if project.status not in ("script_ready", "completed", "failed"):
+        if project.status not in ("script_ready", "review_required", "processing", "completed", "failed"):
             raise ValueError(f"当前状态不允许生成: {project.status}")
 
         # 检查是否有帧数据
@@ -126,14 +126,22 @@ class VideoGenerationService:
             "frames": [
                 {
                     "id": f.id,
+                    "script_id": f.script_id,
                     "sequence": f.sequence,
                     "scene_type": f.scene_type,
                     "description": f.description,
                     "prompt": f.prompt,
+                    "narration": f.narration,
+                    "subtitle_text": f.subtitle_text,
+                    "subtitle_position": f.subtitle_position,
+                    "image_prompt": f.image_prompt,
+                    "video_prompt": f.video_prompt,
                     "image_url": f.image_url,
                     "audio_url": f.audio_url,
                     "duration": float(f.duration),
                     "status": f.status,
+                    "dirty": bool(f.dirty),
+                    "last_edited_at": f.last_edited_at.isoformat() if f.last_edited_at else None,
                     "error_message": f.error_message,
                     "text_overlay": f.text_overlay,
                     "ai_params": f.ai_params,

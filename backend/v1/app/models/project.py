@@ -43,3 +43,4 @@ class Project(Base):
     # 关联
     frames = relationship("Frame", back_populates="project", cascade="all, delete-orphan")
     conversations = relationship("Conversation", back_populates="project", cascade="all, delete-orphan")
+    scripts = relationship("Script", back_populates="project", cascade="all, delete-orphan")

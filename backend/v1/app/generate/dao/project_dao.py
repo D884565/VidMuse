@@ -3,6 +3,7 @@ from typing import Optional
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
 
 
@@ -51,8 +52,16 @@ class ProjectDAO:
         keyword: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
-    ) -> tuple[int, list[Project]]:
-        query = select(Project)
+    ) -> tuple[int, list[tuple[Project, int]]]:
+        frame_count_subquery = (
+            select(Frame.project_id, func.count(Frame.id).label("frame_count"))
+            .group_by(Frame.project_id)
+            .subquery()
+        )
+        query = (
+            select(Project, func.coalesce(frame_count_subquery.c.frame_count, 0))
+            .outerjoin(frame_count_subquery, frame_count_subquery.c.project_id == Project.id)
+        )
 
         if user_id is not None:
             query = query.where(Project.user_id == user_id)
@@ -75,6 +84,6 @@ class ProjectDAO:
         offset = (page - 1) * page_size
         query = query.order_by(Project.created_at.desc()).offset(offset).limit(page_size)
         result = await db.execute(query)
-        projects = list(result.scalars().all())
+        projects = [(row[0], int(row[1] or 0)) for row in result.all()]
 
         return total, projects

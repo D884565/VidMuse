@@ -4,7 +4,7 @@ import logging
 
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, Path
+from fastapi import APIRouter, Body, Depends, Path, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,6 +15,7 @@ from backend.v1.app.generate.service.script_generation import script_generation_
 from backend.v1.app.generate.service.video_generation import video_generation_service
 from backend.v1.app.generate.service.chat_service import chat_service
 from backend.v1.app.generate.service.task_service import generation_task_service
+from backend.v1.app.generate.service.storyboard_service import storyboard_service
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
 from backend.framework.web import Response
 from backend.framework.web.auth import get_current_user_id
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/generate/v1", tags=["视频生成"])
 
 SCRIPT_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering", "processing"}
+SCRIPT_REGENERATE_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering"}
 
 
 @router.post("/projects", response_model=Response)
@@ -190,6 +192,7 @@ async def delete_project(
 @router.post("/projects/{project_id}/script/generate", response_model=Response)
 async def generate_project_script(
     project_id: int = Path(..., gt=0),
+    force: bool = Query(False),
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -201,7 +204,8 @@ async def generate_project_script(
 
     status_result = await db.execute(select(Project.status).where(Project.id == project_id))
     current_status = status_result.scalar_one()
-    if current_status in SCRIPT_BLOCKED_STATUSES:
+    blocked_statuses = SCRIPT_REGENERATE_BLOCKED_STATUSES if force else SCRIPT_BLOCKED_STATUSES
+    if current_status in blocked_statuses:
         raise BusinessException(VIDEO_ERROR, f"当前状态不允许重新生成剧本: {current_status}")
 
     task = await generation_task_service.create_task(db, project_id, "script", status="running")
@@ -213,7 +217,7 @@ async def generate_project_script(
         project_model.status = "script_generating"
         await db.commit()
 
-        frames = await script_generation_service.generate_script(db, project_id)
+        frames = await script_generation_service.generate_script(db, project_id, force=force)
         task.status = "succeeded"
         task.progress = 100
         task.current_step = "SCRIPT_GENERATED"
@@ -340,6 +344,57 @@ async def get_conversations(
         }
         for c in conversations
     ])
+
+
+@router.get("/projects/{project_id}/scripts", response_model=Response)
+async def list_project_scripts(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询项目脚本版本列表。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权访问该项目")
+    scripts = await storyboard_service.list_scripts(db, project_id)
+    return Response.success(data=scripts)
+
+
+@router.get("/projects/{project_id}/scripts/{script_id}", response_model=Response)
+async def get_project_script(
+    project_id: int = Path(..., gt=0),
+    script_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询项目脚本版本详情。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权访问该项目")
+    try:
+        script = await storyboard_service.get_script(db, project_id, script_id)
+        return Response.success(data=script)
+    except ValueError as e:
+        raise BusinessException(RESOURCE_NOT_FOUND, str(e))
+
+
+@router.patch("/projects/{project_id}/frames/{frame_id}", response_model=Response)
+async def update_project_frame(
+    patch: dict = Body(...),
+    project_id: int = Path(..., gt=0),
+    frame_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """保存分镜编辑草稿，并标记为待合成。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    try:
+        frame = await storyboard_service.update_frame(db, project_id, frame_id, patch)
+        return Response.success(data=frame)
+    except ValueError as e:
+        raise BusinessException(RESOURCE_NOT_FOUND, str(e))
 
 
 @router.post("/projects/{project_id}/frames/{frame_id}/regenerate", response_model=Response)

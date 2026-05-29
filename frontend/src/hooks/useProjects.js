@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { getProjects } from '../services/project.js'
+import { useAppStore } from '../store/appStore.js'
 
 /**
  * 项目列表 hook
@@ -11,6 +12,7 @@ export function useProjects(initialParams = {}) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [params] = useState(initialParams)
+  const projectListVersion = useAppStore((state) => state.projectListVersion)
 
   const fetchProjects = useCallback(async () => {
     try {
@@ -28,7 +30,7 @@ export function useProjects(initialParams = {}) {
 
   useEffect(() => {
     fetchProjects()
-  }, [fetchProjects])
+  }, [fetchProjects, projectListVersion])
 
   return { projects, loading, error, refetch: fetchProjects }
 }
