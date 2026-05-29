@@ -24,7 +24,7 @@ class VectorizationProcessor(BaseProcessor):
     def __init__(self,
                  data_key: str = "valid_slices",
                  image_key: Optional[ str] = "image_url",
-                 vector_db_type: str = VectorDBType.MILVUS,
+                 vector_db_type: str = VectorDBType.CHROMADB,
                  meta: Optional[Dict[str, Any]] = None,
                  vector_db_client=None):
         """

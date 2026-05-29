@@ -109,3 +109,5 @@ def delete_asset(
     """删除资产"""
     AssetService.delete_asset(db=db, asset_id=asset_id)
     return Response.success(data=None, message="删除成功")
+
+

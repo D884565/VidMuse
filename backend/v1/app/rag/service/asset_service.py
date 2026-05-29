@@ -1,3 +1,4 @@
+import os
 import uuid
 import json
 import asyncio
@@ -81,13 +82,25 @@ class AssetService:
                 return {
                     "scene": "音频",
                     "mood": "未知",
-                    "objects": ["声音"]
+                    "objects": ["声音"],
+                    "slice_len": 1,
+                    "ai_features": {
+                        "scene": "音频",
+                        "mood": "未知",
+                        "objects": ["声音"]
+                    }
                 }
             else:
                 return {
                     "scene": "未知",
                     "mood": "未知",
-                    "objects": []
+                    "objects": [],
+                    "slice_len": 1,
+                    "ai_features": {
+                        "scene": "未知",
+                        "mood": "未知",
+                        "objects": []
+                    }
                 }
 
             try:
@@ -111,7 +124,11 @@ class AssetService:
 
         except BaseAppException:
             return {
-                "error": "解析特征失败"
+                "error": "解析特征失败",
+                "slice_len": 1,
+                "ai_features": {
+                    "error": "解析特征失败"
+                }
             }
 
 
@@ -179,21 +196,20 @@ class AssetService:
         # todo 目前先将解析结果落库，后续再优化
         slices = []
         for i in range(context["slice_len"]):
-            context["slice_id"] = i
-            response_data = {
-                "id": asset_dict["id"],
+            # 处理多切片情况，优先取对应切片的特征
+            slice_features = context.get("slices", [context["ai_features"]])[i] if context.get("slices") else context["ai_features"]
+            slice_data = {
                 "type": asset_dict["type"],
-                "type_name": AssetService.TYPE_NAME.get(asset_dict["type"], "未知"),
-                "title": asset_dict["title"],
+                "title": f"{asset_dict['title']}_切片_{i+1}",
                 "url": asset_dict["url"],
                 "file_size": asset_dict["file_size"],
                 "duration": asset_dict["duration"],
                 "format": asset_dict["format"],
-                "ai_features": context["ai_features"],
+                "ai_features": slice_features,
                 "source_type": asset_dict["source_type"],
-                "created_at": asset_dict["created_at"]
+                "user_id": asset_dict["user_id"]
             }
-            slices.append(response_data)
+            slices.append(slice_data)
         AssetDAO.insert_batch_assets(db, slices)
 
 
@@ -273,7 +289,10 @@ class AssetService:
         # 如果不需要跳过AI分析，则同步提取特征（内部接口可以接受稍长时间）
         if not skip_ai_analysis:
             context = await AssetService._extract_ai_features(asset_dict["id"], type)
-            asset_data["ai_features"] = context["ai_features"]
+            ai_features = context["ai_features"]
+            # 更新数据库中的ai_features字段
+            updated_asset = AssetDAO.update_asset(db, asset_dict["id"], {"ai_features": ai_features})
+            asset_dict = updated_asset.to_dict()
 
         # 构造响应数据
         response_data = {
@@ -435,14 +454,18 @@ class AssetService:
             raise BusinessException(PARAM_ERROR, "删除失败")
 
     @classmethod
-    def _generate_object_name(cls, type,  file_name ,ext, is_internal) ->str:
+    def _generate_object_name(cls, type, file_name, ext, is_internal) -> str:
         mappings = {
             1: "image",
             2: "video",
             3: "audio"
         }
+        # 去掉文件名中的扩展名，避免重复拼接
+        file_name_without_ext = os.path.splitext(file_name)[0]
         if is_internal:
-            return f"material/{mappings[type]}/{file_name}.{ext}"
+            return f"material/{mappings[type]}/{file_name_without_ext}.{ext}"
         else:
-            return f"assets/{mappings[type]}/{file_name}.{ext}"
-        return ""
+            return f"assets/{mappings[type]}/{file_name_without_ext}.{ext}"
+
+
+

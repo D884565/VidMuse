@@ -112,8 +112,14 @@ class SchemaValidationProcessor(BaseProcessor):
         """
         创建视频数据校验处理器
         """
-        return cls(template_type="video", data_key="video_data",
-                   valid_key="valid_videos", invalid_key="invalid_videos", **kwargs)
+        config = {
+            "template_type": "video",
+            "data_key": "video_data",
+            "valid_key": "valid_videos",
+            "invalid_key": "invalid_videos"
+        }
+        config.update(kwargs)
+        return cls(**config)
 
     @classmethod
     def for_product(cls, **kwargs) -> "SchemaValidationProcessor":

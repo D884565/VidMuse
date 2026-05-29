@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     MYSQL_PORT: int = 3306
     MYSQL_DATABASE: str = "aigc_video"
     MYSQL_USER: str = "aigc_user"
+    MYSQL_ROOT: str = "root"
+    MYSQL_ROOT_PASSWORD: str = "root_password"
     MYSQL_PASSWORD: str = "123456"
     DATABASE_URL: str | None = None  # 显式指定时优先
 
@@ -35,7 +37,7 @@ class Settings(BaseSettings):
         if self.DATABASE_URL:
             return self.DATABASE_URL.replace("+aiomysql", "+pymysql")
         return (
-            f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
+            f"mysql+pymysql://{self.MYSQL_ROOT}:{self.MYSQL_ROOT_PASSWORD}"
             f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
             "?charset=utf8mb4"
         )
