@@ -34,12 +34,42 @@ class VideoUnderstandingProcessor(BaseProcessor):
            - 时长：片段时长（如：3-5秒）
            - 情绪评分：0-1之间的浮点数，表示主播情绪兴奋程度
         4. 生成Prompt完整模板：可以直接用于AI视频生成的完整Prompt描述
-        
+
         完整的json模板如下:
         {json_info}
 
         请严格按照JSON格式输出，不要有其他内容。
         """
+
+    def _run_async(self, coro):
+        """
+        从同步上下文中运行异步函数，处理已有事件循环的情况
+        :param coro: 要运行的协程
+        :return: 协程的返回值
+        """
+        try:
+            # 检查是否有正在运行的事件循环
+            loop = asyncio.get_running_loop()
+            # 如果有运行中的循环，在新线程中运行异步函数避免死锁
+            import threading
+            result = None
+            def run_in_thread():
+                nonlocal result
+                # 新线程中创建新的事件循环
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result = new_loop.run_until_complete(coro)
+                finally:
+                    new_loop.close()
+
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            return result
+        except RuntimeError:
+            # 没有运行中的循环，直接使用asyncio.run
+            return asyncio.run(coro)
 
     def process(self, context: PipelineContext) -> PipelineContext:
         """
@@ -85,13 +115,15 @@ class VideoUnderstandingProcessor(BaseProcessor):
                 # 尝试异步调用（如果方法是异步的）
                 import inspect
                 if inspect.iscoroutinefunction(self.llm_client.video_understanding):
-                    response = asyncio.run(self.llm_client.video_understanding(VideoUnderstandingRequest(
+                    coro = self.llm_client.video_understanding(VideoUnderstandingRequest(
                         video_url=slices_url[i],
                         prompt=prompt_template,
                         max_tokens=2048,
                         temperature=0.7,
                         top_p=0.9
-                    )))
+                    ))
+                    # 使用辅助方法运行异步函数，处理已有事件循环的情况
+                    response = self._run_async(coro)
                 else:
                     # 同步调用
                     response = self.llm_client.video_understanding(VideoUnderstandingRequest(
@@ -125,13 +157,21 @@ class VideoUnderstandingProcessor(BaseProcessor):
             }
 
             understood_slices.append(slice_data)
-            # 扁平化理解结果，用于向量化
+            # 准备向量化数据：包含原始内容和元数据
             # 先添加slice_id和video_id到理解结果中，再扁平化
             understanding_with_id = understanding_result.copy()
             understanding_with_id["slice_id"] = slice_data["slice_id"]
             understanding_with_id["video_id"] = video_id
             flattened = JsonFlattener.flatten(understanding_with_id)
-            embed_slices.append(flattened)
+
+            # VectorizationProcessor需要dict格式，包含content和元数据字段
+            embed_data = {
+                "slice_id": slice_data["slice_id"],
+                "content": flattened,
+                "start_time": slice_data.get("start_time", 0.0),
+                "end_time": slice_data.get("end_time", 0.0)
+            }
+            embed_slices.append(embed_data)
 
         # 存储结果到上下文
         context.set("understood_slices", understood_slices)

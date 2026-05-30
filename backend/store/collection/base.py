@@ -44,7 +44,9 @@ class CollectionDAO(ABC):
         :param metadatas: 元数据列表
         :param documents: 文档内容列表
         """
-        self._vector_client.add_embeddings(ids, embeddings, metadatas, documents)
+        # 确保所有ID都是字符串类型，兼容整数ID
+        str_ids = [str(id) for id in ids]
+        self._vector_client.add_embeddings(str_ids, embeddings, metadatas, documents)
 
     def query_similar(self, query_embeddings: List[List[float]], n_results: int = 10,
                      where: Optional[Dict] = None,
@@ -68,7 +70,9 @@ class CollectionDAO(ABC):
         :param where: 元数据过滤条件
         :param where_document: 文档内容过滤条件
         """
-        self._vector_client.delete_embeddings(ids, where, where_document)
+        # 确保所有ID都是字符串类型，兼容整数ID
+        str_ids = [str(id) for id in ids] if ids is not None else None
+        self._vector_client.delete_embeddings(str_ids, where, where_document)
 
     def get_stats(self) -> Dict:
         """

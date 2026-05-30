@@ -75,7 +75,7 @@ class VideoKnowledgeDAO(CollectionDAO):
                 "video_id": video_id,
                 "title": titles[i],
                 "category": categories[i],
-                "tags": tags[i],
+                "tags": ",".join(tags[i]) if isinstance(tags[i], list) else str(tags[i]),
                 "source": "video_knowledge"
             }
             metadatas.append(metadata)

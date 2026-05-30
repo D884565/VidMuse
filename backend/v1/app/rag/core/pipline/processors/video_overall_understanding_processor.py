@@ -1,5 +1,7 @@
 import json
 import os
+import asyncio
+import inspect
 from typing import Dict, List
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
@@ -39,11 +41,41 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
            - 情绪曲线: 视频的情绪变化曲线数组，如["高涨→平稳", "平稳→微升"]
            - 视觉节奏: 整体视觉节奏描述
            - BGM节奏匹配: BGM与画面的匹配情况描述
-        
+
 
         请严格按照如下json格式输出解析内容，请保证所有字段完整。
         {json_template}
         """
+
+    def _run_async(self, coro):
+        """
+        从同步上下文中运行异步函数，处理已有事件循环的情况
+        :param coro: 要运行的协程
+        :return: 协程的返回值
+        """
+        try:
+            # 检查是否有正在运行的事件循环
+            loop = asyncio.get_running_loop()
+            # 如果有运行中的循环，在新线程中运行异步函数避免死锁
+            import threading
+            result = None
+            def run_in_thread():
+                nonlocal result
+                # 新线程中创建新的事件循环
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result = new_loop.run_until_complete(coro)
+                finally:
+                    new_loop.close()
+
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            return result
+        except RuntimeError:
+            # 没有运行中的循环，直接使用asyncio.run
+            return asyncio.run(coro)
 
     def process(self, context: PipelineContext) -> PipelineContext:
         """
@@ -94,10 +126,19 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         prompt = self.prompt_template.format(json_template=json.dumps(load_template("video"), ensure_ascii=False))
 
         # 构建大模型请求
-        response = self.llm_client.text_understanding(TextUnderstandingRequest(
-            prompt=prompt,
-            text=full_input
-        ))
+        if inspect.iscoroutinefunction(self.llm_client.text_understanding):
+            coro = self.llm_client.text_understanding(TextUnderstandingRequest(
+                prompt=prompt,
+                text=full_input
+            ))
+            # 使用辅助方法运行异步函数，处理已有事件循环的情况
+            response = self._run_async(coro)
+        else:
+            # 同步调用
+            response = self.llm_client.text_understanding(TextUnderstandingRequest(
+                prompt=prompt,
+                text=full_input
+            ))
 
         # 解析返回结果
         try:
@@ -115,7 +156,16 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         # 先添加video_id到结果中，再扁平化
         resolve_with_id = resolve.copy()
         resolve_with_id["video_id"] = video_id
-        embed_video = JsonFlattener.flatten(resolve_with_id)
+        flattened = JsonFlattener.flatten(resolve_with_id)
+
+        # VectorizationProcessor需要dict格式，包含content和元数据字段
+        embed_video = {
+            "video_id": video_id,
+            "content": flattened,
+            "title": resolve.get("视频基本信息", {}).get("商品名称", ""),
+            "category": "general",
+            "tags": []
+        }
 
         # 存储到上下文
         context.set("ai_features", resolve)

@@ -1,7 +1,6 @@
 from typing import Dict, Any, List
 from .base import BaseSearchTool
 from ..core import Query, Document
-from ..retrieval import VectorRetriever, ChromaDBRetriever
 
 
 class SemanticSearchTool(BaseSearchTool):
@@ -42,15 +41,28 @@ class SemanticSearchTool(BaseSearchTool):
         "required": ["query"]
     }
 
+    # 语义检索简化查询增强流程，不需要意图识别和重写
+    query_enhancer_config = [
+        "context"  # 仅需要上下文处理
+    ]
+
+    # 语义检索配置多种向量数据库检索器
+    retriever_config = {
+        "milvus": "vector",
+        "chromadb": "chromadb"
+    }
+
+    # 语义检索默认使用完整后处理，可配置关闭
+    post_processor_config = [
+        "deduplicator",
+        "filter",
+        "merger",
+        "reranker"
+    ]
+
     # 语义检索固定使用semantic类型
     default_retrieval_type = "semantic"
     max_top_k = 20
-
-    def __init__(self, config: Dict[str, Any] = None):
-        super().__init__(config)
-        # 语义检索特有的检索器
-        self.milvus_retriever = VectorRetriever()
-        self.chromadb_retriever = ChromaDBRetriever()
 
     def retrieve_documents(self, query: Query, top_k: int = 10) -> List[Document]:
         """重写检索方法，支持选择向量数据库"""
@@ -58,11 +70,8 @@ class SemanticSearchTool(BaseSearchTool):
         vector_db = getattr(query, "vector_db", "milvus")
         top_k = min(top_k, self.max_top_k)
 
-        if vector_db == "chromadb":
-            retriever = self.chromadb_retriever
-        else:
-            retriever = self.milvus_retriever
-
+        # 从注册中心获取对应检索器
+        retriever = self.retrievers.get(vector_db, self.retrievers["milvus"])
         return retriever.retrieve(query, top_k)
 
     def execute(self, params: Dict[str, Any]) -> str:
