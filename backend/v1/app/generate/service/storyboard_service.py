@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.script import Script
+from backend.v1.app.generate.service.generation_workflow import generation_workflow_service
 
 # 允许前端通过 PATCH 接口修改的帧字段
 EDITABLE_FRAME_FIELDS = {
@@ -18,6 +19,7 @@ EDITABLE_FRAME_FIELDS = {
     "image_prompt",
     "video_prompt",
     "duration",
+    "sequence",
 }
 
 
@@ -67,6 +69,11 @@ class StoryboardService:
             changed = True
 
         if changed:
+            duration_result = await db.execute(select(Frame).where(Frame.project_id == project_id))
+            frames = list(duration_result.scalars().all())
+            total_duration = sum(float(item.duration or 0) for item in frames)
+            if total_duration > 15:
+                raise ValueError("分镜总时长不能超过 15 秒")
             self._sync_legacy_fields(frame)
             frame.dirty = 1  # 标记帧已被手动编辑
             frame.last_edited_at = datetime.utcnow()
@@ -74,6 +81,8 @@ class StoryboardService:
             project = await db.get(Project, project_id)
             if project and project.status in ("script_ready", "completed"):
                 project.status = "review_required"
+            if project:
+                generation_workflow_service.invalidate_from(project, "script")
             await db.commit()
             await db.refresh(frame)
 

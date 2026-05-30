@@ -1,7 +1,9 @@
-"""对话历史模型"""
+"""对话历史模型。"""
 import datetime
-from sqlalchemy import String, Text, BigInteger, DateTime, ForeignKey, func
+
+from sqlalchemy import BigInteger, DateTime, ForeignKey, JSON, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from backend.store.database.async_database import Base
 
 
@@ -12,10 +14,18 @@ class Conversation(Base):
     project_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
     )
-    role: Mapped[str] = mapped_column(String(20), nullable=False, comment="user/assistant")
-    content: Mapped[str] = mapped_column(Text, nullable=False, comment="消息内容")
+    role: Mapped[str] = mapped_column(String(20), nullable=False, comment="消息角色: user/assistant")
+    content: Mapped[str] = mapped_column(Text, nullable=False, comment="消息文本内容")
+    message_type: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="text", server_default="text", comment="消息类型: text/stage_card/progress/asset"
+    )
+    stage: Mapped[str | None] = mapped_column(String(30), nullable=True, comment="关联的工作流阶段: script/image/video")
+    blocks: Mapped[list | None] = mapped_column(JSON, nullable=True, comment="结构化消息块（前端可直接渲染）")
+    action_type: Mapped[str | None] = mapped_column(String(50), nullable=True, comment="触发此消息的动作类型")
+    task_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, comment="关联的生成任务 ID")
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True, comment="额外元数据")
     frame_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("frames.id", ondelete="SET NULL"), nullable=True, comment="关联帧ID"
+        BigInteger, ForeignKey("frames.id", ondelete="SET NULL"), nullable=True, comment="关联的分镜 ID"
     )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()

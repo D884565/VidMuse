@@ -1,5 +1,5 @@
 """视频生成调度服务"""
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.project import Project
@@ -7,6 +7,7 @@ from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.generate.temp.celery_app import celery_app
 from backend.v1.app.generate.service.task_service import generation_task_service
+from backend.v1.app.generate.service import project_workflow_state
 
 
 STATUS_TO_INT = {
@@ -45,6 +46,15 @@ class VideoGenerationService:
                 "project_id": project_id,
                 "frames_count": 0,
                 "status": project.status,
+                "task_id": project.last_task_id,
+                "message": "generation already in progress",
+            }
+        if project.workflow_stage == "video" and project.stage_status == "running":
+            return {
+                "project_id": project_id,
+                "frames_count": 0,
+                "status": project.stage_status,
+                "task_id": project.last_task_id,
                 "message": "generation already in progress",
             }
         if project.status not in ("script_ready", "review_required", "processing", "completed", "failed"):
@@ -57,10 +67,18 @@ class VideoGenerationService:
         frames = frame_result.scalars().all()
         if not frames:
             raise ValueError("请先生成剧本（无帧数据）")
+        invalid_frames = [
+            frame.sequence
+            for frame in frames
+            if frame.status == 3 or not frame.image_url or not str(frame.image_url).startswith("http")
+        ]
+        if invalid_frames:
+            raise ValueError(f"存在未成功生成图片的分镜，不能进入视频阶段: {invalid_frames}")
 
         task = await generation_task_service.create_task(db, project_id, "render", status="queued")
 
         # 更新状态，避免前端重复提交渲染任务。
+        project_workflow_state.mark_project_stage_running(project, "video", task.id)
         project.status = "render_queued"
         await db.commit()
 
@@ -94,11 +112,17 @@ class VideoGenerationService:
         )
         frames = frame_result.scalars().all()
 
-        # 获取用户资产（assets 是用户级别，通过 user_id 关联）
+        # 只返回当前项目产物，素材库请走独立素材接口，避免跨项目资产混入详情页。
         assets = []
         if project.user_id:
+            project_prefix = f"projects/{project_id}/"
             asset_result = await db.execute(
-                select(Asset).where(Asset.user_id == project.user_id)
+                select(Asset).where(
+                    or_(
+                        Asset.url.contains(project_prefix),
+                        Asset.url == project.video_output_url,
+                    )
+                )
             )
             assets = asset_result.scalars().all()
 
@@ -120,6 +144,13 @@ class VideoGenerationService:
             "title": project.title,
             "status": project.status,
             "status_code": STATUS_TO_INT.get(project.status, 0),
+            "workflow_stage": project.workflow_stage,
+            "stage_status": project.stage_status,
+            "dirty_stage": project.dirty_stage,
+            "last_task_id": project.last_task_id,
+            "script_confirmed_at": project.script_confirmed_at.isoformat() if project.script_confirmed_at else None,
+            "images_confirmed_at": project.images_confirmed_at.isoformat() if project.images_confirmed_at else None,
+            "video_confirmed_at": project.video_confirmed_at.isoformat() if project.video_confirmed_at else None,
             "video_url": project.video_output_url,
             "video_asset_id": video_asset_id,
             "audio_url": project.audio_url,
@@ -174,7 +205,10 @@ class VideoGenerationService:
         project = result.scalar_one_or_none()
         if project:
             project.video_output_url = video_url
-            project.status = status
+            if status == "completed":
+                project_workflow_state.mark_project_completed(project)
+            else:
+                project_workflow_state.mark_project_stage_failed(project, "video")
             await db.commit()
 
 

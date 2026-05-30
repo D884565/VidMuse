@@ -1,4 +1,6 @@
-export default function MessageBubble({ message, index }) {
+import MessageBlocks from './MessageBlocks.jsx'
+
+export default function MessageBubble({ message, index, onActionComplete }) {
   const isUser = message.role === 'user'
 
   return (
@@ -14,6 +16,7 @@ export default function MessageBubble({ message, index }) {
         }`}
       >
         <p className="m-0 whitespace-pre-wrap">{message.content}</p>
+        <MessageBlocks blocks={message.blocks || []} onActionComplete={onActionComplete} />
         {message.progress ? (
           <div className="mt-4">
             <div className="mb-2 flex justify-between text-xs text-[var(--text-muted)]">

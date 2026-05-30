@@ -1,0 +1,19 @@
+export default function StoryboardTimeline({ frames = [], onSelectFrame }) {
+  return (
+    <div className="storyboard-timeline">
+      {frames.map((frame) => (
+        <button
+          key={frame.id}
+          type="button"
+          className={`timeline-frame ${frame.dirty ? 'is-dirty' : ''} ${frame.status === 3 ? 'is-failed' : ''}`}
+          onClick={() => onSelectFrame?.(frame)}
+        >
+          <span>#{frame.sequence}</span>
+          <span>{Number(frame.duration || 0).toFixed(1)}s</span>
+          <span>{frame.status}</span>
+          {frame.dirty ? <span>待合成</span> : null}
+        </button>
+      ))}
+    </div>
+  )
+}

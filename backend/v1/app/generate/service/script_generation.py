@@ -10,6 +10,7 @@ from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.generation_task import GenerationTask
 from backend.v1.app.models.script import Script
+from backend.v1.app.generate.service import project_workflow_state
 from backend.providers import VolcanoLLM, ChatRequest, ChatMessage
 from backend.v1.app.generate.service._rag_temp.rag_service import (
     RAGService, MockRAGService, RAGResult,
@@ -152,7 +153,7 @@ class ScriptGenerationService:
             frames.append(frame)
 
         # 更新项目状态
-        project.status = "script_ready"
+        project_workflow_state.mark_project_stage_review(project, "script")
         await db.commit()
 
         # 刷新所有 frame 获取生成的 id

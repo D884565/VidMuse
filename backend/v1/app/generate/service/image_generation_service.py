@@ -3,6 +3,8 @@ import os
 import uuid
 import tempfile
 import logging
+import time
+from contextlib import suppress
 
 import requests
 
@@ -107,7 +109,7 @@ class ImageGenerationService:
 
         for i, frame in enumerate(frames):
             try:
-                if frame.image_url:
+                if frame.status == 2 and frame.image_url:
                     logger.info(f"[图片生成] 帧 {frame.sequence} 已有图片，跳过重复生成: {frame.image_url}")
                     continue
 
@@ -122,6 +124,8 @@ class ImageGenerationService:
                     image_path = self._call_text_to_image(prompt)
 
                 image_url = self._upload_to_tos(image_path, project_id, frame.sequence - 1)
+                with suppress(OSError):
+                    os.remove(image_path)
                 frame.image_url = image_url
                 frame.status = 2  # 已完成
                 frame.error_message = None
@@ -129,9 +133,8 @@ class ImageGenerationService:
                 logger.info(f"[图片生成] 帧 {frame.sequence} 生成成功: {image_url}")
             except Exception as e:
                 logger.error(f"[图片生成] 帧 {frame.sequence} 生成失败: {str(e)}")
-                placeholder_path = self._generate_placeholder_image(f"帧{frame.sequence}")
-                placeholder_url = self._upload_to_tos(placeholder_path, project_id, frame.sequence - 1)
-                frame.image_url = placeholder_url
+                # 失败帧不能把占位图写入 image_url，否则下游会当作真实首帧继续消耗视频额度。
+                frame.image_url = None
                 frame.status = 3  # 失败
                 frame.error_message = f"图片生成失败: {str(e)}"
 
@@ -214,12 +217,7 @@ class ImageGenerationService:
         }
 
         # 发送请求
-        response = requests.post(
-            IMAGE_API_URL,
-            json=payload,
-            headers=headers,
-            timeout=60,
-        )
+        response = self._request_with_retry("post", IMAGE_API_URL, json=payload, headers=headers, timeout=60)
         response.raise_for_status()
 
         # 解析响应
@@ -266,12 +264,7 @@ class ImageGenerationService:
         }
 
         # 发送请求
-        response = requests.post(
-            IMAGE_API_URL,
-            json=payload,
-            headers=headers,
-            timeout=60,
-        )
+        response = self._request_with_retry("post", IMAGE_API_URL, json=payload, headers=headers, timeout=60)
         response.raise_for_status()
 
         # 解析响应
@@ -299,7 +292,7 @@ class ImageGenerationService:
         :param local_path: 本地保存路径
         """
         try:
-            response = requests.get(url, stream=True, timeout=30)
+            response = self._request_with_retry("get", url, stream=True, timeout=30)
             response.raise_for_status()
 
             with open(local_path, "wb") as f:
@@ -318,10 +311,38 @@ class ImageGenerationService:
         :returns: 图片 HTTP URL
         """
         object_key = f"projects/{project_id}/scene_{scene_index + 1}.png"
-        url = get_storage_client().upload_file(local_path, object_key)
+        url = self._upload_with_retry(local_path, object_key)
 
         # upload_file 已返回公共 URL，直接使用
         return url
+
+    def _request_with_retry(self, method: str, url: str, **kwargs):
+        """对外部图片 API/下载增加短重试，减少瞬时 429/5xx 对整批任务的影响。"""
+        last_exc = None
+        for attempt in range(3):
+            try:
+                response = requests.request(method, url, **kwargs)
+                response.raise_for_status()
+                return response
+            except Exception as exc:
+                last_exc = exc
+                if attempt == 2:
+                    break
+                time.sleep(0.5 * (2 ** attempt))
+        raise last_exc
+
+    def _upload_with_retry(self, local_path: str, object_key: str) -> str:
+        """TOS 上传可能受网络抖动影响，短重试后仍失败再交给上层标记帧失败。"""
+        last_exc = None
+        for attempt in range(3):
+            try:
+                return get_storage_client().upload_file(local_path, object_key)
+            except Exception as exc:
+                last_exc = exc
+                if attempt == 2:
+                    break
+                time.sleep(0.5 * (2 ** attempt))
+        raise last_exc
 
     def _generate_placeholder_image(self, keyword: str) -> str:
         """
