@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Film, Image, Loader2, Play, RefreshCw, ScrollText } from 'lucide-react'
+import { Download, Film, Image, Loader2, Play, RefreshCw, ScrollText } from 'lucide-react'
 import { useProjectPolling } from '../../hooks/useProjectPolling.js'
 import { useAppStore } from '../../store/appStore.js'
 import { regenerateFrame, regenerateFrameImage, retryFrame } from '../../services/frame.js'
@@ -7,9 +7,11 @@ import {
   generateProjectScript,
   getGenerationTask,
   getGenerationTaskSteps,
+  exportProjectVideo,
   renderProject,
 } from '../../services/project.js'
 import VideoPlayer from '../VideoPlayer.jsx'
+import StoryboardTimeline from '../Workflow/StoryboardTimeline.jsx'
 
 const STATUS_MAP = {
   0: { text: '待生成', color: 'text-yellow-400' },
@@ -84,6 +86,20 @@ export default function FrameGrid() {
     setFlowError('')
     try {
       const result = await renderProject(activeProjectId)
+      if (result?.task_id) await refreshTask(result.task_id)
+      refetch()
+    } catch (err) {
+      setFlowError(err.message)
+    } finally {
+      setFlowLoading(null)
+    }
+  }
+
+  const handleExportProject = async () => {
+    setFlowLoading('export')
+    setFlowError('')
+    try {
+      const result = await exportProjectVideo(activeProjectId, { aspect_ratio: '9:16' })
       if (result?.task_id) await refreshTask(result.task_id)
       refetch()
     } catch (err) {
@@ -203,6 +219,15 @@ export default function FrameGrid() {
             {flowLoading === 'render' ? <Loader2 size={16} className="animate-spin" /> : <Play size={16} />}
             开始渲染
           </button>
+          <button
+            type="button"
+            onClick={handleExportProject}
+            disabled={!!flowLoading || !videoUrl}
+            className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-white hover:bg-[var(--brand-soft)] disabled:opacity-50"
+          >
+            {flowLoading === 'export' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+            导出
+          </button>
         </div>
       </header>
 
@@ -236,6 +261,12 @@ export default function FrameGrid() {
       {videoUrl && (
         <div className="mb-6">
           <VideoPlayer src={videoUrl} />
+        </div>
+      )}
+
+      {!!frames.length && (
+        <div className="mb-6 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-secondary)] p-4">
+          <StoryboardTimeline frames={frames} />
         </div>
       )}
 

@@ -96,6 +96,7 @@ class VideoComposer:
         :returns: 拼接后视频的本地路径
         """
         os.makedirs(output_dir, exist_ok=True)
+        self.validate_frames_for_video(frames)
 
         video_paths = []
         for i, frame in enumerate(frames):
@@ -142,7 +143,6 @@ class VideoComposer:
                 self._download_video(response.video_url, local_path)
 
                 # 按 LLM 规划时长裁剪（Seedance 固定生成 5 秒，需裁剪到目标时长）
-                target_dur = float(frame.duration)
                 if target_dur < 5:
                     trimmed_path = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}_trimmed.mp4")
                     try:
@@ -182,10 +182,7 @@ class VideoComposer:
                 logger.error(f"[视频生成] 帧 {frame.sequence} 生成失败: {str(e)}")
                 frame.status = 3  # 失败
                 frame.error_message = f"视频生成失败: {str(e)}"
-                placeholder = self._generate_placeholder_video(
-                    output_dir, int(float(frame.duration)), frame.sequence
-                )
-                video_paths.append(placeholder)
+                raise RuntimeError(f"frame {frame.sequence} video generation failed: {e}") from e
 
         # 拼接
         if len(video_paths) > 1:
@@ -194,6 +191,19 @@ class VideoComposer:
             return video_paths[0]
 
         return self._generate_placeholder_video(output_dir, 30, 0)
+
+    def validate_frames_for_video(self, frames: list[Frame]) -> None:
+        """视频生成前硬校验，避免失败帧或缺图帧继续消耗 Seedance 配额。"""
+        invalid = []
+        for frame in frames:
+            image_url = getattr(frame, "image_url", None)
+            status = getattr(frame, "status", None)
+            if status == 3:
+                invalid.append(f"frame {getattr(frame, 'id', None)} status == 3")
+            elif not image_url or not str(image_url).startswith("http"):
+                invalid.append(f"frame {getattr(frame, 'id', None)} missing image_url")
+        if invalid:
+            raise ValueError("video generation requires successful frame images: " + "; ".join(invalid))
 
     def _generate_scene_video(
         self,

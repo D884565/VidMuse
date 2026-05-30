@@ -10,6 +10,11 @@ from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.user import User
 from backend.v1.app.models.product import Product
 from backend.v1.app.models.merge_task import MergeTask
+from backend.v1.app.models.frame import Frame
+from backend.v1.app.models.conversation import Conversation
+from backend.v1.app.models.generation_task import GenerationTask, GenerationTaskStep
+from backend.v1.app.models.script import Script
+from backend.v1.app.models.project_asset import ProjectAsset
 from backend.store.database.async_database import Base
 
 # Alembic Config 对象

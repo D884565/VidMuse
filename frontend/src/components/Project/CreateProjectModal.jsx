@@ -124,7 +124,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
 
       // 创建成功：切换到项目并关闭弹窗
       setActiveProjectId(data.id)
-      setActiveView('keyframes')
+      setActiveView('chat')
       bumpProjectListVersion()
       onCreated?.(data.id)
       handleClose()
