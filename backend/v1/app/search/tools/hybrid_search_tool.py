@@ -1,7 +1,6 @@
 from typing import Dict, Any, List
 from .base import BaseSearchTool
 from ..core import Query, Document
-from ..retrieval import HybridRetriever
 
 
 class HybridSearchTool(BaseSearchTool):
@@ -50,6 +49,27 @@ class HybridSearchTool(BaseSearchTool):
         "required": ["query"]
     }
 
+    # 混合检索使用完整的查询增强流程
+    query_enhancer_config = [
+        "context",
+        "intent",
+        "rewrite",
+        "expander"
+    ]
+
+    # 混合检索只需要混合检索器，支持权重配置
+    retriever_config = {
+        "hybrid": ("hybrid", {})  # 配置会动态设置权重
+    }
+
+    # 混合检索使用完整的后处理流程
+    post_processor_config = [
+        "deduplicator",
+        "filter",
+        "merger",
+        "reranker"
+    ]
+
     # 混合检索固定使用hybrid类型
     default_retrieval_type = "hybrid"
     max_top_k = 20
@@ -61,12 +81,13 @@ class HybridSearchTool(BaseSearchTool):
         vector_weight = query.metadata.get("vector_weight", 0.6)
         keyword_weight = query.metadata.get("keyword_weight", 0.4)
 
-        # 创建自定义配置的混合检索器
+        # 动态创建带自定义权重的混合检索器
         hybrid_config = {
             "hybrid_vector_weight": vector_weight,
             "hybrid_keyword_weight": keyword_weight
         }
-        retriever = HybridRetriever(config=hybrid_config)
+        # 从注册中心获取配置好的混合检索器
+        retriever = component_registry.get_retriever("hybrid", hybrid_config)
         return retriever.retrieve(query, top_k)
 
     def execute(self, params: Dict[str, Any]) -> str:

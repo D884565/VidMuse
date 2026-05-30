@@ -45,20 +45,19 @@ class ChromaDBClient(VectorDatabase):
         self.client = ChromaDBClient._client
 
         # 确保集合存在
-        if collection_name is None:
-            # 默认collection使用原来的_ensure_collection_exists方法
-            self.collection = self._ensure_collection_exists()
+        self.collection = self._ensure_collection_exists(collection_name)
 
         self._initialized = True
 
-    def _ensure_collection_exists(self):
+    def _ensure_collection_exists(self, collection_name: str = None):
         """确保集合存在，不存在则创建"""
+        target_collection = collection_name or settings.CHROMADB_COLLECTION
         try:
-            collection = self.client.get_collection(name=settings.CHROMADB_COLLECTION)
+            collection = self.client.get_collection(name=target_collection)
         except Exception:
             collection = self.client.create_collection(
-                name=settings.CHROMADB_COLLECTION,
-                metadata={"description": "视频内容向量存储集合"},
+                name=target_collection,
+                metadata={"description": f"Collection: {target_collection}"},
             )
         return collection
 

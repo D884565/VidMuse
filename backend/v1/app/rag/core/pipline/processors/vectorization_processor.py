@@ -1,5 +1,7 @@
 from typing import Dict, List, Any, Optional, Union
 import json
+import asyncio
+import inspect
 
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
@@ -93,6 +95,35 @@ class VectorizationProcessor(BaseProcessor):
         # 元数据配置
         self.meta = meta or {}
 
+    def _run_async(self, coro):
+        """
+        从同步上下文中运行异步函数，处理已有事件循环的情况
+        :param coro: 要运行的协程
+        :return: 协程的返回值
+        """
+        try:
+            # 检查是否有正在运行的事件循环
+            loop = asyncio.get_running_loop()
+            # 如果有运行中的循环，在新线程中运行异步函数避免死锁
+            import threading
+            result = None
+            def run_in_thread():
+                nonlocal result
+                # 新线程中创建新的事件循环
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result = new_loop.run_until_complete(coro)
+                finally:
+                    new_loop.close()
+
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            return result
+        except RuntimeError:
+            # 没有运行中的循环，直接使用asyncio.run
+            return asyncio.run(coro)
 
     def process(self, context: PipelineContext) -> PipelineContext:
         """
@@ -109,7 +140,7 @@ class VectorizationProcessor(BaseProcessor):
         else:
             base_meta = self.meta.copy()
 
-        # 根据存储类型获取必要的来源ID
+        # 根据存储类型获取必要的来源ID，确保转换为字符串
         source_id = None
         if self.store_type == "slice":
             source_id = context.get("video_id") or context.get("source_id")
@@ -131,6 +162,10 @@ class VectorizationProcessor(BaseProcessor):
             source_id = context.get("source_id") or context.get("video_id")
             if not source_id:
                 raise ValueError("存储类型为audio时，上下文必须包含source_id或video_id")
+
+        # 确保source_id是字符串类型，兼容整数ID
+        if source_id is not None:
+            source_id = str(source_id)
 
         # 2. 处理文本向量化和存储
         text_result = self._process_text_data(context, source_id, base_meta)
@@ -179,7 +214,9 @@ class VectorizationProcessor(BaseProcessor):
                 text_content = data.get("content") or data.get("text") or str(data)
                 texts.append(TextContent(text=text_content))
                 contents.append(text_content)
-                ids.append(data.get(self.id_key, f"{source_id}_text_{i}"))
+                # 确保ID是字符串类型
+                data_id = data.get(self.id_key, f"{source_id}_text_{i}")
+                ids.append(str(data_id))
             else:
                 context.add_error(ValueError(f"Unsupported text data format: {type(data)}"))
                 continue
@@ -188,14 +225,45 @@ class VectorizationProcessor(BaseProcessor):
             return {"count": 0, "ids": []}
 
         # 调用嵌入接口
-        response = self.llm_client.embedding(EmbeddingRequest(
-            texts=texts,
-            model=self.embedding_model
-        ))
+        if inspect.iscoroutinefunction(self.llm_client.embedding):
+            # 异步调用
+            coro = self.llm_client.embedding(EmbeddingRequest(
+                texts=texts,
+                model=self.embedding_model
+            ))
+            response = self._run_async(coro)
+        else:
+            # 同步调用
+            response = self.llm_client.embedding(EmbeddingRequest(
+                texts=texts,
+                model=self.embedding_model
+            ))
+
         embeddings = response.embeddings
 
+        # 处理API不支持批量嵌入的情况，回退到单个请求
         if len(embeddings) != len(texts):
-            raise ValueError(f"Text embedding count mismatch: expected {len(texts)}, got {len(embeddings)}")
+            if len(embeddings) == 1 and len(texts) > 1:
+                # API只支持单个输入，逐个请求
+                embeddings = []
+                for text in texts:
+                    if inspect.iscoroutinefunction(self.llm_client.embedding):
+                        coro = self.llm_client.embedding(EmbeddingRequest(
+                            texts=[text],
+                            model=self.embedding_model
+                        ))
+                        single_response = self._run_async(coro)
+                    else:
+                        single_response = self.llm_client.embedding(EmbeddingRequest(
+                            texts=[text],
+                            model=self.embedding_model
+                        ))
+                    if single_response.embeddings:
+                        embeddings.append(single_response.embeddings[0])
+                    else:
+                        raise ValueError(f"Failed to get embedding for text: {text}")
+            else:
+                raise ValueError(f"Text embedding count mismatch: expected {len(texts)}, got {len(embeddings)}")
 
         # 根据存储类型调用对应DAO的add方法
         if self.store_type == "slice":
@@ -315,7 +383,9 @@ class VectorizationProcessor(BaseProcessor):
                 description = data.get("description") or data.get("alt") or f"图片_{i}"
                 descriptions.append(description)
                 image_urls.append(data["image_url"]["url"])
-                ids.append(data.get(self.id_key, f"{source_id}_img_{i}"))
+                # 确保ID是字符串类型
+                data_id = data.get(self.id_key, f"{source_id}_img_{i}")
+                ids.append(str(data_id))
             elif isinstance(data, dict) and "url" in data:
                 # 简化的URL格式
                 url = data["url"]
@@ -323,7 +393,9 @@ class VectorizationProcessor(BaseProcessor):
                 description = data.get("description") or data.get("alt") or f"图片_{i}"
                 descriptions.append(description)
                 image_urls.append(url)
-                ids.append(data.get(self.id_key, f"{source_id}_img_{i}"))
+                # 确保ID是字符串类型
+                data_id = data.get(self.id_key, f"{source_id}_img_{i}")
+                ids.append(str(data_id))
             else:
                 context.add_error(ValueError(f"Unsupported image data format: {type(data)}"))
                 continue
@@ -332,14 +404,45 @@ class VectorizationProcessor(BaseProcessor):
             return {"count": 0, "ids": []}
 
         # 调用嵌入接口
-        response = self.llm_client.embedding(EmbeddingRequest(
-            texts=images,
-            model=self.embedding_model
-        ))
+        if inspect.iscoroutinefunction(self.llm_client.embedding):
+            # 异步调用
+            coro = self.llm_client.embedding(EmbeddingRequest(
+                texts=images,
+                model=self.embedding_model
+            ))
+            response = self._run_async(coro)
+        else:
+            # 同步调用
+            response = self.llm_client.embedding(EmbeddingRequest(
+                texts=images,
+                model=self.embedding_model
+            ))
+
         embeddings = response.embeddings
 
+        # 处理API不支持批量嵌入的情况，回退到单个请求
         if len(embeddings) != len(images):
-            raise ValueError(f"Image embedding count mismatch: expected {len(images)}, got {len(embeddings)}")
+            if len(embeddings) == 1 and len(images) > 1:
+                # API只支持单个输入，逐个请求
+                embeddings = []
+                for image in images:
+                    if inspect.iscoroutinefunction(self.llm_client.embedding):
+                        coro = self.llm_client.embedding(EmbeddingRequest(
+                            texts=[image],
+                            model=self.embedding_model
+                        ))
+                        single_response = self._run_async(coro)
+                    else:
+                        single_response = self.llm_client.embedding(EmbeddingRequest(
+                            texts=[image],
+                            model=self.embedding_model
+                        ))
+                    if single_response.embeddings:
+                        embeddings.append(single_response.embeddings[0])
+                    else:
+                        raise ValueError(f"Failed to get embedding for image: {image}")
+            else:
+                raise ValueError(f"Image embedding count mismatch: expected {len(images)}, got {len(embeddings)}")
 
         # 图像统一存入ImageKnowledgeDAO
         image_dao = ImageKnowledgeDAO()

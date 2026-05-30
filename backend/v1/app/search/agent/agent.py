@@ -3,6 +3,7 @@ import os
 import time
 import asyncio
 import threading
+import logging
 from typing import List, Dict, Any, Optional, Tuple
 from volcenginesdkarkruntime import Ark
 from dotenv import load_dotenv
@@ -13,6 +14,8 @@ from .context import SessionContext
 from ..agent_config import AGENT_CONFIG
 from .trace_storage import trace_storage
 from backend.v1.app.config.config import settings
+
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -28,9 +31,22 @@ class Agent:
 
     def __init__(self):
         # 初始化大模型客户端
-        self.api_key = settings.DOUBAO_SEED_API_KEY or os.getenv("DOUBAO_SEED_API_KEY")
+        self.api_key = os.getenv("DOUBAO_SEED_API_KEY")
+        if not self.api_key:
+            raise ValueError("DOUBAO_SEED_API_KEY环境变量未配置，无法初始化Agent")
+
         self.base_url = "https://ark.cn-beijing.volces.com/api/v3"
-        self.model_config = AGENT_CONFIG["model"]
+        # 模型配置：优先使用环境变量，否则使用配置文件中的默认值
+        model_name = os.getenv("DOUBAO_SEED")
+        if model_name:
+            self.model_config = {
+                "name": model_name,
+                "temperature": AGENT_CONFIG["model"]["temperature"],
+                "max_tokens": AGENT_CONFIG["model"]["max_tokens"],
+                "top_p": AGENT_CONFIG["model"]["top_p"]
+            }
+        else:
+            self.model_config = AGENT_CONFIG["model"]
         self.react_config = AGENT_CONFIG["react"]
         self.enabled_tools = AGENT_CONFIG["tools"]["enabled"]
         self.tracing_config = tracing_config
@@ -78,6 +94,10 @@ class Agent:
 
     def _handle_function_call(self, function_call: Dict[str, Any]) -> Tuple[str, str, Dict[str, Any]]:
         """处理工具调用，执行对应工具并返回结果"""
+
+        if hasattr(function_call, 'dict'):
+            function_call = function_call.dict()
+
         tool_name = function_call.get("name")
         arguments = function_call.get("arguments", "{}")
 
@@ -147,7 +167,16 @@ class Agent:
         if self.tracing_config.get("enabled", True):
             # 找到用户原始消息
             messages = session_context.get_messages()
-            user_message = messages[0].content if len(messages) == 1 else messages[-len(all_tool_calls)*2 - 2].content
+            if len(messages) == 1:
+                user_message = messages[0].content
+            else:
+                # 计算索引，确保不会越界
+                index = -len(all_tool_calls) * 2 - 2
+                if abs(index) > len(messages):
+                    # 索引越界， fallback到第一条用户消息
+                    user_message = next((msg.content for msg in messages if msg.role == "user"), "")
+                else:
+                    user_message = messages[index].content
 
             save_kwargs = {
                 "session_context": session_context,
@@ -163,13 +192,23 @@ class Agent:
             if self.tracing_config.get("async_save", True):
                 # 异步保存
                 if self._loop and self._loop.is_running():
-                    asyncio.run_coroutine_threadsafe(self._save_trace(**save_kwargs), self._loop)
+                    try:
+                        asyncio.run_coroutine_threadsafe(self._save_trace(**save_kwargs), self._loop)
+                    except Exception as e:
+                        # 异步保存失败不影响主流程
+                        logger.warning(f"异步保存推理轨迹失败: {str(e)}")
                 else:
                     # 事件循环不可用，降级为同步保存
-                    asyncio.run(self._save_trace(**save_kwargs))
+                    try:
+                        asyncio.run(self._save_trace(**save_kwargs))
+                    except Exception as e:
+                        logger.warning(f"同步保存推理轨迹失败: {str(e)}")
             else:
                 # 同步保存
-                asyncio.run(self._save_trace(**save_kwargs))
+                try:
+                    asyncio.run(self._save_trace(**save_kwargs))
+                except Exception as e:
+                    logger.warning(f"同步保存推理轨迹失败: {str(e)}")
 
         return response
 

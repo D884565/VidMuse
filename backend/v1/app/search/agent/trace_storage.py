@@ -2,8 +2,9 @@
 import json
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from sqlalchemy.ext.asyncio import AsyncSession, async_session
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from backend.store.database.async_database import SessionLocal as async_session
 from backend.v1.app.models.agent_trace import AgentTrace
 
 

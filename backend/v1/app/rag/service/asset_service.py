@@ -387,6 +387,8 @@ class AssetService:
             content_type=file.content_type
         )
 
+        pre_signed_url = client.get_presigned_url(object_name)
+
         # 生成默认标题
         if not title:
             title = file.filename or f"系统{AssetService.TYPE_NAME.get(type, '素材')}_{uuid.uuid4().hex[:8]}"
@@ -426,7 +428,7 @@ class AssetService:
             "type": asset_dict["type"],
             "type_name": AssetService.TYPE_NAME.get(asset_dict["type"], "未知"),
             "title": asset_dict["title"],
-            "url": asset_dict["url"],
+            "url": pre_signed_url,
             "file_size": asset_dict["file_size"],
             "duration": asset_dict["duration"],
             "format": asset_dict["format"],

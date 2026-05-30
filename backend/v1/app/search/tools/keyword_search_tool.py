@@ -1,7 +1,6 @@
 from typing import Dict, Any, List
 from .base import BaseSearchTool
 from ..core import Query, Document
-from ..retrieval import KeywordRetriever
 
 
 class KeywordSearchTool(BaseSearchTool):
@@ -36,21 +35,34 @@ class KeywordSearchTool(BaseSearchTool):
         "required": ["query"]
     }
 
+    # 关键词检索简化查询增强流程，不需要复杂的意图识别
+    query_enhancer_config = [
+        "rewrite",  # 查询重写，优化关键词
+        "expander"  # 查询扩展，同义词扩展
+    ]
+
+    # 关键词检索只需要关键词检索器
+    retriever_config = {
+        "keyword": "keyword"
+    }
+
+    # 关键词检索使用轻量级后处理
+    post_processor_config = [
+        "deduplicator",  # 去重
+        "filter"         # 过滤低质量结果
+    ]
+
     # 关键词检索固定使用keyword类型
     default_retrieval_type = "keyword"
     max_top_k = 20
-
-    def __init__(self, config: Dict[str, Any] = None):
-        super().__init__(config)
-        # 关键词检索特有的检索器
-        self.keyword_retriever = KeywordRetriever()
 
     def retrieve_documents(self, query: Query, top_k: int = 10) -> List[Document]:
         """重写检索方法，使用关键词检索器"""
         top_k = min(top_k, self.max_top_k)
         # 关键词扩展
         query.expanded_keywords = query.text.split()  # 简单分词，后续可替换为专业分词器
-        return self.keyword_retriever.retrieve(query, top_k)
+        retriever = self.retrievers["keyword"]
+        return retriever.retrieve(query, top_k)
 
     def execute(self, params: Dict[str, Any]) -> str:
         """执行关键词检索（模板实现，具体逻辑后续补充）"""

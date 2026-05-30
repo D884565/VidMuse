@@ -1,7 +1,7 @@
 from typing import Dict, Any, List
 from .base import BaseSearchTool
 from ..core import Document
-from ..retrieval.channels.mysql_channel import MySQLChannel
+from backend.v1.app.search.processors.retrieval.channels import MySQLChannel
 from ..config import DATA_SOURCE_CONFIG
 
 
@@ -35,7 +35,12 @@ class SQLQueryTool(BaseSearchTool):
         "required": ["sql"]
     }
 
-    # SQL查询不使用通用检索流程
+    # SQL查询不使用通用检索流程，配置为空
+    query_enhancer_config = []
+    retriever_config = {}
+    post_processor_config = []
+
+    # SQL查询固定使用sql类型
     default_retrieval_type = "sql"
 
     def __init__(self, config: Dict[str, Any] = None):

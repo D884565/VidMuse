@@ -34,6 +34,31 @@ class GeneralSearchTool(BaseSearchTool):
         "required": ["query"]
     }
 
+    # 通用检索使用完整的组件流水线
+    query_enhancer_config = [
+        "context",  # 上下文处理
+        "intent",   # 意图识别
+        "rewrite",  # 查询重写
+        "expander"  # 查询扩展
+    ]
+
+    # 使用所有可用检索器
+    retriever_config = {
+        "semantic": "vector",
+        "keyword": "keyword",
+        "hybrid": "hybrid",
+        "sql": "sql",
+        "api": "api"
+    }
+
+    # 使用完整的后处理流水线
+    post_processor_config = [
+        "deduplicator",  # 去重
+        "filter",       # 过滤
+        "merger",       # 合并
+        "reranker"      # 重排序
+    ]
+
     # 默认检索类型，由意图识别自动决定
     default_retrieval_type = "semantic"
 

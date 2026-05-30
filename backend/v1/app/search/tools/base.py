@@ -1,9 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List, Optional
-from ..core import Query, Document, SearchContext
-from ..query_enhancement import ContextProcessor, IntentRecognizer, QueryRewriter, QueryExpander
-from ..retrieval import VectorRetriever, KeywordRetriever, HybridRetriever, SQLRetriever, APIRetriever
-from ..post_processing import Deduplicator, Filter, Merger, Reranker
+from ..core import Query, Document, SearchContext, component_registry
 from ..config import (
     RETRIEVAL_CONFIG,
     QUERY_ENHANCEMENT_CONFIG,
@@ -16,7 +13,7 @@ import json
 class BaseSearchTool(ABC):
     """
     检索工具抽象基类，所有检索工具必须继承此类
-    提供统一的检索流程模板，子类只需实现特定逻辑
+    支持可插拔组件编排，子类可以通过配置选择要使用的组件
     """
 
     # 工具基础配置，子类可覆盖
@@ -24,58 +21,111 @@ class BaseSearchTool(ABC):
     description: str = ""
     parameters_schema: Dict[str, Any] = {}
 
+    # 组件配置，子类可以自定义使用哪些组件
+    # 格式：["组件名称1", "组件名称2"] 或者 [("组件名称1", 配置字典), ("组件名称2", 配置字典)]
+    query_enhancer_config: List[Any] = []
+    retriever_config: Dict[str, Any] = {}  # key: 检索器别名, value: (组件名称, 配置字典)
+    post_processor_config: List[Any] = []
+
+    # 默认检索类型
+    default_retrieval_type: str = "semantic"
+
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         self.config = config or {}
         self.default_top_k = RETRIEVAL_CONFIG.get("default_top_k", 10)
         self.final_top_k = POST_PROCESSING_CONFIG.get("final_top_k", 10)
         self.min_score_threshold = RETRIEVAL_CONFIG.get("min_score_threshold", 0.6)
 
-        # 初始化公共组件（所有工具复用相同的组件实例）
+        # 初始化组件（基于配置）
         self.query_enhancers = self._init_query_enhancers()
         self.retrievers = self._init_retrievers()
         self.post_processors = self._init_post_processors()
 
     def _init_query_enhancers(self) -> List[Any]:
-        """初始化问题增强处理器链，子类可自定义"""
-        enhancers = []
-        config = QUERY_ENHANCEMENT_CONFIG
+        """初始化问题增强处理器链，基于query_enhancer_config配置"""
+        if not self.query_enhancer_config:
+            # 默认使用全局配置的查询增强器
+            enhancers = []
+            config = QUERY_ENHANCEMENT_CONFIG
+            if config.get("enable_context_processing", True):
+                enhancers.append(component_registry.get_query_enhancer("context"))
+            if config.get("enable_intent_recognition", True):
+                enhancers.append(component_registry.get_query_enhancer("intent"))
+            if config.get("enable_query_rewrite", True):
+                enhancers.append(component_registry.get_query_enhancer("rewrite"))
+            if config.get("enable_query_expansion", True):
+                enhancers.append(component_registry.get_query_enhancer("expander"))
+            return enhancers
 
-        if config.get("enable_context_processing", True):
-            enhancers.append(ContextProcessor())
-        if config.get("enable_intent_recognition", True):
-            enhancers.append(IntentRecognizer())
-        if config.get("enable_query_rewrite", True):
-            enhancers.append(QueryRewriter())
-        if config.get("enable_query_expansion", True):
-            enhancers.append(QueryExpander())
-
-        return enhancers
+        # 解析自定义配置
+        pipeline = []
+        for item in self.query_enhancer_config:
+            if isinstance(item, str):
+                # 仅指定名称，使用默认配置
+                pipeline.append(component_registry.get_query_enhancer(item))
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                # 指定名称和配置
+                name, config = item
+                pipeline.append(component_registry.get_query_enhancer(name, config))
+            else:
+                raise ValueError(f"无效的查询增强器配置: {item}")
+        return pipeline
 
     def _init_retrievers(self) -> Dict[str, Any]:
-        """初始化检索器实例，所有工具共享"""
-        return {
-            "semantic": VectorRetriever(),
-            "keyword": KeywordRetriever(),
-            "hybrid": HybridRetriever(),
-            "sql": SQLRetriever(),
-            "api": APIRetriever()
-        }
+        """初始化检索器实例，基于retriever_config配置"""
+        if not self.retriever_config:
+            # 默认初始化所有可用检索器
+            return {
+                "semantic": component_registry.get_retriever("vector"),
+                "keyword": component_registry.get_retriever("keyword"),
+                "hybrid": component_registry.get_retriever("hybrid"),
+                "sql": component_registry.get_retriever("sql"),
+                "api": component_registry.get_retriever("api")
+            }
+
+        # 解析自定义配置
+        retrievers = {}
+        for alias, config in self.retriever_config.items():
+            if isinstance(config, str):
+                # 仅指定组件名称
+                retrievers[alias] = component_registry.get_retriever(config)
+            elif isinstance(config, (list, tuple)) and len(config) == 2:
+                # 指定名称和配置
+                name, component_config = config
+                retrievers[alias] = component_registry.get_retriever(name, component_config)
+            else:
+                raise ValueError(f"无效的检索器配置: {config}")
+        return retrievers
 
     def _init_post_processors(self) -> List[Any]:
-        """初始化后处理器链，子类可自定义"""
-        processors = []
-        config = POST_PROCESSING_CONFIG
+        """初始化后处理器链，基于post_processor_config配置"""
+        if not self.post_processor_config:
+            # 默认使用全局配置的后处理器
+            processors = []
+            config = POST_PROCESSING_CONFIG
+            if config.get("enable_deduplication", True):
+                processors.append(component_registry.get_post_processor("deduplicator"))
+            if config.get("enable_filtering", True):
+                processors.append(component_registry.get_post_processor("filter"))
+            if config.get("enable_merging", True):
+                processors.append(component_registry.get_post_processor("merger"))
+            if config.get("enable_reranking", True):
+                processors.append(component_registry.get_post_processor("reranker"))
+            return processors
 
-        if config.get("enable_deduplication", True):
-            processors.append(Deduplicator())
-        if config.get("enable_filtering", True):
-            processors.append(Filter())
-        if config.get("enable_merging", True):
-            processors.append(Merger())
-        if config.get("enable_reranking", True):
-            processors.append(Reranker())
-
-        return processors
+        # 解析自定义配置
+        pipeline = []
+        for item in self.post_processor_config:
+            if isinstance(item, str):
+                # 仅指定名称，使用默认配置
+                pipeline.append(component_registry.get_post_processor(item))
+            elif isinstance(item, (list, tuple)) and len(item) == 2:
+                # 指定名称和配置
+                name, config = item
+                pipeline.append(component_registry.get_post_processor(name, config))
+            else:
+                raise ValueError(f"无效的后处理器配置: {item}")
+        return pipeline
 
     def enhance_query(self, query: Query, context: Optional[SearchContext] = None) -> Query:
         """统一的查询增强流程，子类可重写"""
