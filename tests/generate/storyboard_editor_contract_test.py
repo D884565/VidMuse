@@ -6,7 +6,7 @@ def test_storyboard_service_supports_sequence_and_dirty_stage():
 
     assert '"sequence"' in source
     assert "invalidate_from" in source
-    assert "15" in source
+    assert "validate_total_frame_duration" in source
 
 
 def test_controller_exposes_frame_local_generation_routes():

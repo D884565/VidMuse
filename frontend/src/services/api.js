@@ -4,6 +4,7 @@ import { useAppStore } from '../store/appStore'
 // 创建 axios 实例，baseURL 为 /api，由 Vite 代理转发到后端
 const api = axios.create({
   baseURL: '/api',
+  timeout: 120000,
 })
 
 // 请求拦截器：自动注入 Authorization token
@@ -26,8 +27,11 @@ async function doRefresh() {
   if (!refreshTokenValue) throw new Error('无 refresh_token')
 
   // 直接用 axios 调用，避免走拦截器导致循环
+  // refresh_token 放请求体，避免进入服务器访问日志和浏览器历史。
   const resp = await axios.post(
-    `/api/generate/v1/auth/refresh?refresh_token=${encodeURIComponent(refreshTokenValue)}`
+    '/api/generate/v1/auth/refresh',
+    { refresh_token: refreshTokenValue },
+    { timeout: 30000 }
   )
   const { code, data } = resp.data
   if (code !== '0000000' || !data?.access_token) {

@@ -16,5 +16,6 @@ export async function register(username, password, avatarUrl) {
 
 // 刷新 token
 export async function refreshToken(refreshTokenValue) {
-  return api.post(`/generate/v1/auth/refresh?refresh_token=${encodeURIComponent(refreshTokenValue)}`)
+  // refresh_token 通过请求体传输，避免敏感信息出现在 URL。
+  return api.post('/generate/v1/auth/refresh', { refresh_token: refreshTokenValue })
 }

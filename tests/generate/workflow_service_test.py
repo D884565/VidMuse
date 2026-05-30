@@ -100,7 +100,7 @@ def test_invalidate_from_script_clears_later_confirmations():
     GenerationWorkflowService().invalidate_from(project, "script")
 
     assert project.workflow_stage == "script"
-    assert project.stage_status == "awaiting_review"
+    assert project.stage_status == "idle"
     assert project.dirty_stage == "script"
     assert project.script_confirmed_at is None
     assert project.images_confirmed_at is None
@@ -117,7 +117,8 @@ def test_invalidate_from_image_preserves_script_confirmation():
 
     GenerationWorkflowService().invalidate_from(project, "image")
 
-    assert project.workflow_stage == "image"
+    assert project.workflow_stage == "script"
+    assert project.stage_status == "confirmed"
     assert project.dirty_stage == "image"
     assert project.script_confirmed_at == script_confirmed_at
     assert project.images_confirmed_at is None

@@ -26,7 +26,7 @@ export default function Sidebar() {
   const [showCreateModal, setShowCreateModal] = useState(false)
 
   const handleLogout = async () => {
-    try { await logoutApi() } catch (err) { /* 忽略 */ }
+    try { await logoutApi() } catch { /* 忽略退出接口错误，本地仍清理登录态。 */ }
     storeLogout()
   }
 

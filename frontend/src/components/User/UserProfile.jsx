@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
-import { User, Lock, LogOut, Loader2 } from 'lucide-react'
+import { Lock, LogOut, Loader2 } from 'lucide-react'
 import { useAppStore } from '../../store/appStore.js'
 import { getUserInfo, updateUserInfo, changePassword } from '../../services/user.js'
 import { logoutApi } from '../../services/user.js'
 
 export default function UserProfile() {
-  const user = useAppStore((state) => state.user)
   const setUser = useAppStore((state) => state.setUser)
   const storeLogout = useAppStore((state) => state.logout)
 
@@ -88,7 +87,7 @@ export default function UserProfile() {
   const handleLogout = async () => {
     try {
       await logoutApi()
-    } catch (err) {
+    } catch {
       // 忽略退出接口错误，本地仍清除状态
     }
     storeLogout()

@@ -11,6 +11,7 @@ from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.generate.service.tts_service import tts_service
+from backend.v1.app.generate.service.external_call_policy import ALLOW_DEGRADED_AUDIO
 from backend.v1.app.generate.service.image_generation_service import image_generation_service
 from backend.v1.app.generate.service.reference_image_utils import extract_reference_images
 from backend.v1.app.generate.service.video_composer import video_composer
@@ -25,6 +26,17 @@ from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)
 
+
+class GenerationStageError(RuntimeError):
+    """携带失败阶段信息，交给统一失败处理器决定是否最终落库。"""
+
+    def __init__(self, *, stage: str, current_step: str, error_code: str, message: str):
+        super().__init__(message)
+        self.stage = stage
+        self.current_step = current_step
+        self.error_code = error_code
+
+
 # Celery Worker 涓娇鐢ㄥ悓姝ユ暟鎹簱杩炴帴
 def _get_sync_db() -> Session:
     return SessionLocal()
@@ -33,8 +45,8 @@ def _get_sync_db() -> Session:
 def _mark_project_failed(db: Session, project_id: int, stage: str) -> None:
     project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
     if project:
+        # 只修改状态，不在 helper 内提交；失败处理器统一控制事务边界。
         project_workflow_state.mark_project_stage_failed(project, stage)
-        db.commit()
 
 
 def _update_task_failure_state(
@@ -51,6 +63,9 @@ def _update_task_failure_state(
     fail_db = _get_sync_db()
     try:
         if task_id:
+            task = generation_task_service.get_task_sync(fail_db, task_id)
+            if will_retry:
+                task.retry_count = (task.retry_count or 0) + 1
             generation_task_service.update_task_sync(
                 fail_db,
                 task_id,
@@ -63,6 +78,7 @@ def _update_task_failure_state(
         # 只有最终失败才标记项目阶段失败；重试中的任务仍保持可恢复状态。
         if project_id is not None and stage and not will_retry:
             _mark_project_failed(fail_db, project_id, stage)
+            fail_db.commit()
     finally:
         fail_db.close()
 
@@ -111,7 +127,6 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
                 error_code="IMAGE_GENERATION_FAILED",
                 error_message=f"failed frame ids: {failed}",
             ) if task_id else None
-            _mark_project_failed(db, project_id, "image")
             raise RuntimeError(f"IMAGE_GENERATION_FAILED: failed frame ids {failed}")
 
         project_workflow_state.mark_project_stage_review(project, "image", task_id)
@@ -136,15 +151,18 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
         will_retry = self.request.retries < self.max_retries
         if db:
             db.rollback()
-        _update_task_failure_state(
-            task_id=task_id,
-            project_id=project_id,
-            stage="image",
-            current_step="IMAGE_GENERATION_FAILED",
-            error_code="IMAGE_GENERATION_FAILED",
-            error_message=str(exc),
-            will_retry=will_retry,
-        )
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage="image",
+                current_step="IMAGE_GENERATION_FAILED",
+                error_code="IMAGE_GENERATION_FAILED",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update image task state", exc_info=True)
         if will_retry:
             raise self.retry(exc=exc)
         raise
@@ -154,7 +172,7 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
 
 
 @celery_app.task(bind=True, max_retries=3, name="generate_video_task")
-def generate_video_task(self, project_id: int, task_id: int | None = None):
+def generate_video_task(self, project_id: int, task_id: int | None = None, trigger_source: str = "manual_render"):
     """Generate a full project video from frame images, narration, and composition."""
     logger.info(f"[浠诲姟鍚姩] project_id={project_id}")
     temp_dir = tempfile.mkdtemp()
@@ -166,7 +184,13 @@ def generate_video_task(self, project_id: int, task_id: int | None = None):
         generation_task_service.start_task_sync(db, task_id, "PROJECT_VALIDATION") if task_id else None
 
         # ---- Step 1: 璇诲彇 frames ----
-        step = generation_task_service.start_step_sync(db, task_id, "PROJECT_VALIDATION", progress=5) if task_id else None
+        step = generation_task_service.start_step_sync(
+            db,
+            task_id,
+            "PROJECT_VALIDATION",
+            progress=5,
+            input_snapshot={"trigger_source": trigger_source},
+        ) if task_id else None
         frames = list(db.execute(
             select(Frame)
             .where(Frame.project_id == project_id)
@@ -179,7 +203,12 @@ def generate_video_task(self, project_id: int, task_id: int | None = None):
         project_workflow_state.mark_project_stage_running(project, "video", task_id)
         project.status = "rendering"
         db.commit()
-        generation_task_service.finish_step_sync(db, step, progress=10, output_snapshot={"frames_count": len(frames)}) if task_id else None
+        generation_task_service.finish_step_sync(
+            db,
+            step,
+            progress=10,
+            output_snapshot={"frames_count": len(frames), "trigger_source": trigger_source},
+        ) if task_id else None
         generation_task_service.update_task_sync(db, task_id, progress=10, current_step="PROJECT_VALIDATION") if task_id else None
         logger.info(f"[璇诲彇甯 project_id={project_id}, frames={len(frames)}")
 
@@ -203,14 +232,34 @@ def generate_video_task(self, project_id: int, task_id: int | None = None):
             "professional": "zh_male_yangguang_mars_bigtts",
         }
         tts_voice = project.voice_type or voice_map.get(tts_voice, "zh_female_cancan_mars_bigtts")
-        audio_path = tts_service.generate_audio(full_text, tts_voice)
+        tts_result = tts_service.generate_audio(full_text, tts_voice)
+        audio_path = tts_result.path
+        allow_degraded_audio = ALLOW_DEGRADED_AUDIO
+        if tts_result.fallback_used and not allow_degraded_audio:
+            raise GenerationStageError(
+                stage="video",
+                current_step="TTS_GENERATION_FAILED",
+                error_code="TTS_GENERATION_FAILED",
+                message=f"tts fallback used: {tts_result.warning}",
+            )
 
         # 涓婁紶閰嶉煶鍒?TOS锛屽瓨鍏?project.audio_url
         audio_object = f"projects/{project_id}/audio.mp3"
         audio_url = get_storage_client().upload_file(audio_path, audio_object)
         project.audio_url = audio_url
         db.commit()
-        generation_task_service.finish_step_sync(db, step, progress=25, output_snapshot={"audio_url": audio_url}) if task_id else None
+        generation_task_service.finish_step_sync(
+            db,
+            step,
+            progress=25,
+            output_snapshot={
+                "audio_url": audio_url,
+                "provider": tts_result.provider,
+                "fallback_used": tts_result.fallback_used,
+                "warning": tts_result.warning,
+                "trigger_source": trigger_source,
+            },
+        ) if task_id else None
         generation_task_service.update_task_sync(db, task_id, progress=25, current_step="TTS_GENERATING") if task_id else None
         logger.info(f"[TTS] 椤圭洰绾ч厤闊冲畬鎴? {audio_object}")
 
@@ -228,40 +277,35 @@ def generate_video_task(self, project_id: int, task_id: int | None = None):
         generation_task_service.finish_step_sync(db, step, status="failed" if failed_images else "succeeded", progress=45, output_snapshot={"failed_frame_ids": failed_images}, error_message="閮ㄥ垎鍒嗛暅鍥剧墖鐢熸垚澶辫触" if failed_images else None) if task_id else None
         generation_task_service.update_task_sync(db, task_id, progress=45, current_step="IMAGE_GENERATING") if task_id else None
         if failed_images:
-            generation_task_service.update_task_sync(
-                db,
-                task_id,
-                status="failed",
-                progress=100,
+            raise GenerationStageError(
+                stage="image",
                 current_step="IMAGE_GENERATION_FAILED",
                 error_code="IMAGE_GENERATION_FAILED",
-                error_message=f"failed frame ids: {failed_images}",
-            ) if task_id else None
-            _mark_project_failed(db, project_id, "image")
-            raise RuntimeError(f"IMAGE_GENERATION_FAILED: failed frame ids {failed_images}")
+                message=f"failed frame ids: {failed_images}",
+            )
         logger.info(f"[image] completed frames: {len(frames)}")
 
         # ---- Step 4+5: 涓烘瘡涓抚鐢熸垚瑙嗛骞舵嫾鎺?----
         step = generation_task_service.start_step_sync(db, task_id, "VIDEO_GENERATING", progress=50) if task_id else None
         logger.info("[瑙嗛] 寮€濮嬬敓鎴愬抚瑙嗛...")
         output_dir = os.path.join(temp_dir, f"project_{project_id}")
-        video_path = video_composer.compose_frames(frames, output_dir)
+        video_path = video_composer.compose_frames(
+            frames,
+            output_dir,
+            target_duration=project.target_duration,
+            allow_placeholder_segments=False,
+        )
         db.commit()
         failed_videos = [f.id for f in frames if f.status == 3]
         generation_task_service.finish_step_sync(db, step, status="failed" if failed_videos else "succeeded", progress=75, output_snapshot={"failed_frame_ids": failed_videos}, error_message="閮ㄥ垎鍒嗛暅瑙嗛鐢熸垚澶辫触" if failed_videos else None) if task_id else None
         generation_task_service.update_task_sync(db, task_id, progress=75, current_step="VIDEO_GENERATING") if task_id else None
         if failed_videos:
-            generation_task_service.update_task_sync(
-                db,
-                task_id,
-                status="failed",
-                progress=100,
+            raise GenerationStageError(
+                stage="video",
                 current_step="VIDEO_SEGMENT_GENERATION_FAILED",
                 error_code="VIDEO_SEGMENT_GENERATION_FAILED",
-                error_message=f"failed frame ids: {failed_videos}",
-            ) if task_id else None
-            _mark_project_failed(db, project_id, "video")
-            raise RuntimeError(f"VIDEO_SEGMENT_GENERATION_FAILED: failed frame ids {failed_videos}")
+                message=f"failed frame ids: {failed_videos}",
+            )
 
         # ---- Step 5.5: 鍚堝苟 TTS 闊抽鍒拌棰?----
         step = generation_task_service.start_step_sync(db, task_id, "AUDIO_MIXING", progress=78) if task_id else None
@@ -349,9 +393,9 @@ def generate_video_task(self, project_id: int, task_id: int | None = None):
             _update_task_failure_state(
                 task_id=task_id,
                 project_id=project_id,
-                stage="video",
-                current_step="FAILED",
-                error_code="VIDEO_GENERATION_FAILED",
+                stage=getattr(exc, "stage", "video"),
+                current_step=getattr(exc, "current_step", "FAILED"),
+                error_code=getattr(exc, "error_code", "VIDEO_GENERATION_FAILED"),
                 error_message=str(exc),
                 will_retry=will_retry,
             )
@@ -421,15 +465,18 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
         will_retry = self.request.retries < self.max_retries
         if db:
             db.rollback()
-        _update_task_failure_state(
-            task_id=task_id,
-            project_id=project_id,
-            stage=None,
-            current_step="FRAME_IMAGE_FAILED",
-            error_code="FRAME_IMAGE_FAILED",
-            error_message=str(exc),
-            will_retry=will_retry,
-        )
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage="image",
+                current_step="FRAME_IMAGE_FAILED",
+                error_code="FRAME_IMAGE_FAILED",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update frame image task state", exc_info=True)
         if will_retry:
             raise self.retry(exc=exc)
         raise
@@ -453,11 +500,18 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
             select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id)
         ).scalar_one()
         output_dir = os.path.join(temp_dir, f"project_{project_id}_frame_{frame_id}")
-        video_path = video_composer.compose_frames([frame], output_dir)
+        video_path = video_composer.compose_frames(
+            [frame],
+            output_dir,
+            allow_placeholder_segments=False,
+        )
         object_key = f"projects/{project_id}/frames/frame_{frame_id}.mp4"
         video_url = get_storage_client().upload_file(video_path, object_key)
-        frame.audio_url = video_url
-        frame.dirty = 1
+        # 单帧视频产物写入 video_url，避免覆盖帧配音/音效 URL。
+        frame.video_url = video_url
+        frame.dirty = 0
+        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
+        project.dirty_stage = "video"
         db.commit()
         generation_task_service.finish_step_sync(
             db, step, progress=100, output_snapshot={"video_url": video_url}
@@ -470,15 +524,18 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
         will_retry = self.request.retries < self.max_retries
         if db:
             db.rollback()
-        _update_task_failure_state(
-            task_id=task_id,
-            project_id=project_id,
-            stage=None,
-            current_step="FRAME_VIDEO_FAILED",
-            error_code="FRAME_VIDEO_FAILED",
-            error_message=str(exc),
-            will_retry=will_retry,
-        )
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage="video",
+                current_step="FRAME_VIDEO_FAILED",
+                error_code="FRAME_VIDEO_FAILED",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update frame video task state", exc_info=True)
         if will_retry:
             raise self.retry(exc=exc)
         raise
@@ -526,15 +583,19 @@ def export_video_task(self, project_id: int, task_id: int | None = None, aspect_
         will_retry = self.request.retries < self.max_retries
         if db:
             db.rollback()
-        _update_task_failure_state(
-            task_id=task_id,
-            project_id=project_id,
-            stage=None,
-            current_step="EXPORT_FAILED",
-            error_code="EXPORT_FAILED",
-            error_message=str(exc),
-            will_retry=will_retry,
-        )
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                # 导出是派生任务，失败不影响项目已有成片状态。
+                stage=None,
+                current_step="EXPORT_FAILED",
+                error_code="EXPORT_FAILED",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update export task state", exc_info=True)
         if will_retry:
             raise self.retry(exc=exc)
         raise

@@ -154,7 +154,12 @@ async def create_project(
             script_task.finished_at = datetime.utcnow()
             await db.commit()
 
-            result = await video_generation_service.submit_generation_task(db, p.id)
+            result = await video_generation_service.submit_generation_task(
+                db,
+                p.id,
+                require_ready_images=False,
+                trigger_source="auto_render",
+            )
             logger.info(f"[项目创建] 自动触发生成成功: project_id={p.id}")
             response_data.update({
                 "task_id": result.get("task_id"),
@@ -706,6 +711,8 @@ async def regenerate_frame_video(
         raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
 
     task = await generation_task_service.create_task(db, project_id, "frame_video", status="queued")
+    project_model = await _load_project_for_workflow_update(db, project_id)
+    generation_workflow_service.invalidate_from(project_model, "video")
     frame.dirty = 1
     await db.commit()
     from backend.v1.app.generate.temp.celery_app import celery_app
