@@ -1,7 +1,6 @@
 """独立的图片阶段工作流服务：负责批量生成分镜图片。"""
 from __future__ import annotations
 
-import json
 from datetime import datetime
 
 from sqlalchemy import select
@@ -10,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.v1.app.generate.temp.celery_app import celery_app
 from backend.v1.app.generate.service.generation_workflow import generation_workflow_service
 from backend.v1.app.generate.service.image_generation_service import image_generation_service
+from backend.v1.app.generate.service.reference_image_utils import extract_reference_images
 from backend.v1.app.generate.service import project_workflow_state
 from backend.v1.app.generate.service.task_service import generation_task_service
 from backend.v1.app.generate.service.workflow_blocks import build_image_stage_blocks, build_progress_block
@@ -103,10 +103,14 @@ class ImageWorkflowService:
         ))
         await db.commit()
 
-        product_images = self._extract_product_images(project)
+        reference_images = extract_reference_images(project)
         try:
             # 图片阶段只产出 frame.image_url，不进入视频生成，避免提前消耗视频额度。
-            frames = image_generation_service.generate_frame_images(frames, project_id, product_images=product_images)
+            frames = image_generation_service.generate_frame_images(
+                frames,
+                project_id,
+                reference_images=reference_images,
+            )
             failed = [frame.id for frame in frames if frame.status == 3]
             task.status = "failed" if failed else "succeeded"
             task.progress = 100
@@ -156,6 +160,10 @@ class ImageWorkflowService:
         """查询项目的所有分镜，按序号排序。"""
         result = await db.execute(select(Frame).where(Frame.project_id == project_id).order_by(Frame.sequence))
         return list(result.scalars().all())
+
+    def _extract_reference_images(self, project: Project) -> list[str]:
+        """Backward-compatible wrapper for shared reference image extraction."""
+        return extract_reference_images(project)
 
     def _extract_product_images(self, project: Project) -> dict | None:
         """从项目的商品信息中提取主图列表，用于图片生成时的参考。"""

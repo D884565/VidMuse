@@ -36,6 +36,16 @@ SCRIPT_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering", "p
 SCRIPT_REGENERATE_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering"}
 
 
+async def _load_project_for_workflow_update(db: AsyncSession, project_id: int):
+    from backend.v1.app.models.project import Project
+
+    # 工作流推进/确认前先加行锁，尽量避免并发请求把阶段状态推进乱掉。
+    result = await db.execute(
+        select(Project).where(Project.id == project_id).with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
 @router.post("/projects", response_model=Response)
 async def create_project(
     project: ProjectCreate,
@@ -440,8 +450,7 @@ async def confirm_workflow_stage(
     if not stage:
         raise BusinessException(VIDEO_ERROR, "stage 不能为空")
 
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project_model = result.scalar_one_or_none()
+    project_model = await _load_project_for_workflow_update(db, project_id)
     if not project_model:
         raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
     try:
@@ -478,8 +487,7 @@ async def advance_workflow_stage(
     if not confirmed_stage:
         raise BusinessException(VIDEO_ERROR, "confirmed_stage 不能为空")
 
-    result = await db.execute(select(Project).where(Project.id == project_id))
-    project_model = result.scalar_one_or_none()
+    project_model = await _load_project_for_workflow_update(db, project_id)
     if not project_model:
         raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
     if project_model.stage_status == "running":
