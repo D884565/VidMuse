@@ -1,10 +1,11 @@
 """视频生成调度服务"""
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.asset import Asset
+from backend.v1.app.models.project_asset import ProjectAsset
 from backend.v1.app.generate.temp.celery_app import celery_app
 from backend.v1.app.generate.service.task_service import generation_task_service
 from backend.v1.app.generate.service import project_workflow_state
@@ -113,18 +114,29 @@ class VideoGenerationService:
         frames = frame_result.scalars().all()
 
         # 只返回当前项目产物，素材库请走独立素材接口，避免跨项目资产混入详情页。
-        assets = []
+        asset_items = []
         if project.user_id:
-            project_prefix = f"projects/{project_id}/"
+            # 项目详情优先通过 ProjectAsset 精确找绑定素材，避免 URL 模糊匹配误伤其他项目资源。
             asset_result = await db.execute(
-                select(Asset).where(
-                    or_(
-                        Asset.url.contains(project_prefix),
-                        Asset.url == project.video_output_url,
-                    )
-                )
+                select(Asset, ProjectAsset.role)
+                .join(ProjectAsset, ProjectAsset.asset_id == Asset.id)
+                .where(ProjectAsset.project_id == project_id)
+                .order_by(ProjectAsset.id)
             )
-            assets = asset_result.scalars().all()
+            asset_items = list(asset_result.all())
+
+        seen_asset_ids = {asset.id for asset, _role in asset_items}
+        if project.video_output_url:
+            # 成片视频可能还没显式绑定到 ProjectAsset，这里用精确 URL 兜底补一条 output 资产。
+            output_asset_result = await db.execute(
+                select(Asset).where(
+                    Asset.url == project.video_output_url,
+                    Asset.type == 2,
+                ).limit(1)
+            )
+            output_asset = output_asset_result.scalar_one_or_none()
+            if output_asset and output_asset.id not in seen_asset_ids:
+                asset_items.append((output_asset, "output"))
 
         # 查找视频资产ID（用于 Merge 服务）
         video_asset_id = None
@@ -186,8 +198,9 @@ class VideoGenerationService:
                     "title": a.title,
                     "url": a.url,
                     "duration": a.duration,
+                    "role": role,
                 }
-                for a in assets
+                for a, role in asset_items
             ],
             "created_at": project.created_at.isoformat() if project.created_at else "",
             "updated_at": project.updated_at.isoformat() if project.updated_at else "",

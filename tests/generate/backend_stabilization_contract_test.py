@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from backend.v1.app.generate.service.image_generation_service import ImageGenerationService
+
 
 ROOT = Path("backend/v1/app/generate")
 
@@ -27,11 +29,26 @@ def test_workflow_advance_submits_image_task_without_inline_generation():
 
 
 def test_failed_frame_image_is_not_saved_as_real_image_url():
-    source = (ROOT / "service/image_generation_service.py").read_text(encoding="utf-8")
+    class Frame:
+        id = 1
+        sequence = 1
+        status = 0
+        image_url = "https://cdn.test/old.png"
+        description = "商品在桌面上"
 
-    assert "frame.image_url = placeholder_url" not in source
-    assert "frame.image_url = None" in source
-    assert "frame.status == 2 and frame.image_url" in source
+    service = ImageGenerationService()
+
+    def fail_generation(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    service._call_text_to_image = fail_generation
+    frame = Frame()
+
+    service.generate_frame_images([frame], project_id=1)
+
+    assert frame.image_url is None
+    assert frame.status == 3
+    assert "boom" in frame.error_message
 
 
 def test_video_task_aborts_when_images_or_videos_fail():
@@ -54,4 +71,5 @@ def test_project_detail_does_not_query_all_user_assets():
     source = (ROOT / "service/video_generation.py").read_text(encoding="utf-8")
 
     assert "Asset.user_id == project.user_id" not in source
-    assert "projects/{project_id}/" in source
+    assert "ProjectAsset" in source
+    assert "Asset.url.contains" not in source
