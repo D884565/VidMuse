@@ -23,6 +23,7 @@ export default function KeyframeStudio() {
   const [result, setResult] = useState(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [cacheBust, setCacheBust] = useState('')
 
   const fileMeta = useMemo(() => {
     if (!file) return ''
@@ -63,6 +64,8 @@ export default function KeyframeStudio() {
       }
 
       setResult(await response.json())
+      // 请求完成时生成一次缓存戳，渲染阶段不再调用 Date.now。
+      setCacheBust(String(Date.now()))
     } catch (requestError) {
       setError(requestError.message || '关键帧提取失败，请稍后重试')
     } finally {
@@ -196,7 +199,7 @@ export default function KeyframeStudio() {
             <img
               alt={`关键帧 ${frame.frame_index}`}
               className="aspect-video w-full object-cover"
-              src={`/opencv-api${frame.url}?t=${Date.now()}`}
+              src={`/opencv-api${frame.url}?t=${cacheBust}`}
             />
             <div className="grid gap-1 px-3 py-3 text-xs text-[var(--text-muted)]">
               <strong className="text-sm text-white">关键帧 {frame.frame_index}</strong>

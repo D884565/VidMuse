@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { getProjectDetail } from '../services/project.js'
 
 // 需要停止轮询的状态
-const TERMINAL_STATUSES = ['completed', 'failed', 'draft', 'script_ready']
+const TERMINAL_STATUSES = ['completed', 'failed', 'draft']
 
 /**
  * 项目状态轮询 hook
@@ -24,19 +24,23 @@ export function useProjectPolling(projectId) {
 
   useEffect(() => {
     if (!projectId) {
-      setProject(null)
-      setFrames([])
-      setVideoUrl(null)
-      setVideoAssetId(null)
-      setAudioUrl(null)
-      setAssets([])
-      setLoading(false)
-      setError(null)
+      queueMicrotask(() => {
+        setProject(null)
+        setFrames([])
+        setVideoUrl(null)
+        setVideoAssetId(null)
+        setAudioUrl(null)
+        setAssets([])
+        setLoading(false)
+        setError(null)
+      })
       return
     }
 
     let cancelled = false
-    setLoading(true)
+    queueMicrotask(() => {
+      if (!cancelled) setLoading(true)
+    })
 
     async function fetchProject() {
       try {
@@ -51,7 +55,9 @@ export function useProjectPolling(projectId) {
         setError(null)
 
         // 停止轮询：状态为终态
-        if (TERMINAL_STATUSES.includes(data.status)) {
+        const workflowRunning = data.stage_status === 'running'
+        const awaitingWorkflowReview = data.stage_status === 'awaiting_review'
+        if (TERMINAL_STATUSES.includes(data.status) && !workflowRunning && !awaitingWorkflowReview) {
           clearInterval(intervalRef.current)
         }
       } catch (err) {
@@ -62,7 +68,7 @@ export function useProjectPolling(projectId) {
     }
 
     // 立即获取一次
-    fetchProject()
+    queueMicrotask(fetchProject)
     // 每 3 秒轮询
     intervalRef.current = setInterval(fetchProject, 3000)
 

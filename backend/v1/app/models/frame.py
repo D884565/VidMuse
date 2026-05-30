@@ -31,6 +31,7 @@ class Frame(Base):
     video_prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="视频生成提示词")
     image_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧图片URL")
     audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧配音/音效URL")
+    video_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧视频片段URL")
     text_overlay: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="叠加文字内容")
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True, comment="生成失败原因")
     duration: Mapped[float] = mapped_column(

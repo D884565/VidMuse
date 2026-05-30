@@ -14,20 +14,25 @@ export function useWorkflowProject(projectId) {
 
   useEffect(() => {
     if (!projectId) {
-      setProject(null)
-      setLoading(false)
-      setError(null)
+      queueMicrotask(() => {
+        setProject(null)
+        setLoading(false)
+        setError(null)
+      })
       return
     }
 
     let cancelled = false
     let timer = null
+    let hasLoadedOnce = false
 
     async function fetchProject() {
-      setLoading(true)
+      // 首次加载展示 loading，后续轮询静默刷新，避免界面每 3 秒闪烁。
+      if (!hasLoadedOnce) setLoading(true)
       try {
         const data = await getProjectDetail(projectId)
         if (cancelled) return
+        hasLoadedOnce = true
         setProject(data)
         setError(null)
         // 任务运行中时，每 3 秒自动轮询
@@ -41,7 +46,7 @@ export function useWorkflowProject(projectId) {
       }
     }
 
-    fetchProject()
+    queueMicrotask(fetchProject)
 
     return () => {
       cancelled = true

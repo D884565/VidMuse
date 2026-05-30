@@ -11,6 +11,7 @@ from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.generation_task import GenerationTask
 from backend.v1.app.models.script import Script
 from backend.v1.app.generate.service import project_workflow_state
+from backend.v1.app.generate.service.generation_limits import normalize_target_duration
 from backend.providers import VolcanoLLM, ChatRequest, ChatMessage
 from backend.v1.app.generate.service._rag_temp.rag_service import (
     RAGService, MockRAGService, RAGResult,
@@ -87,7 +88,7 @@ class ScriptGenerationService:
             await db.flush()
 
         # 限制总时长在 12-20 秒
-        target_duration = max(12, min(20, project.target_duration or 15))
+        target_duration = normalize_target_duration(project.target_duration)
 
         # RAG 检索参考资料（带降级）
         rag_weight = float(project.rag_weight) if project.rag_weight else 0.3

@@ -1,194 +1,176 @@
-# VidMuse 后端视频生成数据流转文档
+﻿# VidMuse 鍚庣瑙嗛鐢熸垚鏁版嵁娴佽浆鏂囨。
 
-## 一、视频生成完整流程
+## 2026-05-30 workflow contract
 
-整个视频生成分为两大阶段：**剧本生成（同步）** 和 **视频生产（Celery 异步任务）**。
+- Render submission is policy-based: manual renders validate existing images first, while `auto_render` queues the full chain with `trigger_source="auto_render"`.
+- `generate_video_task` records `trigger_source` in step snapshots so task history can distinguish manual and automatic runs.
+- TTS uses bounded HTTP retry and returns `TtsResult` with `provider`, `fallback_used`, and `warning`. A silent fallback is not considered success unless degraded audio is explicitly allowed.
+- Frame video composition is strict by default; failed Seedance segments raise and fail the task rather than silently inserting placeholders.
+- Existing clean `frame.video_url` assets are downloaded and validated for reuse. Dirty or stale assets are regenerated.
+- Duration validation is centralized in `generation_limits.py`; script generation and storyboard edits share the same normalized target-duration rule.
+- The frontend should disable busy controls from `workflow_stage` and `stage_status`, not only legacy `project.status`.
 
-### 阶段 1：项目创建 + 剧本生成（同步）
+## 涓€銆佽棰戠敓鎴愬畬鏁存祦绋?
+鏁翠釜瑙嗛鐢熸垚鍒嗕负涓ゅぇ闃舵锛?*鍓ф湰鐢熸垚锛堝悓姝ワ級** 鍜?**瑙嗛鐢熶骇锛圕elery 寮傛浠诲姟锛?*銆?
+### 闃舵 1锛氶」鐩垱寤?+ 鍓ф湰鐢熸垚锛堝悓姝ワ級
 
-入口：`POST /generate/v1/projects`
+鍏ュ彛锛歚POST /generate/v1/projects`
 
-1. 用户提交 `ProjectCreate`，包含 `title`、`user_prompt`、`style`、`target_audience`、`key_points`、`avoid`、`rag_weight`、`target_duration`、`voice_type`、`reference_images`、`product_url` 等字段
-2. 如果提供了 `product_url`，通过 `product_crawl_service.crawl()` 抓取商品信息，转为 JSON 存入 `project.product_info`
-3. 写入 `projects` 表，状态为 `draft`
-4. 调用 `script_generation_service.generate_script()` 生成剧本（LLM 调用），将每个场景写入 `frames` 表，项目状态变为 `script_ready`
-5. 调用 `video_generation_service.submit_generation_task()` 提交 Celery 异步任务，项目状态变为 `processing`
+1. 鐢ㄦ埛鎻愪氦 `ProjectCreate`锛屽寘鍚?`title`銆乣user_prompt`銆乣style`銆乣target_audience`銆乣key_points`銆乣avoid`銆乣rag_weight`銆乣target_duration`銆乣voice_type`銆乣reference_images`銆乣product_url` 绛夊瓧娈?2. 濡傛灉鎻愪緵浜?`product_url`锛岄€氳繃 `product_crawl_service.crawl()` 鎶撳彇鍟嗗搧淇℃伅锛岃浆涓?JSON 瀛樺叆 `project.product_info`
+3. 鍐欏叆 `projects` 琛紝鐘舵€佷负 `draft`
+4. 璋冪敤 `script_generation_service.generate_script()` 鐢熸垚鍓ф湰锛圠LM 璋冪敤锛夛紝灏嗘瘡涓満鏅啓鍏?`frames` 琛紝椤圭洰鐘舵€佸彉涓?`script_ready`
+5. 璋冪敤 `video_generation_service.submit_generation_task()` 鎻愪氦 Celery 寮傛浠诲姟锛岄」鐩姸鎬佸彉涓?`processing`
 
-### 阶段 2：视频生产（Celery 异步任务）
+### 闃舵 2锛氳棰戠敓浜э紙Celery 寮傛浠诲姟锛?
+鏂囦欢锛歚backend/v1/app/generate/temp/video_tasks.py`
 
-文件：`backend/v1/app/generate/temp/video_tasks.py`
-
-| 步骤 | 操作 | 输入 | 输出 |
+| 姝ラ | 鎿嶄綔 | 杈撳叆 | 杈撳嚭 |
 |------|------|------|------|
-| Step 1 | 读取帧数据 | - | frames 列表 |
-| Step 2 | 项目级 TTS | frame.ai_params.text（拼接） | project.audio_url |
-| Step 2.5 | 帧级 TTS | frame.ai_params.text | frame.audio_url |
-| Step 3 | 图片生成 | frame.description | frame.image_url |
-| Step 4 | 视频生成 | frame.prompt + frame.image_url | 帧视频片段 |
-| Step 5 | 拼接 | 所有帧视频片段 | 合并视频 |
-| Step 5.5 | 音频合并 | TTS 配音 + 合并视频 | 带配音视频 |
-| Step 6 | 上传 | 成品视频 | project.video_output_url |
+| Step 1 | 璇诲彇甯ф暟鎹?| - | frames 鍒楄〃 |
+| Step 2 | 椤圭洰绾?TTS | frame.ai_params.text锛堟嫾鎺ワ級 | project.audio_url |
+| Step 2.5 | 甯х骇 TTS | frame.ai_params.text | frame.audio_url |
+| Step 3 | 鍥剧墖鐢熸垚 | frame.description | frame.image_url |
+| Step 4 | 瑙嗛鐢熸垚 | frame.prompt + frame.image_url | 甯ц棰戠墖娈?|
+| Step 5 | 鎷兼帴 | 鎵€鏈夊抚瑙嗛鐗囨 | 鍚堝苟瑙嗛 |
+| Step 5.5 | 闊抽鍚堝苟 | TTS 閰嶉煶 + 鍚堝苟瑙嗛 | 甯﹂厤闊宠棰?|
+| Step 6 | 涓婁紶 | 鎴愬搧瑙嗛 | project.video_output_url |
 
 ---
 
-## 二、LLM 调用详情
+## 浜屻€丩LM 璋冪敤璇︽儏
 
-### 调用 1：剧本生成
+### 璋冪敤 1锛氬墽鏈敓鎴?
+**鏂囦欢**锛歚backend/v1/app/generate/service/script_generation.py` (绗?348-390 琛?
 
-**文件**：`backend/v1/app/generate/service/script_generation.py` (第 348-390 行)
+**System Prompt**锛?```
+浣犳槸涓€涓笓涓氱殑甯﹁揣瑙嗛缂栧墽锛屾搮闀垮垱浣滅煭瑙嗛鍓ф湰銆?浣犵殑杈撳嚭蹇呴』鏄弗鏍肩殑 JSON 鏍煎紡锛屼笉瑕佸寘鍚换浣曞叾浠栨枃瀛椼€?image_prompt 瑕佽缁嗘弿杩扮敾闈紙涓讳綋銆佽儗鏅€佸厜绾裤€佽壊璋冿級锛岀敤浜?AI 鍥剧墖鐢熸垚銆?video_prompt 瑕佹弿杩伴暅澶磋繍鍔ㄥ拰鍔ㄦ€佹晥鏋滐紝鐢ㄤ簬 AI 瑙嗛鐢熸垚銆?overlay 鐢ㄤ簬鎸囧畾鐢婚潰涓婂彔鍔犵殑鍏抽敭鏂囧瓧锛岀畝鐭湁鍔涳紝涓嶈秴杩?0涓瓧锛岀敤浜庢彁楂樿浆鍖栫巼銆?```
 
-**System Prompt**：
-```
-你是一个专业的带货视频编剧，擅长创作短视频剧本。
-你的输出必须是严格的 JSON 格式，不要包含任何其他文字。
-image_prompt 要详细描述画面（主体、背景、光线、色调），用于 AI 图片生成。
-video_prompt 要描述镜头运动和动态效果，用于 AI 视频生成。
-overlay 用于指定画面上叠加的关键文字，简短有力，不超过10个字，用于提高转化率。
-```
-
-**User Prompt 结构**（由 `_build_prompt()` 方法组装）：
+**User Prompt 缁撴瀯**锛堢敱 `_build_prompt()` 鏂规硶缁勮锛夛細
 
 ```
-你是一个专业的带货视频编剧...请生成一个约{target_duration}秒的带货短视频剧本。
-
-## 用户创作意图（必须严格遵循）
+浣犳槸涓€涓笓涓氱殑甯﹁揣瑙嗛缂栧墽...璇风敓鎴愪竴涓害{target_duration}绉掔殑甯﹁揣鐭棰戝墽鏈€?
+## 鐢ㄦ埛鍒涗綔鎰忓浘锛堝繀椤讳弗鏍奸伒寰級
 {project.user_prompt}
 
-## 补充要求
-- 风格：{style}
-- 目标受众：{target_audience}
-- 关键卖点：{key_points}
-- 避免内容：{avoid}
+## 琛ュ厖瑕佹眰
+- 椋庢牸锛歿style}
+- 鐩爣鍙椾紬锛歿target_audience}
+- 鍏抽敭鍗栫偣锛歿key_points}
+- 閬垮厤鍐呭锛歿avoid}
 
-## 商品信息
-- 标题：{title}
-- 描述：{description}
-- 价格：{price}
-- 规格：{specs}
+## 鍟嗗搧淇℃伅
+- 鏍囬锛歿title}
+- 鎻忚堪锛歿description}
+- 浠锋牸锛歿price}
+- 瑙勬牸锛歿specs}
 
-## 用户提供的参考图片
-{reference_images URLs}
+## 鐢ㄦ埛鎻愪緵鐨勫弬鑰冨浘鐗?{reference_images URLs}
 
-## 参考资料（仅供参考借鉴，不要照搬）
-### 参考剧本模板
-{RAG 检索结果}
-### 参考视觉素材
-{RAG 检索结果}
-### 商品知识参考
-{RAG 检索结果}
+## 鍙傝€冭祫鏂欙紙浠呬緵鍙傝€冨€熼壌锛屼笉瑕佺収鎼級
+### 鍙傝€冨墽鏈ā鏉?{RAG 妫€绱㈢粨鏋渳
+### 鍙傝€冭瑙夌礌鏉?{RAG 妫€绱㈢粨鏋渳
+### 鍟嗗搧鐭ヨ瘑鍙傝€?{RAG 妫€绱㈢粨鏋渳
 
-## 输出要求
-{JSON 模板}
+## 杈撳嚭瑕佹眰
+{JSON 妯℃澘}
 
-## 场景类型说明
-{场景类型定义}
+## 鍦烘櫙绫诲瀷璇存槑
+{鍦烘櫙绫诲瀷瀹氫箟}
 
-## 注意事项
-{生成注意事项}
+## 娉ㄦ剰浜嬮」
+{鐢熸垚娉ㄦ剰浜嬮」}
 ```
 
-**调用参数**：
-- `temperature`: 0.7
+**璋冪敤鍙傛暟**锛?- `temperature`: 0.7
 - `max_tokens`: 4096
 
 ---
 
-### 调用 2：对话式调整 - 影响范围分析
+### 璋冪敤 2锛氬璇濆紡璋冩暣 - 褰卞搷鑼冨洿鍒嗘瀽
 
-**文件**：`backend/v1/app/generate/service/chat_service.py` (第 192-232 行)
+**鏂囦欢**锛歚backend/v1/app/generate/service/chat_service.py` (绗?192-232 琛?
 
-**System Prompt**：
-```
-你是视频调整助手，判断用户想调整哪些场景。只返回JSON。
-```
+**System Prompt**锛?```
+浣犳槸瑙嗛璋冩暣鍔╂墜锛屽垽鏂敤鎴锋兂璋冩暣鍝簺鍦烘櫙銆傚彧杩斿洖JSON銆?```
 
-**User Prompt**：
-```
-用户想要调整视频。以下是当前视频的场景列表：
-  场景1 (id=xxx, type=0): 画面描述前80字...
-  场景2 ...
+**User Prompt**锛?```
+鐢ㄦ埛鎯宠璋冩暣瑙嗛銆備互涓嬫槸褰撳墠瑙嗛鐨勫満鏅垪琛細
+  鍦烘櫙1 (id=xxx, type=0): 鐢婚潰鎻忚堪鍓?0瀛?..
+  鍦烘櫙2 ...
 
-用户的调整要求：{user_message}
+鐢ㄦ埛鐨勮皟鏁磋姹傦細{user_message}
 
-请判断影响范围，返回 JSON：{"scope": "all" | "single", "frame_id": null | int}
+璇峰垽鏂奖鍝嶈寖鍥达紝杩斿洖 JSON锛歿"scope": "all" | "single", "frame_id": null | int}
 ```
 
-**调用参数**：
-- `temperature`: 0.3
+**璋冪敤鍙傛暟**锛?- `temperature`: 0.3
 - `max_tokens`: 256
 
 ---
 
-### 调用 3：对话式调整 - 帧内容重新生成
+### 璋冪敤 3锛氬璇濆紡璋冩暣 - 甯у唴瀹归噸鏂扮敓鎴?
+**鏂囦欢**锛歚backend/v1/app/generate/service/chat_service.py` (绗?278-297 琛?
 
-**文件**：`backend/v1/app/generate/service/chat_service.py` (第 278-297 行)
+**System Prompt**锛?```
+浣犳槸甯﹁揣瑙嗛缂栧墽銆傚彧杩斿洖JSON銆?```
 
-**System Prompt**：
+**User Prompt**锛堢敱 `_build_frame_regenerate_prompt()` 缁勮锛夛細
 ```
-你是带货视频编剧。只返回JSON。
-```
+浣犳槸涓€涓笓涓氱殑甯﹁揣瑙嗛缂栧墽銆傝涓轰互涓嬪満鏅噸鏂扮敓鎴愬唴瀹广€?
+## 鍟嗗搧淇℃伅
+- 鏍囬锛歿project.title}
+- 鎻忚堪锛歿project.description}
 
-**User Prompt**（由 `_build_frame_regenerate_prompt()` 组装）：
-```
-你是一个专业的带货视频编剧。请为以下场景重新生成内容。
-
-## 商品信息
-- 标题：{project.title}
-- 描述：{project.description}
-
-## 用户原始意图
+## 鐢ㄦ埛鍘熷鎰忓浘
 {project.user_prompt}
 
-## 当前场景
-- 类型：{frame.scene_type}
-- 序号：{frame.sequence}
-- 当前画面描述：{frame.description}
+## 褰撳墠鍦烘櫙
+- 绫诲瀷锛歿frame.scene_type}
+- 搴忓彿锛歿frame.sequence}
+- 褰撳墠鐢婚潰鎻忚堪锛歿frame.description}
 
-## 对话历史
+## 瀵硅瘽鍘嗗彶
 user: xxx
 assistant: xxx
-（最近10条）
+锛堟渶杩?0鏉★級
 
-## 调整指令
+## 璋冩暣鎸囦护
 {instruction}
 
-请返回 JSON：
-{"image_prompt": "...", "video_prompt": "...", "text": "...", "overlay_text": "...", "camera": "...", "mood": "..."}
+璇疯繑鍥?JSON锛?{"image_prompt": "...", "video_prompt": "...", "text": "...", "overlay_text": "...", "camera": "...", "mood": "..."}
 ```
 
-**调用参数**：
-- `temperature`: 0.7
+**璋冪敤鍙傛暟**锛?- `temperature`: 0.7
 - `max_tokens`: 1024
 
 ---
 
-## 三、模型输出格式
-
-### 剧本生成输出格式
+## 涓夈€佹ā鍨嬭緭鍑烘牸寮?
+### 鍓ф湰鐢熸垚杈撳嚭鏍煎紡
 
 ```json
 {
   "video_meta": {
-    "product_name": "商品名称",
+    "product_name": "鍟嗗搧鍚嶇О",
     "target_duration": 15,
     "style": "fashion/tech/food/lifestyle",
     "aspect_ratio": "9:16",
-    "hook_line": "一句话开场金句"
+    "hook_line": "涓€鍙ヨ瘽寮€鍦洪噾鍙?
   },
   "scenes": [
     {
       "scene_id": 1,
       "type": "hook/selling_point/detail/social_proof/price/cta",
       "duration": 5,
-      "text": "配音文案（口语化）",
+      "text": "閰嶉煶鏂囨锛堝彛璇寲锛?,
       "voice_style": "excited/confident/urgent/warm/professional",
       "visual": {
-        "image_prompt": "详细画面描述（主体、背景、光线、色调、构图）",
-        "video_prompt": "镜头运动和动态效果描述",
+        "image_prompt": "璇︾粏鐢婚潰鎻忚堪锛堜富浣撱€佽儗鏅€佸厜绾裤€佽壊璋冦€佹瀯鍥撅級",
+        "video_prompt": "闀滃ご杩愬姩鍜屽姩鎬佹晥鏋滄弿杩?,
         "camera": "push_in/pull_out/pan_left/pan_right/static/close_up/wide_shot",
         "mood": "warm/bright/dark/energetic/elegant",
         "overlay": {
-          "text": "叠加文字（不超过10字）",
+          "text": "鍙犲姞鏂囧瓧锛堜笉瓒呰繃10瀛楋級",
           "position": "top/center/bottom",
           "style": "highlight/price_tag/call_to_action/subtle"
         }
@@ -197,24 +179,22 @@ assistant: xxx
   ],
   "audio": {
     "tts_voice": "zh_female_cancan_mars_bigtts",
-    "bgm": "背景音乐风格描述",
+    "bgm": "鑳屾櫙闊充箰椋庢牸鎻忚堪",
     "bgm_volume": 0.3
   }
 }
 ```
 
-### 对话调整输出格式
+### 瀵硅瘽璋冩暣杈撳嚭鏍煎紡
 
-**影响范围分析**：
-```json
+**褰卞搷鑼冨洿鍒嗘瀽**锛?```json
 {
   "scope": "all" | "single",
   "frame_id": null | int
 }
 ```
 
-**帧重新生成**：
-```json
+**甯ч噸鏂扮敓鎴?*锛?```json
 {
   "image_prompt": "...",
   "video_prompt": "...",
@@ -227,103 +207,80 @@ assistant: xxx
 
 ---
 
-## 四、数据流转图
+## 鍥涖€佹暟鎹祦杞浘
 
 ```
-用户输入 (ProjectCreate)
-    │
-    ▼
-[Project 表] ── title, description, user_prompt, style, target_audience,
+鐢ㄦ埛杈撳叆 (ProjectCreate)
+    鈹?    鈻?[Project 琛╙ 鈹€鈹€ title, description, user_prompt, style, target_audience,
                 key_points, avoid, rag_weight, target_duration, voice_type,
                 product_url, product_info(JSON), reference_images(JSON)
-    │
-    │  script_generation_service.generate_script()
-    │  ├── RAG 检索 → 参考文本
-    │  ├── _build_prompt() → 完整 prompt
-    │  ├── LLM 调用 → JSON 剧本
-    │  └── 逐场景写入 Frame 表
-    │
-    ▼
-[Frame 表] ── sequence, scene_type(int), description(=image_prompt),
+    鈹?    鈹? script_generation_service.generate_script()
+    鈹? 鈹溾攢鈹€ RAG 妫€绱?鈫?鍙傝€冩枃鏈?    鈹? 鈹溾攢鈹€ _build_prompt() 鈫?瀹屾暣 prompt
+    鈹? 鈹溾攢鈹€ LLM 璋冪敤 鈫?JSON 鍓ф湰
+    鈹? 鈹斺攢鈹€ 閫愬満鏅啓鍏?Frame 琛?    鈹?    鈻?[Frame 琛╙ 鈹€鈹€ sequence, scene_type(int), description(=image_prompt),
               prompt(=video_prompt), text_overlay, duration, ai_params(JSON),
-              metadata_(JSON), status=0(待生成)
-    │
-    │  video_generation_service.submit_generation_task()
-    │  → Celery 异步任务 generate_video_task
-    │
-    ▼
-[Step 2: TTS]
-    │  读取 frame.ai_params.text → 拼接 → 火山引擎 TTS API
-    │  → project.audio_url (项目级)
-    │  → frame.audio_url (帧级)
-    │
-    ▼
-[Step 3: 图片生成]
-    │  读取 frame.description → 火山引擎 Seedream 4.5 API
-    │  参考图: product_info.main_images[0]
-    │  → frame.image_url, frame.status=2
-    │
-    ▼
-[Step 4: 视频生成]
-    │  读取 frame.prompt + frame.ai_params(camera,mood)
-    │  + frame.image_url 作为首帧
-    │  → Seedance 1.5 API (固定5秒)
-    │  → 裁剪/补时到 frame.duration
-    │
-    ▼
-[Step 5: 拼接]
-    │  FFmpeg concat 所有帧视频片段
-    │
-    ▼
-[Step 5.5: 音频合并]
-    │  FFmpeg replace_audio: TTS配音 → 视频音轨
-    │
-    ▼
-[Step 6: 上传]
-    │  → project.video_output_url
-    │  → Asset 表记录
-    │  → project.status = "completed"
+              metadata_(JSON), status=0(寰呯敓鎴?
+    鈹?    鈹? video_generation_service.submit_generation_task()
+    鈹? 鈫?Celery 寮傛浠诲姟 generate_video_task
+    鈹?    鈻?[Step 2: TTS]
+    鈹? 璇诲彇 frame.ai_params.text 鈫?鎷兼帴 鈫?鐏北寮曟搸 TTS API
+    鈹? 鈫?project.audio_url (椤圭洰绾?
+    鈹? 鈫?frame.audio_url (甯х骇)
+    鈹?    鈻?[Step 3: 鍥剧墖鐢熸垚]
+    鈹? 璇诲彇 frame.description 鈫?鐏北寮曟搸 Seedream 4.5 API
+    鈹? 鍙傝€冨浘: product_info.main_images[0]
+    鈹? 鈫?frame.image_url, frame.status=2
+    鈹?    鈻?[Step 4: 瑙嗛鐢熸垚]
+    鈹? 璇诲彇 frame.prompt + frame.ai_params(camera,mood)
+    鈹? + frame.image_url 浣滀负棣栧抚
+    鈹? 鈫?Seedance 1.5 API (鍥哄畾5绉?
+    鈹? 鈫?瑁佸壀/琛ユ椂鍒?frame.duration
+    鈹?    鈻?[Step 5: 鎷兼帴]
+    鈹? FFmpeg concat 鎵€鏈夊抚瑙嗛鐗囨
+    鈹?    鈻?[Step 5.5: 闊抽鍚堝苟]
+    鈹? FFmpeg replace_audio: TTS閰嶉煶 鈫?瑙嗛闊宠建
+    鈹?    鈻?[Step 6: 涓婁紶]
+    鈹? 鈫?project.video_output_url
+    鈹? 鈫?Asset 琛ㄨ褰?    鈹? 鈫?project.status = "completed"
 ```
 
 ---
 
-## 五、关键数据映射关系
-
-| LLM 输出字段 | 数据库字段 | 用途 |
+## 浜斻€佸叧閿暟鎹槧灏勫叧绯?
+| LLM 杈撳嚭瀛楁 | 鏁版嵁搴撳瓧娈?| 鐢ㄩ€?|
 |-------------|-----------|------|
-| `scene.type` (字符串) | `frame.scene_type` (整数) | 场景类型，通过 SCENE_TYPE_MAP 转换 |
-| `visual.image_prompt` | `frame.description` | 用于图片生成 prompt |
-| `visual.video_prompt` | `frame.prompt` | 用于视频生成 prompt |
-| `visual.overlay.text` | `frame.text_overlay` | 画面叠加文字 |
-| `text` | `frame.ai_params.text` | 配音文案 |
-| `voice_style` | `frame.ai_params.voice_style` | 语音风格 |
-| `camera` | `frame.ai_params.camera` | 镜头运动 |
-| `mood` | `frame.ai_params.mood` | 画面氛围 |
+| `scene.type` (瀛楃涓? | `frame.scene_type` (鏁存暟) | 鍦烘櫙绫诲瀷锛岄€氳繃 SCENE_TYPE_MAP 杞崲 |
+| `visual.image_prompt` | `frame.description` | 鐢ㄤ簬鍥剧墖鐢熸垚 prompt |
+| `visual.video_prompt` | `frame.prompt` | 鐢ㄤ簬瑙嗛鐢熸垚 prompt |
+| `visual.overlay.text` | `frame.text_overlay` | 鐢婚潰鍙犲姞鏂囧瓧 |
+| `text` | `frame.ai_params.text` | 閰嶉煶鏂囨 |
+| `voice_style` | `frame.ai_params.voice_style` | 璇煶椋庢牸 |
+| `camera` | `frame.ai_params.camera` | 闀滃ご杩愬姩 |
+| `mood` | `frame.ai_params.mood` | 鐢婚潰姘涘洿 |
 
-### 场景类型映射 (SCENE_TYPE_MAP)
+### 鍦烘櫙绫诲瀷鏄犲皠 (SCENE_TYPE_MAP)
 
-| LLM 输出 | 数据库值 | 含义 |
+| LLM 杈撳嚭 | 鏁版嵁搴撳€?| 鍚箟 |
 |----------|---------|------|
-| hook | 0 | 开场吸引 |
-| selling_point | 1 | 卖点展示 |
-| price | 1 | 价格展示 |
-| detail | 2 | 细节展示 |
-| social_proof | 2 | 社会证明 |
-| cta | 4 | 行动号召 |
+| hook | 0 | 寮€鍦哄惛寮?|
+| selling_point | 1 | 鍗栫偣灞曠ず |
+| price | 1 | 浠锋牸灞曠ず |
+| detail | 2 | 缁嗚妭灞曠ず |
+| social_proof | 2 | 绀句細璇佹槑 |
+| cta | 4 | 琛屽姩鍙峰彫 |
 
 ---
 
-## 六、核心文件索引
-
-| 文件 | 职责 |
+## 鍏€佹牳蹇冩枃浠剁储寮?
+| 鏂囦欢 | 鑱岃矗 |
 |------|------|
-| `backend/v1/app/generate/controller/generation.py` | API 路由层 |
-| `backend/v1/app/generate/service/script_generation.py` | 剧本生成服务 |
-| `backend/v1/app/generate/service/video_generation.py` | 视频生成调度服务 |
-| `backend/v1/app/generate/temp/video_tasks.py` | Celery 异步任务 |
-| `backend/v1/app/generate/service/image_generation_service.py` | 图片生成服务 |
-| `backend/v1/app/generate/service/video_composer.py` | 视频合成服务 |
-| `backend/v1/app/generate/service/tts_service.py` | TTS 语音合成服务 |
-| `backend/v1/app/generate/service/chat_service.py` | 对话式调整服务 |
-| `backend/providers/volcano.py` | 火山引擎统一客户端 |
-| `backend/providers/dto/schema.py` | 请求/响应数据结构 |
+| `backend/v1/app/generate/controller/generation.py` | API 璺敱灞?|
+| `backend/v1/app/generate/service/script_generation.py` | 鍓ф湰鐢熸垚鏈嶅姟 |
+| `backend/v1/app/generate/service/video_generation.py` | 瑙嗛鐢熸垚璋冨害鏈嶅姟 |
+| `backend/v1/app/generate/temp/video_tasks.py` | Celery 寮傛浠诲姟 |
+| `backend/v1/app/generate/service/image_generation_service.py` | 鍥剧墖鐢熸垚鏈嶅姟 |
+| `backend/v1/app/generate/service/video_composer.py` | 瑙嗛鍚堟垚鏈嶅姟 |
+| `backend/v1/app/generate/service/tts_service.py` | TTS 璇煶鍚堟垚鏈嶅姟 |
+| `backend/v1/app/generate/service/chat_service.py` | 瀵硅瘽寮忚皟鏁存湇鍔?|
+| `backend/providers/volcano.py` | 鐏北寮曟搸缁熶竴瀹㈡埛绔?|
+| `backend/providers/dto/schema.py` | 璇锋眰/鍝嶅簲鏁版嵁缁撴瀯 |

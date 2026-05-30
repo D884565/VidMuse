@@ -4,16 +4,27 @@ import uuid
 import base64
 import tempfile
 import logging
+import time
+from dataclasses import dataclass
 
 import requests
 
 from backend.v1.app.config.config import settings
+from backend.v1.app.generate.service.external_call_policy import TTS_TIMEOUT_SECONDS
 from backend.v1.app.video.service.ffmpeg_utils import FFMPEG_PATH
 
 logger = logging.getLogger(__name__)
 
 # 火山引擎 TTS API 配置
 TTS_API_URL = "https://openspeech.bytedance.com/api/v1/tts"
+
+
+@dataclass
+class TtsResult:
+    path: str
+    fallback_used: bool
+    provider: str
+    warning: str | None = None
 
 
 class TtsService:
@@ -26,7 +37,7 @@ class TtsService:
         self.token = settings.TTS_SECRET_KEY
         self.last_fallback = False
 
-    def generate_audio(self, text: str, voice_type: str = "zh_female_cancan_mars_bigtts") -> str:
+    def generate_audio(self, text: str, voice_type: str = "zh_female_cancan_mars_bigtts") -> TtsResult:
         """
         将文本合成为配音音频。
 
@@ -36,11 +47,20 @@ class TtsService:
         """
         try:
             self.last_fallback = False
-            return self._call_volcano_tts(text, voice_type)
+            return TtsResult(
+                path=self._call_volcano_tts(text, voice_type),
+                fallback_used=False,
+                provider="volcano_tts",
+            )
         except Exception as e:
             logger.warning(f"[TTS] 火山引擎调用失败，使用静音音频: {str(e)}")
             self.last_fallback = True
-            return self._create_silent_audio(text)
+            return TtsResult(
+                path=self._create_silent_audio(text),
+                fallback_used=True,
+                provider="silent_fallback",
+                warning=str(e),
+            )
 
     def _call_volcano_tts(self, text: str, voice_type: str) -> str:
         """
@@ -80,7 +100,7 @@ class TtsService:
         }
 
         # 发送请求
-        response = requests.post(TTS_API_URL, json=payload, headers=headers, timeout=30)
+        response = self._request_with_retry(TTS_API_URL, json=payload, headers=headers)
         response.raise_for_status()
 
         # 解析响应
@@ -101,6 +121,25 @@ class TtsService:
 
         logger.info(f"[TTS] 火山引擎调用成功: {output_path}, 大小: {len(audio_bytes)} bytes")
         return output_path
+
+    def _request_with_retry(self, url: str, *, json: dict, headers: dict, attempts: int = 3) -> requests.Response:
+        """Call the TTS HTTP API with bounded retries for transient network failures."""
+        last_error: Exception | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                return requests.request(
+                    "POST",
+                    url,
+                    json=json,
+                    headers=headers,
+                    timeout=TTS_TIMEOUT_SECONDS,
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt >= attempts:
+                    break
+                time.sleep(0.5 * attempt)
+        raise RuntimeError(f"TTS request failed after {attempts} attempts: {last_error}")
 
     def _create_silent_audio(self, text: str) -> str:
         """创建静音音频（作为 fallback）"""

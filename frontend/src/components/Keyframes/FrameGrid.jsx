@@ -187,8 +187,11 @@ export default function FrameGrid() {
     )
   }
 
-  const projectBusy = BUSY_PROJECT_STATUSES.includes(project?.status)
-  const scriptBusy = ['script_generating', 'render_queued', 'rendering'].includes(project?.status)
+  const workflowRunning = project?.stage_status === 'running'
+  const videoWorkflowRunning = project?.workflow_stage === 'video' && workflowRunning
+  const scriptWorkflowRunning = project?.workflow_stage === 'script' && workflowRunning
+  const projectBusy = workflowRunning || BUSY_PROJECT_STATUSES.includes(project?.status)
+  const scriptBusy = scriptWorkflowRunning || videoWorkflowRunning || ['script_generating', 'render_queued', 'rendering'].includes(project?.status)
   const canRender = !!frames.length && !projectBusy && !['draft', 'failed'].includes(project?.status)
 
   return (

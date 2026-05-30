@@ -30,6 +30,9 @@ class VideoGenerationService:
         self,
         db: AsyncSession,
         project_id: int,
+        *,
+        require_ready_images: bool = True,
+        trigger_source: str = "manual_render",
     ) -> dict:
         """
         提交视频生成异步任务。
@@ -73,7 +76,7 @@ class VideoGenerationService:
             for frame in frames
             if frame.status == 3 or not frame.image_url or not str(frame.image_url).startswith("http")
         ]
-        if invalid_frames:
+        if require_ready_images and invalid_frames:
             raise ValueError(f"存在未成功生成图片的分镜，不能进入视频阶段: {invalid_frames}")
 
         task = await generation_task_service.create_task(db, project_id, "render", status="queued")
@@ -87,6 +90,7 @@ class VideoGenerationService:
         async_result = celery_app.send_task(
             "generate_video_task",
             args=[project_id, task.id],
+            kwargs={"trigger_source": trigger_source},
         )
         await generation_task_service.set_celery_task_id(db, task.id, async_result.id)
 
@@ -181,6 +185,7 @@ class VideoGenerationService:
                     "video_prompt": f.video_prompt,
                     "image_url": f.image_url,
                     "audio_url": f.audio_url,
+                    "video_url": f.video_url,
                     "duration": float(f.duration),
                     "status": f.status,
                     "dirty": bool(f.dirty),

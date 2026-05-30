@@ -1,4 +1,5 @@
 import { Play, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
 import { advanceWorkflowStage, confirmWorkflowStage } from '../../services/project.js'
 import { useAppStore } from '../../store/appStore.js'
 
@@ -8,16 +9,28 @@ import { useAppStore } from '../../store/appStore.js'
  */
 export default function MessageBlocks({ blocks = [], onActionComplete }) {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
+  const [pendingActionKey, setPendingActionKey] = useState('')
+  const [actionError, setActionError] = useState('')
 
   /** 执行操作按钮的动作：确认阶段 或 确认并推进到下一阶段 */
   async function runAction(action) {
-    if (!activeProjectId) return
-    if (action.action === 'confirm') {
-      await confirmWorkflowStage(activeProjectId, action.stage)
-    } else if (action.action === 'advance') {
-      await advanceWorkflowStage(activeProjectId, action.confirmed_stage)
+    if (!activeProjectId || pendingActionKey) return
+    const actionKey = `${action.action}-${action.stage || action.confirmed_stage || action.label}`
+    setPendingActionKey(actionKey)
+    setActionError('')
+    try {
+      if (action.action === 'confirm') {
+        await confirmWorkflowStage(activeProjectId, action.stage)
+      } else if (action.action === 'advance') {
+        await advanceWorkflowStage(activeProjectId, action.confirmed_stage)
+      }
+      onActionComplete?.()
+    } catch (err) {
+      // 操作失败时留在当前消息块内提示，避免未处理 Promise 异常。
+      setActionError(err.message || '操作失败')
+    } finally {
+      setPendingActionKey('')
     }
-    onActionComplete?.()
   }
 
   if (!blocks?.length) return null
@@ -30,7 +43,17 @@ export default function MessageBlocks({ blocks = [], onActionComplete }) {
         if (block.type === 'image_grid') return <ImageGrid key={index} block={block} />
         if (block.type === 'video_card') return <VideoCard key={index} block={block} />
         if (block.type === 'progress_card') return <ProgressCard key={index} block={block} />
-        if (block.type === 'action_bar') return <ActionBar key={index} block={block} onRun={runAction} />
+        if (block.type === 'action_bar') {
+          return (
+            <ActionBar
+              key={index}
+              block={block}
+              onRun={runAction}
+              pendingActionKey={pendingActionKey}
+              actionError={actionError}
+            />
+          )
+        }
         if (block.type === 'asset_grid') return <AssetGrid key={index} block={block} />
         return null
       })}
@@ -129,19 +152,27 @@ function ProgressCard({ block }) {
 }
 
 /** 操作按钮栏：渲染确认、推进、重新生成等操作按钮 */
-function ActionBar({ block, onRun }) {
+function ActionBar({ block, onRun, pendingActionKey, actionError }) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {(block.actions || []).map((action, index) => (
-        <button
-          key={`${action.label}-${index}`}
-          type="button"
-          onClick={() => onRun(action)}
-          className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-white hover:border-[#38bdf8]/40 hover:bg-[#38bdf8]/10"
-        >
-          {action.label}
-        </button>
-      ))}
+    <div>
+      <div className="flex flex-wrap gap-2">
+        {(block.actions || []).map((action, index) => {
+          const actionKey = `${action.action}-${action.stage || action.confirmed_stage || action.label}`
+          const busy = pendingActionKey === actionKey
+          return (
+            <button
+              key={`${action.label}-${index}`}
+              type="button"
+              disabled={!!pendingActionKey}
+              onClick={() => onRun(action)}
+              className="rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs text-white hover:border-[#38bdf8]/40 hover:bg-[#38bdf8]/10 disabled:cursor-wait disabled:opacity-50"
+            >
+              {busy ? '处理中...' : action.label}
+            </button>
+          )
+        })}
+      </div>
+      {actionError && <div className="mt-2 text-xs text-red-300">{actionError}</div>}
     </div>
   )
 }

@@ -25,6 +25,7 @@ class GenerationTaskService:
         *,
         status: str = "queued",
         trace_id: str | None = None,
+        commit: bool = True,
     ) -> GenerationTask:
         task = GenerationTask(
             project_id=project_id,
@@ -34,8 +35,12 @@ class GenerationTaskService:
             trace_id=trace_id or uuid.uuid4().hex,
         )
         db.add(task)
-        await db.commit()
-        await db.refresh(task)
+        if commit:
+            await db.commit()
+            await db.refresh(task)
+        else:
+            # 调用方需要原子提交时，只 flush 出 id，不提前提交事务。
+            await db.flush()
         return task
 
     async def set_celery_task_id(self, db: AsyncSession, task_id: int, celery_task_id: str) -> None:
@@ -94,15 +99,28 @@ class GenerationTaskService:
         db.refresh(task)
         return task
 
-    def get_task_sync(self, db: Session, task_id: int) -> GenerationTask | None:
-        return db.get(GenerationTask, task_id)
-
-    def start_task_sync(self, db: Session, task_id: int, step_name: str | None = None) -> None:
+    def get_task_sync(self, db: Session, task_id: int) -> GenerationTask:
         task = db.get(GenerationTask, task_id)
         if not task:
-            return
+            raise ValueError(f"generation task not found: {task_id}")
+        return task
+
+    def start_task_sync(
+        self,
+        db: Session,
+        task_id: int,
+        step_name: str | None = None,
+        *,
+        allow_restart: bool = False,
+    ) -> None:
+        task = self.get_task_sync(db, task_id)
+        if task.status in TERMINAL_STATUSES and not allow_restart:
+            raise ValueError(f"generation task is terminal: {task_id} status={task.status}")
         task.status = "running"
         task.started_at = task.started_at or datetime.utcnow()
+        task.finished_at = None
+        task.error_code = None
+        task.error_message = None
         if step_name:
             task.current_step = step_name
         db.commit()
@@ -119,9 +137,7 @@ class GenerationTaskService:
         error_code: str | None = None,
         error_message: str | None = None,
     ) -> None:
-        task = db.get(GenerationTask, task_id)
-        if not task:
-            return
+        task = self.get_task_sync(db, task_id)
         if status is not None:
             task.status = status
             if status in TERMINAL_STATUSES:
@@ -148,9 +164,9 @@ class GenerationTaskService:
         frame_id: int | None = None,
         input_snapshot: dict[str, Any] | None = None,
     ) -> GenerationTaskStep | None:
-        task = db.get(GenerationTask, task_id)
-        if not task:
-            return None
+        task = self.get_task_sync(db, task_id)
+        if task.status in TERMINAL_STATUSES:
+            raise ValueError(f"generation task is terminal: {task_id} status={task.status}")
         step = GenerationTaskStep(
             task_id=task_id,
             step_name=step_name,
@@ -184,7 +200,7 @@ class GenerationTaskService:
             return
         step_model = db.get(GenerationTaskStep, step) if isinstance(step, int) else step
         if not step_model:
-            return
+            raise ValueError(f"generation task step not found: {step}")
         step_model.status = status
         if progress is not None:
             step_model.progress = max(0, min(100, int(progress)))

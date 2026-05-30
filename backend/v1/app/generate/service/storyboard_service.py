@@ -10,6 +10,7 @@ from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.script import Script
 from backend.v1.app.generate.service.generation_workflow import generation_workflow_service
+from backend.v1.app.generate.service.generation_limits import validate_total_frame_duration
 
 # 允许前端通过 PATCH 接口修改的帧字段
 EDITABLE_FRAME_FIELDS = {
@@ -69,16 +70,17 @@ class StoryboardService:
             changed = True
 
         if changed:
+            project = await db.get(Project, project_id)
             duration_result = await db.execute(select(Frame).where(Frame.project_id == project_id))
             frames = list(duration_result.scalars().all())
-            total_duration = sum(float(item.duration or 0) for item in frames)
-            if total_duration > 15:
-                raise ValueError("分镜总时长不能超过 15 秒")
+            validate_total_frame_duration(
+                [item.duration for item in frames],
+                target_duration=project.target_duration if project else None,
+            )
             self._sync_legacy_fields(frame)
             frame.dirty = 1  # 标记帧已被手动编辑
             frame.last_edited_at = datetime.utcnow()
             # 编辑后将项目状态置为"待审核"，需重新渲染才能生效
-            project = await db.get(Project, project_id)
             if project and project.status in ("script_ready", "completed"):
                 project.status = "review_required"
             if project:
@@ -141,6 +143,7 @@ class StoryboardService:
             "last_edited_at": frame.last_edited_at.isoformat() if frame.last_edited_at else None,
             "image_url": frame.image_url,
             "audio_url": frame.audio_url,
+            "video_url": frame.video_url,
             "error_message": frame.error_message,
             "ai_params": frame.ai_params,
         }

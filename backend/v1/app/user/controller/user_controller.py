@@ -4,7 +4,7 @@
 所有业务逻辑委托给 UserService，自身不包含业务代码。
 """
 from typing import Optional
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 
 from backend.framework.web.response import Response
@@ -38,9 +38,11 @@ def login(req: UserLoginRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/auth/refresh", response_model=Response, summary="刷新Token")
-def refresh(refresh_token: str, db: Session = Depends(get_db)):
+def refresh(req: dict | None = Body(None), refresh_token: str | None = None, db: Session = Depends(get_db)):
     """使用 refresh_token 获取新的 access_token"""
-    result = user_service.refresh_token(db, refresh_token)
+    # 优先读取请求体，兼容旧 query 参数一段时间。
+    token = (req or {}).get("refresh_token") or refresh_token
+    result = user_service.refresh_token(db, token)
     return Response.success(data=result, message="刷新成功")
 
 
