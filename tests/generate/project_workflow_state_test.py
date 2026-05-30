@@ -1,4 +1,5 @@
 from backend.v1.app.generate.service.project_workflow_state import (
+    confirm_project_stage,
     invalidate_project_from,
     mark_project_completed,
     mark_project_stage_failed,
@@ -142,6 +143,21 @@ def test_mark_project_completed_syncs_legacy_status():
     assert project.status == "completed"
     assert project.dirty_stage is None
     assert project.last_task_id == 99
+
+
+def test_confirm_stage_rejects_dirty_current_stage():
+    project = Project()
+    project.workflow_stage = "image"
+    project.stage_status = "awaiting_review"
+    project.status = "review_required"
+    project.dirty_stage = "image"
+
+    try:
+        confirm_project_stage(project, "image")
+    except ValueError as exc:
+        assert "dirty" in str(exc)
+    else:
+        raise AssertionError("expected dirty current stage confirmation to be blocked")
 
 
 def test_has_running_stage_task_detects_queued_or_running():

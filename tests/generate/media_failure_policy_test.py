@@ -141,3 +141,11 @@ def test_single_frame_video_regeneration_invalidates_video_stage():
     source = Path("backend/v1/app/generate/controller/generation.py").read_text(encoding="utf-8")
 
     assert 'invalidate_from(project_model, "video")' in source
+
+
+def test_full_render_path_persists_successful_frame_segments_for_retry_reuse():
+    source = Path("backend/v1/app/generate/temp/video_tasks.py").read_text(encoding="utf-8")
+
+    assert "_persist_frame_video_segment(" in source
+    assert "frame.video_url = video_url" in source
+    assert "frame.dirty = 0" in source

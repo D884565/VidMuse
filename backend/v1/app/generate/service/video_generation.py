@@ -83,7 +83,6 @@ class VideoGenerationService:
 
         # 更新状态，避免前端重复提交渲染任务。
         project_workflow_state.mark_project_stage_running(project, "video", task.id)
-        project.status = "render_queued"
         await db.commit()
 
         # 异步发送 Celery 任务

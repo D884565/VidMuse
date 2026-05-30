@@ -81,7 +81,25 @@ def test_frame_and_export_tasks_retry_before_final_failure():
         next_task = source.find("@celery_app.task", start + 1)
         body = source[start: next_task if next_task != -1 else len(source)]
         assert "will_retry = self.request.retries < self.max_retries" in body
-        assert "raise self.retry(exc=exc)" in body
+        assert "raise self.retry(exc=exc, countdown=" in body
+
+
+def test_generation_tasks_explicitly_handle_soft_time_limit_and_log_frame_task_failures():
+    source = read("backend/v1/app/generate/temp/video_tasks.py")
+
+    assert "SoftTimeLimitExceeded" in source
+
+    for task_name in ("generate_image_task", "generate_video_task", "generate_frame_image_task", "generate_frame_video_task", "export_video_task"):
+        start = source.index(f"def {task_name}")
+        next_task = source.find("@celery_app.task", start + 1)
+        body = source[start: next_task if next_task != -1 else len(source)]
+        assert "except SoftTimeLimitExceeded as exc:" in body
+
+    for task_name in ("generate_frame_image_task", "generate_frame_video_task"):
+        start = source.index(f"def {task_name}")
+        next_task = source.find("@celery_app.task", start + 1)
+        body = source[start: next_task if next_task != -1 else len(source)]
+        assert "logger.error(" in body
 
 
 def test_project_detail_uses_project_asset_join_not_url_contains():
@@ -99,3 +117,16 @@ def test_workflow_mutations_lock_project_row():
     assert "def _load_project_for_workflow_update" in source
     assert ".with_for_update()" in source
     assert source.count("_load_project_for_workflow_update(db, project_id)") >= 2
+
+
+def test_generation_and_chat_paths_do_not_directly_assign_legacy_or_stage_status():
+    generation_source = read("backend/v1/app/generate/controller/generation.py")
+    chat_source = read("backend/v1/app/generate/service/chat_service.py")
+    storyboard_source = read("backend/v1/app/generate/service/storyboard_service.py")
+    video_generation_source = read("backend/v1/app/generate/service/video_generation.py")
+
+    assert 'project_model.stage_status = "running"' not in generation_source
+    assert 'project_model.stage_status = task_result.get("status", "running")' not in generation_source
+    assert 'project.status = "script_generating"' not in chat_source
+    assert 'project.status = "review_required"' not in storyboard_source
+    assert 'project.status = "render_queued"' not in video_generation_source

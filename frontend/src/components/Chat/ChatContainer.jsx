@@ -1,6 +1,6 @@
 import { WandSparkles } from 'lucide-react'
 import { useChat } from '../../hooks/useChat.js'
-import { useWorkflowProject } from '../../hooks/useWorkflowProject.js'
+import { useProjectPolling } from '../../hooks/useProjectPolling.js'
 import { useAppStore } from '../../store/appStore.js'
 import SmartInput from '../Input/SmartInput.jsx'
 import StageProgress from '../Workflow/StageProgress.jsx'
@@ -10,7 +10,7 @@ import TypingIndicator from './TypingIndicator.jsx'
 export default function ChatContainer() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const { messages, isTyping, sendMessage, reload } = useChat()
-  const { project, refetch } = useWorkflowProject(activeProjectId)
+  const { project, refetch } = useProjectPolling(activeProjectId)
 
   function handleActionComplete() {
     reload()

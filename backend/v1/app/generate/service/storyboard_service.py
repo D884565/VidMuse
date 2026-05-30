@@ -81,8 +81,6 @@ class StoryboardService:
             frame.dirty = 1  # 标记帧已被手动编辑
             frame.last_edited_at = datetime.utcnow()
             # 编辑后将项目状态置为"待审核"，需重新渲染才能生效
-            if project and project.status in ("script_ready", "completed"):
-                project.status = "review_required"
             if project:
                 generation_workflow_service.invalidate_from(project, "script")
             await db.commit()

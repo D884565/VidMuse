@@ -2,6 +2,7 @@
 import os
 import logging
 import tempfile
+from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -40,6 +41,18 @@ class GenerationStageError(RuntimeError):
 # Celery Worker 涓娇鐢ㄥ悓姝ユ暟鎹簱杩炴帴
 def _get_sync_db() -> Session:
     return SessionLocal()
+
+
+def _retry_countdown(retries: int) -> int:
+    return min(300, 2 ** max(0, retries))
+
+
+def _persist_frame_video_segment(project_id: int, frame: Frame, local_path: str) -> str:
+    object_key = f"projects/{project_id}/frames/frame_{frame.id or frame.sequence}.mp4"
+    video_url = get_storage_client().upload_file(local_path, object_key)
+    frame.video_url = video_url
+    frame.dirty = 0
+    return video_url
 
 
 def _mark_project_failed(db: Session, project_id: int, stage: str) -> None:
@@ -145,6 +158,26 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
         db.commit()
         generation_task_service.finish_step_sync(db, step, progress=100, output_snapshot={"frames_count": len(frames)}) if task_id else None
         generation_task_service.update_task_sync(db, task_id, status="succeeded", progress=100, current_step="IMAGE_GENERATED") if task_id else None
+    except SoftTimeLimitExceeded as exc:
+        logger.error(f"[鍥剧墖浠诲姟瓒呮椂] project_id={project_id}", exc_info=True)
+        will_retry = self.request.retries < self.max_retries
+        if db:
+            db.rollback()
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage="image",
+                current_step="IMAGE_GENERATION_TIMEOUT",
+                error_code="IMAGE_GENERATION_TIMEOUT",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update image timeout state", exc_info=True)
+        if will_retry:
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        raise
     except Exception as exc:
         logger.error(f"[鍥剧墖浠诲姟澶辫触] project_id={project_id}, error={exc}", exc_info=True)
         # 让瞬时错误先走 Celery 重试，重试耗尽后再落最终失败状态。
@@ -164,7 +197,7 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
         except Exception:
             logger.warning("[failure handler] failed to update image task state", exc_info=True)
         if will_retry:
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
         raise
     finally:
         if db:
@@ -295,6 +328,8 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
             target_duration=project.target_duration,
             allow_placeholder_segments=False,
         )
+        for frame, segment_path in getattr(video_composer, "last_generated_segments", []):
+            _persist_frame_video_segment(project_id, frame, segment_path)
         db.commit()
         failed_videos = [f.id for f in frames if f.status == 3]
         generation_task_service.finish_step_sync(db, step, status="failed" if failed_videos else "succeeded", progress=75, output_snapshot={"failed_frame_ids": failed_videos}, error_message="閮ㄥ垎鍒嗛暅瑙嗛鐢熸垚澶辫触" if failed_videos else None) if task_id else None
@@ -383,6 +418,26 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         generation_task_service.update_task_sync(db, task_id, status="succeeded", progress=100, current_step="COMPLETED") if task_id else None
         logger.info(f"[瀹屾垚] project_id={project_id}, 瑙嗛宸茬敓鎴? {video_object}")
 
+    except SoftTimeLimitExceeded as exc:
+        logger.error(f"[瑙嗛浠诲姟瓒呮椂] project_id={project_id}", exc_info=True)
+        will_retry = self.request.retries < self.max_retries
+        if db:
+            db.rollback()
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage="video",
+                current_step="VIDEO_GENERATION_TIMEOUT",
+                error_code="VIDEO_GENERATION_TIMEOUT",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update video timeout state", exc_info=True)
+        if will_retry:
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        raise
     except Exception as exc:
         logger.error(f"[澶辫触] project_id={project_id}, error={exc}", exc_info=True)
         will_retry = self.request.retries < self.max_retries
@@ -402,7 +457,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         except Exception:
             logger.warning("[failure handler] failed to update task state", exc_info=True)
         if will_retry:
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
         raise exc
 
     finally:
@@ -461,7 +516,28 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
             current_frame_id=frame_id,
         ) if task_id else None
         db.commit()
+    except SoftTimeLimitExceeded as exc:
+        logger.error(f"[鍗曞抚鍥剧墖浠诲姟瓒呮椂] project_id={project_id}, frame_id={frame_id}", exc_info=True)
+        will_retry = self.request.retries < self.max_retries
+        if db:
+            db.rollback()
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage="image",
+                current_step="FRAME_IMAGE_TIMEOUT",
+                error_code="FRAME_IMAGE_TIMEOUT",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update frame image timeout state", exc_info=True)
+        if will_retry:
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        raise
     except Exception as exc:
+        logger.error(f"[鍗曞抚鍥剧墖浠诲姟澶辫触] project_id={project_id}, frame_id={frame_id}, error={exc}", exc_info=True)
         will_retry = self.request.retries < self.max_retries
         if db:
             db.rollback()
@@ -478,7 +554,7 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
         except Exception:
             logger.warning("[failure handler] failed to update frame image task state", exc_info=True)
         if will_retry:
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
         raise
     finally:
         if db:
@@ -520,7 +596,28 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
             db, task_id, status="succeeded", progress=100, current_step="FRAME_VIDEO_GENERATED",
             current_frame_id=frame_id,
         ) if task_id else None
+    except SoftTimeLimitExceeded as exc:
+        logger.error(f"[鍗曞抚瑙嗛浠诲姟瓒呮椂] project_id={project_id}, frame_id={frame_id}", exc_info=True)
+        will_retry = self.request.retries < self.max_retries
+        if db:
+            db.rollback()
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage="video",
+                current_step="FRAME_VIDEO_TIMEOUT",
+                error_code="FRAME_VIDEO_TIMEOUT",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update frame video timeout state", exc_info=True)
+        if will_retry:
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        raise
     except Exception as exc:
+        logger.error(f"[鍗曞抚瑙嗛浠诲姟澶辫触] project_id={project_id}, frame_id={frame_id}, error={exc}", exc_info=True)
         will_retry = self.request.retries < self.max_retries
         if db:
             db.rollback()
@@ -537,7 +634,7 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
         except Exception:
             logger.warning("[failure handler] failed to update frame video task state", exc_info=True)
         if will_retry:
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
         raise
     finally:
         if db:
@@ -579,6 +676,26 @@ def export_video_task(self, project_id: int, task_id: int | None = None, aspect_
         generation_task_service.update_task_sync(
             db, task_id, status="succeeded", progress=100, current_step="EXPORTED"
         ) if task_id else None
+    except SoftTimeLimitExceeded as exc:
+        logger.error(f"[瀵煎嚭浠诲姟瓒呮椂] project_id={project_id}", exc_info=True)
+        will_retry = self.request.retries < self.max_retries
+        if db:
+            db.rollback()
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage=None,
+                current_step="EXPORT_TIMEOUT",
+                error_code="EXPORT_TIMEOUT",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update export timeout state", exc_info=True)
+        if will_retry:
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        raise
     except Exception as exc:
         will_retry = self.request.retries < self.max_retries
         if db:
@@ -597,7 +714,7 @@ def export_video_task(self, project_id: int, task_id: int | None = None, aspect_
         except Exception:
             logger.warning("[failure handler] failed to update export task state", exc_info=True)
         if will_retry:
-            raise self.retry(exc=exc)
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
         raise
     finally:
         if db:

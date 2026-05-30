@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+﻿import { useCallback, useEffect, useState } from 'react'
 import { sendChatMessage } from '../services/chat.js'
 import { getConversations } from '../services/conversation.js'
 import { useAppStore } from '../store/appStore.js'
@@ -26,7 +26,7 @@ export function useChat() {
         setMessages((conversations || []).map(normalizeConversation))
       })
       .catch((err) => {
-        console.warn('加载对话历史失败，使用空列表:', err.message)
+        console.warn('鍔犺浇瀵硅瘽鍘嗗彶澶辫触锛屼娇鐢ㄧ┖鍒楄〃:', err.message)
         if (!cancelled) setMessages([])
       })
       .finally(() => {
@@ -38,13 +38,13 @@ export function useChat() {
     }
   }, [activeProjectId, reloadToken])
 
-  const sendMessage = useCallback(async (content, files = []) => {
-    if (!content.trim() && files.length === 0) return
+  const sendMessage = useCallback(async (content) => {
+    if (!content.trim()) return
     if (!activeProjectId) return
 
     setMessages((current) => [
       ...current,
-      { id: crypto.randomUUID(), role: 'user', content: content.trim() || '已上传素材', files, blocks: [] },
+      { id: crypto.randomUUID(), role: 'user', content: content.trim(), blocks: [] },
     ])
     setIsTyping(true)
 
@@ -56,7 +56,7 @@ export function useChat() {
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: assistant.content || '已处理您的请求',
+          content: assistant.content || '宸插鐞嗘偍鐨勮姹?,
           blocks: assistant.blocks || [],
           stage: assistant.stage,
           action_type: assistant.action_type,
@@ -67,7 +67,7 @@ export function useChat() {
     } catch (err) {
       setMessages((current) => [
         ...current,
-        { id: crypto.randomUUID(), role: 'assistant', content: `请求失败: ${err.message}`, blocks: [] },
+        { id: crypto.randomUUID(), role: 'assistant', content: `璇锋眰澶辫触: ${err.message}`, blocks: [] },
       ])
     } finally {
       setIsTyping(false)
