@@ -102,6 +102,7 @@ class VideoComposer:
         self.validate_frames_for_video(frames)
 
         video_paths = []
+        generated_segments = []
         for i, frame in enumerate(frames):
             try:
                 logger.info(f"[视频生成] 开始生成帧 {frame.sequence}/{len(frames)}")
@@ -109,6 +110,7 @@ class VideoComposer:
                 local_path = self._generate_frame_video(frame, output_dir)
 
                 video_paths.append(local_path)
+                generated_segments.append((frame, local_path))
 
                 frame.status = 2  # 已完成
                 frame.error_message = None
@@ -138,6 +140,7 @@ class VideoComposer:
         else:
             final_path = self._generate_placeholder_video(output_dir, 30, 0)
 
+        self.last_generated_segments = generated_segments
         if target_duration:
             return self._trim_final_video(final_path, output_dir, target_duration)
         return final_path

@@ -133,6 +133,8 @@ def confirm_project_stage(project, stage: str) -> None:
     current_stage = getattr(project, "workflow_stage", None) or "script"
     if current_stage != stage:
         raise ValueError(f"cannot confirm {stage}: current stage is {current_stage}")
+    if getattr(project, "dirty_stage", None) == stage:
+        raise ValueError(f"cannot confirm dirty stage {stage}: regenerate this stage first")
     stage_status = getattr(project, "stage_status", None) or "idle"
     if stage_status not in REVIEWABLE_STATUSES:
         raise ValueError(f"stage {stage} is not reviewable (status={stage_status})")

@@ -146,8 +146,6 @@ class ChatService:
         task = await generation_task_service.create_task(db, project_id, "script", status="running")
         try:
             project_workflow_state.mark_project_stage_running(project, "script", task.id)
-            project.status = "script_generating"
-            generation_workflow_service.mark_stage_running(project, "script", task.id)
             await db.commit()
             frames = await script_generation_service.generate_script(db, project_id)
             generation_workflow_service.mark_stage_review(project, "script", task.id)

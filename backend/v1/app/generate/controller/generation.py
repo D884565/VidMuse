@@ -513,15 +513,8 @@ async def advance_workflow_stage(
     task_result = None
     if project_model.workflow_stage == "video":
         task_result = await video_generation_service.submit_generation_task(db, project_id)
-        project_model.last_task_id = task_result.get("task_id")
-        project_model.stage_status = "running"
     elif project_model.workflow_stage == "image":
         task_result = await image_workflow_service.submit_image_task(db, project_id)
-        project_model.last_task_id = task_result.get("task_id")
-        project_model.stage_status = task_result.get("status", "running")
-    elif project_model.workflow_stage == "completed":
-        project_model.status = "completed"
-
     await db.commit()
     await db.refresh(project_model)
     return Response.success(data={
