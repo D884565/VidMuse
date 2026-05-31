@@ -2,7 +2,6 @@
 import base64
 import logging
 import os
-import subprocess
 import tempfile
 import time
 import uuid
@@ -12,7 +11,7 @@ import requests
 
 from backend.v1.app.config.config import settings
 from backend.v1.app.generate.service.external_call_policy import TTS_TIMEOUT_SECONDS
-from backend.v1.app.video.service.ffmpeg_utils import FFMPEG_PATH
+from backend.ffmpeg import ffmpeg_tool
 
 logger = logging.getLogger(__name__)
 
@@ -54,65 +53,19 @@ class TtsService:
 
     def create_silent_audio_for_duration(self, duration_sec: float) -> str:
         output_path = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}.mp3")
-        safe_duration = max(1.0, float(duration_sec or 1.0))
-        cmd = [
-            FFMPEG_PATH,
-            "-y",
-            "-f", "lavfi",
-            "-i", "anullsrc=r=44100:cl=mono",
-            "-t", str(safe_duration),
-            "-q:a", "9",
-            "-acodec", "libmp3lame",
-            output_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-        if result.returncode != 0:
-            raise RuntimeError(f"create silent mp3 failed: {result.stderr}")
-        return output_path
+        return ffmpeg_tool.create_silent_audio_for_duration(
+            duration_sec, output_path=output_path,
+        )
 
     def fit_audio_to_duration(self, input_path: str, duration_sec: float) -> str:
         output_path = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}_fit.mp3")
-        safe_duration = max(1.0, float(duration_sec or 1.0))
-        cmd = [
-            FFMPEG_PATH,
-            "-y",
-            "-i", input_path,
-            "-af", f"apad=whole_dur={safe_duration}",
-            "-t", str(safe_duration),
-            "-q:a", "2",
-            output_path,
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-        if result.returncode != 0:
-            raise RuntimeError(f"fit audio failed: {result.stderr}")
-        return output_path
+        return ffmpeg_tool.fit_audio_to_duration(
+            input_path, duration_sec, output_path=output_path,
+        )
 
     def concat_audio_clips(self, audio_paths: list[str]) -> str:
-        if not audio_paths:
-            raise ValueError("audio_paths cannot be empty")
         output_path = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}_merged.mp3")
-        concat_file = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}_concat.txt")
-        try:
-            with open(concat_file, "w", encoding="utf-8") as handle:
-                for audio_path in audio_paths:
-                    escaped_path = audio_path.replace("\\", "/").replace("'", "'\\''")
-                    handle.write(f"file '{escaped_path}'\n")
-            cmd = [
-                FFMPEG_PATH,
-                "-y",
-                "-f", "concat",
-                "-safe", "0",
-                "-i", concat_file,
-                "-c", "copy",
-                output_path,
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            if result.returncode != 0:
-                raise RuntimeError(f"concat audio failed: {result.stderr}")
-            return output_path
-        finally:
-            if os.path.exists(concat_file):
-                os.remove(concat_file)
+        return ffmpeg_tool.concat_audio_clips(audio_paths, output_path=output_path)
 
     def _call_volcano_tts(self, text: str, voice_type: str) -> str:
         headers = {

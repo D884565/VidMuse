@@ -15,7 +15,7 @@ from backend.v1.app.generate.service.external_call_policy import ALLOW_DEGRADED_
 from backend.v1.app.generate.service.image_generation_service import image_generation_service
 from backend.v1.app.generate.service.reference_image_utils import extract_reference_images
 from backend.v1.app.generate.service.video_composer import video_composer
-from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
+from backend.ffmpeg import ffmpeg_tool
 from backend.v1.app.generate.service.music_generation_service import music_generation_service
 from backend.v1.app.generate.service.task_service import generation_task_service
 from backend.v1.app.generate.service.workflow_blocks import build_video_stage_blocks
@@ -398,7 +398,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         if audio_path and os.path.exists(audio_path):
             try:
                 merged_path = os.path.join(output_dir, "merged_output.mp4")
-                ffmpeg_utils.replace_audio(video_path, audio_path, merged_path)
+                ffmpeg_tool.replace_audio(video_path, audio_path, merged_path)
                 video_path = merged_path
                 logger.info("[闊抽鍚堝苟] TTS 閰嶉煶宸插悎骞跺埌瑙嗛")
                 generation_task_service.finish_step_sync(db, step, progress=85, output_snapshot={"merged": True}) if task_id else None
@@ -416,7 +416,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         #     if bgm_path and os.path.exists(bgm_path):
         #         try:
         #             bgm_output = os.path.join(output_dir, "bgm_output.mp4")
-        #             ffmpeg_utils.add_bgm(video_path, bgm_path, bgm_output, bgm_volume=0.3, original_volume=1.0)
+        #             ffmpeg_tool.add_bgm(video_path, bgm_path, bgm_output, bgm_volume=0.3, original_volume=1.0)
         #             video_path = bgm_output
         #             logger.info("[BGM] 背景音乐已混入视频")
         #         except Exception as e:

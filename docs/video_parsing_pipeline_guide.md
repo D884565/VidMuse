@@ -302,7 +302,7 @@
 ## 三、使用示例
 ### 1. 基础使用（默认完整流程）
 ```python
-from backend.v1.app.rag.core.pipline.pipelines import VideoParsingPipeline
+from backend.v1.app.pipeline.pipelines import VideoParsingPipeline
 # 创建流水线，使用默认完整流程，启用向量化
 pipeline = VideoParsingPipeline(enable_vectorization=True)
 # 执行流水线
@@ -326,8 +326,8 @@ else:
 ```
 ### 2. 自定义处理器链
 ```python
-from backend.v1.app.rag.core.pipline.pipelines import VideoParsingPipeline
-from backend.v1.app.rag.core.pipline.processors import (
+from backend.v1.app.pipeline.pipelines import VideoParsingPipeline
+from backend.v1.app.pipeline.processors import (
     VideoSplitProcessor,
     VideoUnderstandingProcessor,
     SchemaValidationProcessor

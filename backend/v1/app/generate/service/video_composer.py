@@ -1,18 +1,13 @@
 """视频生成服务（调用火山引擎视频生成模型）"""
 import os
 import uuid
-import subprocess
 import tempfile
 import logging
-import shutil
 import math
-
-# 查找 FFmpeg 路径
-FFMPEG_PATH = shutil.which("ffmpeg") or r"C:\Users\练轩成\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe"
 
 from backend.providers import VolcanoLLM, VideoRequest
 from backend.v1.app.models.frame import Frame
-from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
+from backend.ffmpeg import ffmpeg_tool
 from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)
@@ -137,7 +132,7 @@ class VideoComposer:
         if target_dur < 5:
             trimmed_path = os.path.join(output_dir, f"frame_{sequence}_{uuid.uuid4().hex}_trimmed.mp4")
             try:
-                ffmpeg_utils.split_video(local_path, trimmed_path, start=0, end=target_dur)
+                ffmpeg_tool.split_video(local_path, trimmed_path, start=0, end=target_dur)
                 return trimmed_path
             except Exception as trim_err:
                 logger.warning(f"[视频裁剪] 裁剪失败，使用原始 5 秒: {trim_err}")
@@ -146,19 +141,7 @@ class VideoComposer:
         if target_dur > 5:
             extended_path = os.path.join(output_dir, f"frame_{sequence}_{uuid.uuid4().hex}_extended.mp4")
             try:
-                loops = max(1, math.ceil(target_dur / 5) - 1)
-                cmd = [
-                    FFMPEG_PATH,
-                    "-y",
-                    "-stream_loop", str(loops),
-                    "-i", local_path,
-                    "-t", str(target_dur),
-                    "-c", "copy",
-                    extended_path,
-                ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-                if result.returncode != 0:
-                    raise RuntimeError(result.stderr)
+                ffmpeg_tool.loop_video(local_path, extended_path, target_duration=target_dur)
                 return extended_path
             except Exception as extend_err:
                 logger.warning(f"[视频补时] 补时失败，使用原始 5 秒: {extend_err}")
@@ -173,7 +156,7 @@ class VideoComposer:
         """最终成片超过目标时长时做一次总裁剪。"""
         trimmed_path = os.path.join(output_dir, f"final_{uuid.uuid4().hex}_trimmed.mp4")
         try:
-            ffmpeg_utils.split_video(video_path, trimmed_path, start=0, end=float(target_duration))
+            ffmpeg_tool.split_video(video_path, trimmed_path, start=0, end=float(target_duration))
             return trimmed_path
         except Exception as trim_err:
             logger.warning(f"[视频总裁剪] 裁剪失败，使用未裁剪成片: {trim_err}")
@@ -202,41 +185,13 @@ class VideoComposer:
         """
         output_path = os.path.join(output_dir, f"concat_{uuid.uuid4().hex}.mp4")
 
-        # 创建 concat 文件列表
-        concat_file = os.path.join(output_dir, f"concat_{uuid.uuid4().hex}.txt")
-        with open(concat_file, "w", encoding="utf-8") as f:
-            for video_path in video_paths:
-                # FFmpeg concat 需要转义路径中的特殊字符
-                escaped_path = video_path.replace("\\", "/").replace("'", "'\\''")
-                f.write(f"file '{escaped_path}'\n")
-
         try:
-            # 使用 FFmpeg concat 协议拼接视频
-            cmd = [
-                FFMPEG_PATH,
-                "-f", "concat",
-                "-safe", "0",
-                "-i", concat_file,
-                "-c", "copy",
-                "-y",
-                output_path,
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            if result.returncode != 0:
-                logger.warning(f"[视频拼接] FFmpeg concat 失败: {result.stderr}")
-                # 尝试使用 moviepy 作为 fallback
-                return self._concat_videos_moviepy(video_paths, output_dir)
-
+            ffmpeg_tool.concat_videos(video_paths, output_path)
             logger.info(f"[视频拼接] FFmpeg concat 成功: {output_path}")
             return output_path
         except Exception as e:
-            logger.warning(f"[视频拼接] FFmpeg concat 异常: {str(e)}")
-            # 尝试使用 moviepy 作为 fallback
+            logger.warning(f"[视频拼接] FFmpeg concat 失败: {str(e)}，尝试 moviepy fallback")
             return self._concat_videos_moviepy(video_paths, output_dir)
-        finally:
-            # 清理临时文件
-            if os.path.exists(concat_file):
-                os.remove(concat_file)
 
     def _concat_videos_moviepy(self, video_paths: list[str], output_dir: str) -> str:
         """

@@ -15,7 +15,7 @@ from backend.store.database.sync_database import get_db
 from backend.v1.app.product.service.product_service import product_service
 from backend.v1.app.product.dao.schema import ProductCreateRequest, ProductUpdateRequest
 from backend.v1.app.user.service.user_service import user_service
-from backend.v1.app.rag.core.pipline.pipelines.product_parsing_pipeline import ProductParsingPipeline
+from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
 
 router = APIRouter(prefix="/products", tags=["商品模块"])
 

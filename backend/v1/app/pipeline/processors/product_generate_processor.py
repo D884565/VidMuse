@@ -1,5 +1,5 @@
 from typing import Dict, List
-from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
+from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
 
 
 class ProductGenerateProcessor(BaseProcessor):

@@ -2,7 +2,7 @@ from typing import Dict, List
 import io
 import tempfile
 from backend.store import get_storage_client
-from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext, constants
+from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext, constants
 from backend.ffmpeg import FFmpegVideoTool
 import logging
 

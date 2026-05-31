@@ -1,7 +1,7 @@
 from typing import List, Optional
 
-from backend.v1.app.rag.core.pipline.base import BasePipeline, BaseProcessor
-from backend.v1.app.rag.core.pipline.processors import (
+from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor
+from backend.v1.app.pipeline.processors import (
     SchemaValidationProcessor,
     VideoAggregationProcessor,
     VideoOverallUnderstandingProcessor,

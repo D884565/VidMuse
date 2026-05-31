@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.asset import Asset
-from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
+from backend.ffmpeg import ffmpeg_tool
 
 
 class VideoService:
@@ -22,7 +22,7 @@ class VideoService:
 
         local_path, is_temp = self._resolve_local_path(asset.url)
         try:
-            info = ffmpeg_utils.get_video_info(local_path)
+            info = ffmpeg_tool.get_video_info(local_path)
         finally:
             if is_temp:
                 self._cleanup_file(local_path)
@@ -47,7 +47,7 @@ class VideoService:
 
         local_path, is_temp = self._resolve_local_path(asset.url)
         try:
-            info = ffmpeg_utils.get_video_info(local_path)
+            info = ffmpeg_tool.get_video_info(local_path)
             duration = info["duration"]
 
             sorted_timestamps = sorted(timestamps)
@@ -66,7 +66,7 @@ class VideoService:
                 start = all_timestamps[i]
                 end = all_timestamps[i + 1]
                 output_file = os.path.join(output_dir, f"{video_id}_segment_{i:03d}.mp4")
-                ffmpeg_utils.split_video(local_path, output_file, start, end)
+                ffmpeg_tool.split_video(local_path, output_file, start, end)
                 segments.append({
                     "index": i,
                     "start": start,
