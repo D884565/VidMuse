@@ -39,6 +39,7 @@ VALID_TRANSITIONS = {
     ("created", "idle", "completed", "confirmed"),
     ("script", "idle", "script", "running"),
     ("script", "failed", "script", "running"),
+    ("script", "awaiting_review", "script", "running"),
     ("script", "running", "script", "awaiting_review"),
     ("script", "awaiting_review", "script", "confirmed"),
     ("script", "awaiting_review", "video", "running"),
@@ -47,12 +48,14 @@ VALID_TRANSITIONS = {
     ("script", "confirmed", "image", "awaiting_review"),
     ("image", "idle", "image", "running"),
     ("image", "failed", "image", "running"),
+    ("image", "awaiting_review", "image", "running"),
     ("image", "running", "image", "awaiting_review"),
     ("image", "awaiting_review", "image", "confirmed"),
     ("image", "confirmed", "video", "idle"),
     ("image", "confirmed", "video", "running"),
     ("video", "idle", "video", "running"),
     ("video", "failed", "video", "running"),
+    ("video", "awaiting_review", "video", "running"),
     ("video", "running", "video", "awaiting_review"),
     ("video", "awaiting_review", "video", "confirmed"),
     ("video", "confirmed", "completed", "confirmed"),
@@ -95,8 +98,7 @@ def set_project_workflow_state(
     old_status = getattr(project, "stage_status", None) or "idle"
     transition = (old_stage, old_status, stage, status)
     same_state = old_stage == stage and old_status == status
-    same_stage_operational = old_stage == stage and status in {"running", "awaiting_review", "failed"}
-    if not allow_regression and not same_state and transition not in VALID_TRANSITIONS and not same_stage_operational:
+    if not allow_regression and not same_state and transition not in VALID_TRANSITIONS:
         raise ValueError(f"invalid workflow transition: {old_stage}/{old_status} -> {stage}/{status}")
 
     project.workflow_stage = stage

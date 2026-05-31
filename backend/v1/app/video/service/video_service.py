@@ -1,4 +1,4 @@
-"""Video processing service."""
+"""视频处理服务。"""
 import os
 import tempfile
 import uuid
@@ -12,7 +12,7 @@ from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
 
 
 class VideoService:
-    """Video metadata and split operations for local or remote asset URLs."""
+    """视频元数据和分割操作，支持本地或远程资源 URL。"""
 
     async def get_video_info(self, db: AsyncSession, video_id: int) -> dict:
         result = await db.execute(select(Asset).where(Asset.id == video_id))

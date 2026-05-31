@@ -73,3 +73,12 @@ def test_project_detail_does_not_query_all_user_assets():
     assert "Asset.user_id == project.user_id" not in source
     assert "ProjectAsset" in source
     assert "Asset.url.contains" not in source
+
+
+def test_frame_and_script_models_declare_uniqueness_constraints():
+    frame_source = Path("backend/v1/app/models/frame.py").read_text(encoding="utf-8")
+    script_source = Path("backend/v1/app/models/script.py").read_text(encoding="utf-8")
+
+    assert "uq_frames_project_sequence" in frame_source
+    assert "UniqueConstraint" in frame_source
+    assert "uq_scripts_project_version" in script_source

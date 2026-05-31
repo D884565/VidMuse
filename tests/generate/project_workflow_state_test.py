@@ -1,4 +1,5 @@
 from backend.v1.app.generate.service.project_workflow_state import (
+    advance_project_stage,
     confirm_project_stage,
     invalidate_project_from,
     mark_project_completed,
@@ -8,7 +9,6 @@ from backend.v1.app.generate.service.project_workflow_state import (
     set_project_workflow_state,
     sync_legacy_status,
 )
-from backend.v1.app.generate.service.task_submission import has_running_stage_task
 
 
 class Project:
@@ -17,12 +17,6 @@ class Project:
     stage_status = "idle"
     dirty_stage = None
     last_task_id = None
-
-
-class Task:
-    def __init__(self, task_type, status):
-        self.task_type = task_type
-        self.status = status
 
 
 def test_mark_project_stage_running_syncs_legacy_status():
@@ -121,6 +115,20 @@ def test_invalid_workflow_transition_is_rejected():
         raise AssertionError("expected invalid transition to be rejected")
 
 
+def test_unlisted_same_stage_transition_is_rejected():
+    project = Project()
+    project.workflow_stage = "script"
+    project.stage_status = "confirmed"
+    project.status = "script_ready"
+
+    try:
+        set_project_workflow_state(project, "script", "running")
+    except ValueError as exc:
+        assert "invalid workflow transition" in str(exc)
+    else:
+        raise AssertionError("expected same-stage confirmed -> running transition to be rejected")
+
+
 def test_mark_project_stage_failed_syncs_legacy_status():
     project = Project()
 
@@ -160,8 +168,16 @@ def test_confirm_stage_rejects_dirty_current_stage():
         raise AssertionError("expected dirty current stage confirmation to be blocked")
 
 
-def test_has_running_stage_task_detects_queued_or_running():
-    tasks = [Task("image", "succeeded"), Task("image", "running")]
+def test_advance_project_stage_moves_to_next_stage_and_syncs_legacy_status():
+    project = Project()
+    project.workflow_stage = "image"
+    project.stage_status = "awaiting_review"
+    project.status = "review_required"
+    project.dirty_stage = None
 
-    assert has_running_stage_task(tasks, "image") is True
-    assert has_running_stage_task(tasks, "render") is False
+    advance_project_stage(project, "image")
+
+    assert project.workflow_stage == "video"
+    assert project.stage_status == "idle"
+    assert project.status == "review_required"
+    assert project.images_confirmed_at is not None

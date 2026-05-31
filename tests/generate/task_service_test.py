@@ -73,3 +73,18 @@ def test_start_task_sync_restart_clears_finished_and_error_fields():
     assert task.error_code is None
     assert task.error_message is None
     assert db.commits == 1
+
+
+def test_start_step_sync_rejects_cancelled_task():
+    from backend.v1.app.models.generation_task import GenerationTask
+
+    task = Task()
+    task.status = "cancelled"
+    db = FakeSession({(GenerationTask, 7): task})
+
+    try:
+        generation_task_service.start_step_sync(db, 7, "VIDEO_GENERATING")
+    except ValueError as exc:
+        assert "terminal" in str(exc)
+    else:
+        raise AssertionError("expected cancelled task to reject new step start")

@@ -149,3 +149,12 @@ def test_full_render_path_persists_successful_frame_segments_for_retry_reuse():
     assert "_persist_frame_video_segment(" in source
     assert "frame.video_url = video_url" in source
     assert "frame.dirty = 0" in source
+
+
+def test_full_render_persists_each_segment_immediately_via_callback():
+    source = Path("backend/v1/app/generate/service/video_composer.py").read_text(encoding="utf-8")
+    task_source = Path("backend/v1/app/generate/temp/video_tasks.py").read_text(encoding="utf-8")
+
+    assert "on_segment_ready" in source
+    assert "on_segment_ready(frame, local_path)" in source
+    assert "def _persist_segment(" in task_source

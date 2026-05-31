@@ -162,7 +162,7 @@ class ImageWorkflowService:
         return list(result.scalars().all())
 
     def _extract_reference_images(self, project: Project) -> list[str]:
-        """Backward-compatible wrapper for shared reference image extraction."""
+        """向后兼容的参考图片提取包装方法。"""
         return extract_reference_images(project)
 
     def _extract_product_images(self, project: Project) -> dict | None:

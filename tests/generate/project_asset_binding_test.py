@@ -7,6 +7,7 @@ def test_project_asset_model_exists():
     assert '__tablename__ = "project_assets"' in source
     assert "project_id" in source
     assert "asset_id" in source
+    assert "uq_project_assets_project_asset_role" in source
 
 
 def test_asset_model_has_structured_metadata_fields():

@@ -83,6 +83,7 @@ class ProjectService:
 
 # ========== 内部工具 ==========
 
+# 旧版 status 字符串 → 整数（仅用于 DAO 列表筛选兼容）
 _STATUS_TO_INT = {
     "draft": 0,
     "script_generating": 2,
@@ -104,8 +105,25 @@ _INT_TO_STATUS = {
 _STATUS_NAME = {0: "待生成", 1: "剧本就绪", 2: "生成中", 3: "已完成", 4: "失败"}
 
 
+def _derive_status_int(project) -> int:
+    """从 workflow_stage/stage_status 推导前端状态整数，不再依赖 project.status。"""
+    stage = getattr(project, "workflow_stage", None) or "created"
+    stage_status = getattr(project, "stage_status", None) or "idle"
+
+    if stage == "completed":
+        return 3
+    if stage_status == "failed":
+        return 4
+    if stage_status in ("running",):
+        return 2
+    if stage_status in ("awaiting_review", "confirmed"):
+        return 1
+    # created/idle, script/idle 等待触发状态
+    return 0
+
+
 def _project_to_dict(project, frame_count: int | None = None) -> dict:
-    status_int = _STATUS_TO_INT.get(project.status, 0)
+    status_int = _derive_status_int(project)
     safe_frame_count = 0 if frame_count is None else frame_count
     return {
         "id": project.id,
@@ -118,6 +136,8 @@ def _project_to_dict(project, frame_count: int | None = None) -> dict:
         "status_key": project.status,
         "status": status_int,
         "status_name": _STATUS_NAME.get(status_int, "未知"),
+        "workflow_stage": getattr(project, "workflow_stage", None),
+        "stage_status": getattr(project, "stage_status", None),
         "frame_count": safe_frame_count,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,

@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
 
-    # MySQL
+    # MySQL 数据库
     MYSQL_HOST: str = "localhost"
     MYSQL_PORT: int = 3306
     MYSQL_DATABASE: str = "aigc_video"
@@ -40,7 +40,7 @@ class Settings(BaseSettings):
             "?charset=utf8mb4"
         )
 
-    # Redis / Celery
+    # Redis / Celery 消息队列
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     CELERY_BROKER_URL: str | None = None
@@ -58,14 +58,14 @@ class Settings(BaseSettings):
             return self.CELERY_RESULT_BACKEND
         return f"redis://{self.REDIS_HOST}:{self.REDIS_PORT}/1"
 
-    # MinIO
+    # MinIO 对象存储
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "minioadmin"
     MINIO_SECRET_KEY: str = "minioadmin"
     MINIO_BUCKET_NAME: str = "aigc-videos"
     MINIO_SECURE: bool = False
 
-    # ChromaDB
+    # ChromaDB 向量数据库
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8001
     PRODUCT_COLLECTION: str = "product_knowledge"
@@ -74,7 +74,7 @@ class Settings(BaseSettings):
     IMG_COLLECTION: str = "img_knowledge"
     AUDIO_COLLECTION: str = "audio_knowledge"
 
-    # OpenAI
+    # OpenAI 配置
     OPENAI_API_KEY: str = ""
 
     # 火山引擎（豆包）
@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     # 火山引擎图片生成 (Seedream 4.5)
     IMAGE_API_KEY: str = ""
 
-    # FFmpeg
+    # FFmpeg 视频处理
     FFMPEG_PATH: str = ""
     FFPROBE_PATH: str = ""
 

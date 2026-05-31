@@ -1,4 +1,4 @@
-"""Shared external-provider behavior knobs for generation tasks."""
+"""生成任务中外部服务调用的共享配置。"""
 from backend.v1.app.config.config import settings
 
 

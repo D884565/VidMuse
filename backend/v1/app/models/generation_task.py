@@ -1,4 +1,4 @@
-"""Generation task progress models."""
+"""生成任务进度模型。"""
 import datetime
 
 from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, Text, func

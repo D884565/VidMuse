@@ -176,7 +176,7 @@ class ImageGenerationService:
         reference_images: list[str] | None = None,
         product_images: dict[str, str] | None = None,
     ) -> list[str]:
-        """Pick user reference images first, then product images, capped for Ark."""
+        """优先选择用户参考图，再选商品图片，数量受 Ark 限制。"""
         product_refs = product_images.get("商品主图", []) if product_images else None
         return select_reference_images(reference_images, product_refs, limit=MAX_REFERENCE_IMAGES)
 
@@ -185,7 +185,7 @@ class ImageGenerationService:
         reference_images: list[str] | None = None,
         product_images: dict[str, str] | None = None,
     ) -> str | None:
-        """Backward-compatible helper returning the first selected reference."""
+        """向后兼容的辅助方法，返回第一个选中的参考图。"""
         images = self._select_reference_images(reference_images, product_images)
         return images[0] if images else None
 

@@ -1,10 +1,11 @@
-"""TTS 语音合成服务（接入火山引擎 HTTP API）"""
-import os
-import uuid
+"""TTS 语音合成服务工具。"""
 import base64
-import tempfile
 import logging
+import os
+import subprocess
+import tempfile
 import time
+import uuid
 from dataclasses import dataclass
 
 import requests
@@ -15,7 +16,6 @@ from backend.v1.app.video.service.ffmpeg_utils import FFMPEG_PATH
 
 logger = logging.getLogger(__name__)
 
-# 火山引擎 TTS API 配置
 TTS_API_URL = "https://openspeech.bytedance.com/api/v1/tts"
 
 
@@ -28,23 +28,13 @@ class TtsResult:
 
 
 class TtsService:
-    """语音合成服务（火山引擎 HTTP API）"""
-
     def __init__(self):
         self.temp_dir = tempfile.gettempdir()
-        # TTS_ACCESS_KEY 作为 appid，TTS_SECRET_KEY 作为 access_token
         self.app_id = settings.TTS_ACCESS_KEY
         self.token = settings.TTS_SECRET_KEY
         self.last_fallback = False
 
     def generate_audio(self, text: str, voice_type: str = "zh_female_cancan_mars_bigtts") -> TtsResult:
-        """
-        将文本合成为配音音频。
-
-        :param text: 配音文本
-        :param voice_type: 音色
-        :returns: 本地音频文件路径
-        """
         try:
             self.last_fallback = False
             return TtsResult(
@@ -52,40 +42,90 @@ class TtsService:
                 fallback_used=False,
                 provider="volcano_tts",
             )
-        except Exception as e:
-            logger.warning(f"[TTS] 火山引擎调用失败，使用静音音频: {str(e)}")
+        except Exception as exc:
+            logger.warning("[TTS] provider failed, using silent fallback: %s", exc)
             self.last_fallback = True
             return TtsResult(
                 path=self._create_silent_audio(text),
                 fallback_used=True,
                 provider="silent_fallback",
-                warning=str(e),
+                warning=str(exc),
             )
 
-    def _call_volcano_tts(self, text: str, voice_type: str) -> str:
-        """
-        调用火山引擎 TTS HTTP API。
+    def create_silent_audio_for_duration(self, duration_sec: float) -> str:
+        output_path = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}.mp3")
+        safe_duration = max(1.0, float(duration_sec or 1.0))
+        cmd = [
+            FFMPEG_PATH,
+            "-y",
+            "-f", "lavfi",
+            "-i", "anullsrc=r=44100:cl=mono",
+            "-t", str(safe_duration),
+            "-q:a", "9",
+            "-acodec", "libmp3lame",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            raise RuntimeError(f"create silent mp3 failed: {result.stderr}")
+        return output_path
 
-        :param text: 配音文本
-        :param voice_type: 音色
-        :returns: 音频文件路径
-        """
-        # 鉴权头：Bearer;token
+    def fit_audio_to_duration(self, input_path: str, duration_sec: float) -> str:
+        output_path = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}_fit.mp3")
+        safe_duration = max(1.0, float(duration_sec or 1.0))
+        cmd = [
+            FFMPEG_PATH,
+            "-y",
+            "-i", input_path,
+            "-af", f"apad=whole_dur={safe_duration}",
+            "-t", str(safe_duration),
+            "-q:a", "2",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if result.returncode != 0:
+            raise RuntimeError(f"fit audio failed: {result.stderr}")
+        return output_path
+
+    def concat_audio_clips(self, audio_paths: list[str]) -> str:
+        if not audio_paths:
+            raise ValueError("audio_paths cannot be empty")
+        output_path = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}_merged.mp3")
+        concat_file = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}_concat.txt")
+        try:
+            with open(concat_file, "w", encoding="utf-8") as handle:
+                for audio_path in audio_paths:
+                    escaped_path = audio_path.replace("\\", "/").replace("'", "'\\''")
+                    handle.write(f"file '{escaped_path}'\n")
+            cmd = [
+                FFMPEG_PATH,
+                "-y",
+                "-f", "concat",
+                "-safe", "0",
+                "-i", concat_file,
+                "-c", "copy",
+                output_path,
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if result.returncode != 0:
+                raise RuntimeError(f"concat audio failed: {result.stderr}")
+            return output_path
+        finally:
+            if os.path.exists(concat_file):
+                os.remove(concat_file)
+
+    def _call_volcano_tts(self, text: str, voice_type: str) -> str:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer;{self.token}",
         }
-
-        # 构建请求体
         payload = {
             "app": {
                 "appid": self.app_id,
-                "token": "fake_token",  # 无实际鉴权作用，可传任意非空字符串
+                "token": "fake_token",
                 "cluster": "volcano_tts",
             },
-            "user": {
-                "uid": "vidmuse_user",
-            },
+            "user": {"uid": "vidmuse_user"},
             "audio": {
                 "voice_type": voice_type,
                 "encoding": "mp3",
@@ -98,32 +138,24 @@ class TtsService:
                 "operation": "query",
             },
         }
-
-        # 发送请求
         response = self._request_with_retry(TTS_API_URL, json=payload, headers=headers)
         response.raise_for_status()
-
-        # 解析响应
         resp_data = response.json()
         if resp_data.get("code") != 3000:
-            raise Exception(f"TTS API 返回错误: {resp_data.get('message', '未知错误')}")
+            raise RuntimeError(f"TTS API returned error: {resp_data.get('message', 'unknown error')}")
 
-        # 提取音频数据（Base64 编码）
         audio_base64 = resp_data.get("data", "")
         if not audio_base64:
-            raise Exception("TTS API 返回空音频数据")
+            raise RuntimeError("TTS API returned empty audio data")
 
-        # 解码并保存音频文件
         audio_bytes = base64.b64decode(audio_base64)
         output_path = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}.mp3")
-        with open(output_path, "wb") as f:
-            f.write(audio_bytes)
-
-        logger.info(f"[TTS] 火山引擎调用成功: {output_path}, 大小: {len(audio_bytes)} bytes")
+        with open(output_path, "wb") as handle:
+            handle.write(audio_bytes)
+        logger.info("[TTS] provider call succeeded: %s", output_path)
         return output_path
 
     def _request_with_retry(self, url: str, *, json: dict, headers: dict, attempts: int = 3) -> requests.Response:
-        """Call the TTS HTTP API with bounded retries for transient network failures."""
         last_error: Exception | None = None
         for attempt in range(1, attempts + 1):
             try:
@@ -142,34 +174,8 @@ class TtsService:
         raise RuntimeError(f"TTS request failed after {attempts} attempts: {last_error}")
 
     def _create_silent_audio(self, text: str) -> str:
-        """创建静音音频（作为 fallback）"""
-        output_path = os.path.join(self.temp_dir, f"tts_{uuid.uuid4().hex}.mp3")
         duration_sec = max(1, len(text) // 4)
-
-        try:
-            from moviepy import AudioClip
-            # 创建静音音频
-            clip = AudioClip(lambda t: 0, duration=duration_sec, fps=44100)
-            clip.write_audiofile(output_path, logger=None)
-            clip.close()
-        except Exception:
-            # 如果 moviepy 失败，创建一个空文件
-            import subprocess
-            cmd = [
-                FFMPEG_PATH,
-                "-y",
-                "-f", "lavfi",
-                "-i", "anullsrc=r=44100:cl=mono",
-                "-t", str(duration_sec),
-                "-q:a", "9",
-                "-acodec", "libmp3lame",
-                output_path,
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode != 0:
-                raise RuntimeError(f"create silent mp3 failed: {result.stderr}")
-
-        return output_path
+        return self.create_silent_audio_for_duration(duration_sec)
 
 
 tts_service = TtsService()

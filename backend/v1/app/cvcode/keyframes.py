@@ -47,10 +47,10 @@ def extract_keyframes_by_interval(
     output_dir: str | os.PathLike[str],
     interval_seconds: float,
 ) -> VideoKeyframeResult:
-    """Extract frames from one video at a fixed time interval.
+    """以固定时间间隔从单个视频中提取帧。
 
-    The extraction continues until the video ends. No gray-scale/change detection
-    is used, so the maximum saved frame count is decided only by video duration.
+    提取持续到视频结束。不使用灰度/变化检测，
+    因此最大保存帧数仅由视频时长决定。
     """
     video_path = str(video_path)
     output_dir = str(output_dir)
@@ -145,9 +145,9 @@ def extract_keyframes_for_videos(
     output_root: str | os.PathLike[str],
     interval_seconds: float,
 ) -> list[VideoKeyframeResult]:
-    """Extract fixed-interval keyframes for many videos.
+    """为多个视频提取固定间隔的关键帧。
 
-    Each video gets its own subfolder under output_root.
+    每个视频在 output_root 下有独立的子文件夹。
     """
     _validate_interval(interval_seconds)
     results: list[VideoKeyframeResult] = []
@@ -170,10 +170,10 @@ def get_keyframe_paths_by_video(
     video_paths: str | os.PathLike[str] | Iterable[str | os.PathLike[str]],
     output_root: str | os.PathLike[str],
 ) -> dict[str, list[str]]:
-    """Query saved keyframe image paths grouped by video id.
+    """按视频 ID 分组查询已保存的关键帧图片路径。
 
-    This function does not extract frames. It only reads keyframe files that were
-    already saved by extract_keyframes_by_interval or extract_keyframes_for_videos.
+    此函数不提取帧，只读取已被 extract_keyframes_by_interval 或
+    extract_keyframes_for_videos 保存的关键帧文件。
     """
     paths = _normalize_video_paths(video_paths)
     return {video_id: _list_saved_keyframe_paths(output_root, video_id) for video_id in map(_video_id, paths)}
@@ -183,7 +183,7 @@ def get_keyframe_records_by_video(
     video_paths: str | os.PathLike[str] | Iterable[str | os.PathLike[str]],
     output_root: str | os.PathLike[str],
 ) -> dict[str, list[ExtractedFrame]]:
-    """Query saved keyframe objects grouped by video id."""
+    """按视频 ID 分组查询已保存的关键帧对象。"""
     paths = _normalize_video_paths(video_paths)
     records: dict[str, list[ExtractedFrame]] = {}
 
