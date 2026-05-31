@@ -1,4 +1,4 @@
-"""Workflow conversation block builders.
+"""工作流对话消息块构建器。
 
 这些 helper 只负责把后端产物整理成前端可渲染的结构化 blocks。
 业务执行仍然放在 workflow/image/video service 中，避免消息渲染逻辑和任务调度耦合。

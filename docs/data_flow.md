@@ -321,7 +321,7 @@ scenes[].visual.image_prompt 鈫?ImageGenerationService 鈫?TOS URL 鈫?image_ur
 
 **鏂囦欢**: `backend/v1/app/generate/service/video_composer.py`
 **绫?*: `VideoComposer`
-**鏂规硶**: `compose(audio_path, scenes, image_urls, output_dir)`
+**方法**: `compose_frames(frames, output_dir, target_duration)`
 
 ### 杈撳叆
 
@@ -525,7 +525,7 @@ Celery 寮傛浠诲姟锛歡enerate_video_task()
 鈹?    鈫?image_urls[] (TOS URL)                                            鈹?
 鈹溾攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?
 鈹?Step 4: 瑙嗛鐢熸垚                                                         鈹?
-鈹?    scenes[].video_prompt + image_urls[] 鈫?VideoComposer.compose()      鈹?
+│    frames[].prompt + image_url  → VideoComposer.compose_frames()   │
 鈹?    鈫?video_paths[] (鏈湴鏂囦欢)                                          鈹?
 鈹溾攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹?
 鈹?Step 5: 瑙嗛鎷兼帴                                                         鈹?

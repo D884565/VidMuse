@@ -1,4 +1,4 @@
-"""Generation task progress service."""
+"""生成任务进度管理服务。"""
 from __future__ import annotations
 
 import uuid

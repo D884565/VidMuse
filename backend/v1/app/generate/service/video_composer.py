@@ -6,7 +6,6 @@ import tempfile
 import logging
 import shutil
 import math
-from typing import Optional
 
 # 查找 FFmpeg 路径
 FFMPEG_PATH = shutil.which("ffmpeg") or r"C:\Users\练轩成\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe"
@@ -27,62 +26,6 @@ class VideoComposer:
         self.llm = VolcanoLLM(key=None, model_name=None)
         self.storage = get_storage_client()
 
-    def compose(
-        self,
-        audio_path: str,
-        scenes: list[dict],
-        image_urls: list[str],
-        output_dir: str,
-    ) -> str:
-        """
-        生成最终视频。
-
-        流程：
-        1. 为每个场景调用视频生成模型
-        2. 下载生成的视频到本地
-        3. 拼接所有场景视频
-        4. 返回本地视频路径（后续由调用方上传 TOS）
-
-        :param audio_path: 配音音频路径（暂时未使用，视频生成模型自带音频）
-        :param scenes: 场景列表（包含 text、duration、type 等）
-        :param image_urls: 场景图片 HTTP URL 列表（作为首帧参考）
-        :param output_dir: 输出目录
-        :returns: 生成视频的本地路径
-        """
-        os.makedirs(output_dir, exist_ok=True)
-
-        # 为每个场景生成视频
-        video_paths = []
-        for i, scene in enumerate(scenes):
-            try:
-                logger.info(f"[视频生成] 开始生成场景 {i + 1}/{len(scenes)}")
-                image_url = image_urls[i] if i < len(image_urls) else None
-                video_path = self._generate_scene_video(
-                    scene=scene,
-                    reference_image=image_url,
-                    output_dir=output_dir,
-                    scene_index=i,
-                )
-                video_paths.append(video_path)
-                logger.info(f"[视频生成] 场景 {i + 1} 生成成功: {video_path}")
-            except Exception as e:
-                logger.error(f"[视频生成] 场景 {i + 1} 生成失败: {str(e)}")
-                # 失败时使用占位视频
-                placeholder_path = self._generate_placeholder_video(
-                    output_dir, scene.get("duration", 5), i
-                )
-                video_paths.append(placeholder_path)
-
-        # 拼接所有场景视频
-        if len(video_paths) > 1:
-            concat_path = self._concat_videos(video_paths, output_dir)
-            return concat_path
-        elif video_paths:
-            return video_paths[0]
-
-        # 如果所有场景都失败，返回占位视频
-        return self._generate_placeholder_video(output_dir, 30, 0)
-
     def compose_frames(
         self,
         frames: list[Frame],
@@ -90,6 +33,7 @@ class VideoComposer:
         target_duration: float | None = None,
         *,
         allow_placeholder_segments: bool = False,
+        on_segment_ready=None,
     ) -> str:
         """
         为每个 Frame 生成视频片段并拼接。
@@ -111,6 +55,8 @@ class VideoComposer:
 
                 video_paths.append(local_path)
                 generated_segments.append((frame, local_path))
+                if on_segment_ready:
+                    on_segment_ready(frame, local_path)
 
                 frame.status = 2  # 已完成
                 frame.error_message = None
@@ -245,94 +191,6 @@ class VideoComposer:
                 invalid.append(f"frame {getattr(frame, 'id', None)} missing image_url")
         if invalid:
             raise ValueError("video generation requires successful frame images: " + "; ".join(invalid))
-
-    def _generate_scene_video(
-        self,
-        scene: dict,
-        reference_image: Optional[str],
-        output_dir: str,
-        scene_index: int,
-    ) -> str:
-        """
-        为单个场景生成视频。
-
-        :param scene: 场景数据（包含 text、duration、type、visual）
-        :param reference_image: 参考图片 HTTP URL（可选，作为首帧）
-        :param output_dir: 输出目录
-        :param scene_index: 场景索引
-        :returns: 生成视频的本地路径
-        """
-        # 构造视频生成 prompt
-        prompt = self._build_video_prompt(scene)
-
-        # 获取时长
-        duration = scene.get("duration", 5)
-        # Seedance 1.5 i2v 模式固定 5 秒
-        duration = 5
-
-        # 构造视频生成请求
-        video_request = VideoRequest(
-            duration=duration,
-            ratio="9:16",  # 竖屏视频
-            generate_audio=False,  # 不生成音频，后续添加 TTS
-            draft=False,
-            watermark=False,
-        )
-
-        # 首帧图片：仅传有效 URL
-        image_url = None
-        if reference_image and reference_image.startswith("http"):
-            image_url = reference_image
-
-        # 调用视频生成模型（同步）
-        response = self.llm.generate_video_sync(
-            request=video_request,
-            prompt=prompt,
-            image=image_url,
-        )
-
-        if not response or not response.video_url:
-            raise ValueError("视频生成失败，未获取到视频 URL")
-
-        # 下载视频到本地
-        local_path = os.path.join(output_dir, f"scene_{scene_index}_{uuid.uuid4().hex}.mp4")
-        self._download_video(response.video_url, local_path)
-
-        return local_path
-
-    def _build_video_prompt(self, scene: dict) -> str:
-        """
-        构造视频生成的 prompt。
-
-        :param scene: 场景数据（包含 text、type、visual）
-        :returns: 视频生成 prompt
-        """
-        text = scene.get("text", "")
-        scene_type = scene.get("type", "")
-        visual = scene.get("visual", {})
-        video_prompt = visual.get("video_prompt", "")
-        camera = visual.get("camera", "")
-        mood = visual.get("mood", "")
-
-        # 优先使用 LLM 生成的 video_prompt
-        if video_prompt:
-            prompt = video_prompt
-            if camera:
-                prompt += f"\n镜头运动：{camera}"
-            if mood:
-                prompt += f"\n氛围：{mood}"
-            return prompt
-
-        # fallback: 旧格式构造
-        source = visual.get("source", "")
-        prompt = f"生成一个带货视频片段：{text}"
-        if scene_type:
-            prompt += f"\n场景类型：{scene_type}"
-        if source:
-            prompt += f"\n画面内容：{source}"
-        prompt += "\n要求：画面清晰、流畅，适合竖屏带货视频风格。"
-
-        return prompt
 
     def _concat_videos(self, video_paths: list[str], output_dir: str) -> str:
         """

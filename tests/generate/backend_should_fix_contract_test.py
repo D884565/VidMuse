@@ -76,7 +76,7 @@ def test_video_task_failure_handler_uses_error_stage_metadata():
 def test_frame_and_export_tasks_retry_before_final_failure():
     source = read("backend/v1/app/generate/temp/video_tasks.py")
 
-    for task_name in ("generate_frame_image_task", "generate_frame_video_task", "export_video_task"):
+    for task_name in ("generate_frame_image_task", "generate_frame_video_task"):
         start = source.index(f"def {task_name}")
         next_task = source.find("@celery_app.task", start + 1)
         body = source[start: next_task if next_task != -1 else len(source)]
@@ -89,7 +89,7 @@ def test_generation_tasks_explicitly_handle_soft_time_limit_and_log_frame_task_f
 
     assert "SoftTimeLimitExceeded" in source
 
-    for task_name in ("generate_image_task", "generate_video_task", "generate_frame_image_task", "generate_frame_video_task", "export_video_task"):
+    for task_name in ("generate_image_task", "generate_video_task", "generate_frame_image_task", "generate_frame_video_task"):
         start = source.index(f"def {task_name}")
         next_task = source.find("@celery_app.task", start + 1)
         body = source[start: next_task if next_task != -1 else len(source)]
@@ -100,6 +100,14 @@ def test_generation_tasks_explicitly_handle_soft_time_limit_and_log_frame_task_f
         next_task = source.find("@celery_app.task", start + 1)
         body = source[start: next_task if next_task != -1 else len(source)]
         assert "logger.error(" in body
+
+
+def test_generation_tasks_check_for_cancellation_and_use_task_specific_time_limits():
+    source = read("backend/v1/app/generate/temp/video_tasks.py")
+
+    assert "ensure_task_not_cancelled" in source
+    assert '@celery_app.task(bind=True, max_retries=3, soft_time_limit=600, time_limit=720, name="generate_frame_video_task")' in source
+    assert '@celery_app.task(bind=True, max_retries=3, soft_time_limit=180, time_limit=300, name="generate_frame_image_task")' in source
 
 
 def test_project_detail_uses_project_asset_join_not_url_contains():
@@ -124,9 +132,25 @@ def test_generation_and_chat_paths_do_not_directly_assign_legacy_or_stage_status
     chat_source = read("backend/v1/app/generate/service/chat_service.py")
     storyboard_source = read("backend/v1/app/generate/service/storyboard_service.py")
     video_generation_source = read("backend/v1/app/generate/service/video_generation.py")
+    video_tasks_source = read("backend/v1/app/generate/temp/video_tasks.py")
 
     assert 'project_model.stage_status = "running"' not in generation_source
     assert 'project_model.stage_status = task_result.get("status", "running")' not in generation_source
     assert 'project.status = "script_generating"' not in chat_source
     assert 'project.status = "review_required"' not in storyboard_source
     assert 'project.status = "render_queued"' not in video_generation_source
+    assert 'project.status = "rendering"' not in video_tasks_source
+
+
+def test_submit_generation_task_does_not_guard_on_legacy_status_strings():
+    source = read("backend/v1/app/generate/service/video_generation.py")
+
+    assert 'if project.status in ("script_generating", "render_queued", "rendering"):' not in source
+    assert 'if project.status not in ("script_ready", "review_required", "processing", "completed", "failed"):' not in source
+
+
+def test_export_controller_uses_direct_download_instead_of_celery_export_task():
+    source = read("backend/v1/app/generate/controller/generation.py")
+
+    assert '"/projects/{project_id}/export/download"' in source
+    assert '"export_video_task"' not in source

@@ -64,7 +64,7 @@ export default function SmartInput({ onSend }) {
               }`}
               type="submit"
               disabled={!canSend}
-              aria-label="鍙戦€?
+              aria-label="Send message"
             >
               <Send size={18} />
             </button>

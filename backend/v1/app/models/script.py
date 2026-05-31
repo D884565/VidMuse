@@ -1,7 +1,7 @@
-"""Script version model for editable storyboard workflows."""
+"""可编辑分镜工作流的脚本版本模型。"""
 import datetime
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, Text, func
+from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from backend.store.database.async_database import Base
@@ -9,10 +9,16 @@ from backend.store.database.async_database import Base
 
 class Script(Base):
     __tablename__ = "scripts"
+    __table_args__ = (
+        UniqueConstraint("project_id", "version", name="uq_scripts_project_version"),
+    )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     project_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+        BigInteger,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     version: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="active")

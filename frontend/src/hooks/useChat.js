@@ -56,7 +56,7 @@ export function useChat() {
         {
           id: crypto.randomUUID(),
           role: 'assistant',
-          content: assistant.content || '宸插鐞嗘偍鐨勮姹?,
+          content: assistant.content || 'Request processed.',
           blocks: assistant.blocks || [],
           stage: assistant.stage,
           action_type: assistant.action_type,

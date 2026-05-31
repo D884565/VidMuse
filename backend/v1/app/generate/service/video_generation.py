@@ -1,4 +1,4 @@
-"""视频生成调度服务"""
+"""视频生成调度服务。"""
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,9 +22,19 @@ STATUS_TO_INT = {
     "failed": 4,
 }
 
+ALLOWED_RENDER_WORKFLOW_STATES = {
+    ("script", "awaiting_review"),
+    ("image", "confirmed"),
+    ("video", "idle"),
+    ("video", "failed"),
+    ("video", "awaiting_review"),
+    ("video", "confirmed"),
+    ("completed", "confirmed"),
+}
+
 
 class VideoGenerationService:
-    """视频生成调度服务（编排剧本→TTS→图片→合成→入库）"""
+    """视频生成调度服务，负责提交渲染任务和返回项目详情。"""
 
     async def submit_generation_task(
         self,
@@ -34,26 +44,12 @@ class VideoGenerationService:
         require_ready_images: bool = True,
         trigger_source: str = "manual_render",
     ) -> dict:
-        """
-        提交视频生成异步任务。
-
-        1. 校验项目状态和帧数据
-        2. 更新状态为 processing
-        3. 发送 Celery 任务
-        """
         result = await db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
-        if project.status in ("script_generating", "render_queued", "rendering"):
-            return {
-                "project_id": project_id,
-                "frames_count": 0,
-                "status": project.status,
-                "task_id": project.last_task_id,
-                "message": "generation already in progress",
-            }
-        if project.workflow_stage == "video" and project.stage_status == "running":
+
+        if project.stage_status == "running":
             return {
                 "project_id": project_id,
                 "frames_count": 0,
@@ -61,16 +57,14 @@ class VideoGenerationService:
                 "task_id": project.last_task_id,
                 "message": "generation already in progress",
             }
-        if project.status not in ("script_ready", "review_required", "processing", "completed", "failed"):
-            raise ValueError(f"当前状态不允许生成: {project.status}")
 
-        # 检查是否有帧数据
-        frame_result = await db.execute(
-            select(Frame).where(Frame.project_id == project_id)
-        )
+        current_state = (project.workflow_stage, project.stage_status)
+
+        frame_result = await db.execute(select(Frame).where(Frame.project_id == project_id))
         frames = frame_result.scalars().all()
         if not frames:
-            raise ValueError("请先生成剧本（无帧数据）")
+            raise ValueError("请先生成脚本（无帧数据）")
+
         invalid_frames = [
             frame.sequence
             for frame in frames
@@ -78,14 +72,19 @@ class VideoGenerationService:
         ]
         if require_ready_images and invalid_frames:
             raise ValueError(f"存在未成功生成图片的分镜，不能进入视频阶段: {invalid_frames}")
-
+        allowed_states = (
+            ALLOWED_RENDER_WORKFLOW_STATES - {("script", "awaiting_review")}
+            if require_ready_images
+            else ALLOWED_RENDER_WORKFLOW_STATES
+        )
+        if current_state not in allowed_states:
+            raise ValueError(
+                f"当前工作流状态不允许生成: {project.workflow_stage}/{project.stage_status}"
+            )
         task = await generation_task_service.create_task(db, project_id, "render", status="queued")
-
-        # 更新状态，避免前端重复提交渲染任务。
         project_workflow_state.mark_project_stage_running(project, "video", task.id)
         await db.commit()
 
-        # 异步发送 Celery 任务
         async_result = celery_app.send_task(
             "generate_video_task",
             args=[project_id, task.id],
@@ -102,24 +101,18 @@ class VideoGenerationService:
         }
 
     async def get_project_detail(self, db: AsyncSession, project_id: int) -> dict:
-        """查询项目详情（含帧和素材），供前端轮询"""
         result = await db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
         if not project:
             raise ValueError(f"项目不存在: {project_id}")
 
-        # 获取帧列表
         frame_result = await db.execute(
-            select(Frame)
-            .where(Frame.project_id == project_id)
-            .order_by(Frame.sequence)
+            select(Frame).where(Frame.project_id == project_id).order_by(Frame.sequence)
         )
         frames = frame_result.scalars().all()
 
-        # 只返回当前项目产物，素材库请走独立素材接口，避免跨项目资产混入详情页。
         asset_items = []
         if project.user_id:
-            # 项目详情优先通过 ProjectAsset 精确找绑定素材，避免 URL 模糊匹配误伤其他项目资源。
             asset_result = await db.execute(
                 select(Asset, ProjectAsset.role)
                 .join(ProjectAsset, ProjectAsset.asset_id == Asset.id)
@@ -127,32 +120,6 @@ class VideoGenerationService:
                 .order_by(ProjectAsset.id)
             )
             asset_items = list(asset_result.all())
-
-        seen_asset_ids = {asset.id for asset, _role in asset_items}
-        if project.video_output_url:
-            # 成片视频可能还没显式绑定到 ProjectAsset，这里用精确 URL 兜底补一条 output 资产。
-            output_asset_result = await db.execute(
-                select(Asset).where(
-                    Asset.url == project.video_output_url,
-                    Asset.type == 2,
-                ).limit(1)
-            )
-            output_asset = output_asset_result.scalar_one_or_none()
-            if output_asset and output_asset.id not in seen_asset_ids:
-                asset_items.append((output_asset, "output"))
-
-        # 查找视频资产ID（用于 Merge 服务）
-        video_asset_id = None
-        if project.video_output_url:
-            video_asset_result = await db.execute(
-                select(Asset.id).where(
-                    Asset.url == project.video_output_url,
-                    Asset.type == 2,
-                ).limit(1)
-            )
-            video_asset_id_row = video_asset_result.scalar_one_or_none()
-            if video_asset_id_row:
-                video_asset_id = video_asset_id_row
 
         return {
             "id": project.id,
@@ -167,7 +134,6 @@ class VideoGenerationService:
             "images_confirmed_at": project.images_confirmed_at.isoformat() if project.images_confirmed_at else None,
             "video_confirmed_at": project.video_confirmed_at.isoformat() if project.video_confirmed_at else None,
             "video_url": project.video_output_url,
-            "video_asset_id": video_asset_id,
             "audio_url": project.audio_url,
             "frames": [
                 {
@@ -217,7 +183,6 @@ class VideoGenerationService:
         video_url: str,
         status: str = "completed",
     ):
-        """Celery Worker 回调：更新视频生成结果"""
         result = await db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
         if project:

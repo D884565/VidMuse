@@ -1,8 +1,17 @@
 import { useState, useEffect, useRef } from 'react'
 import { getProjectDetail } from '../services/project.js'
 
-// 需要停止轮询的状态
-const TERMINAL_STATUSES = ['completed', 'failed', 'draft']
+/**
+ * 判断项目是否处于终态（应停止轮询）。
+ * 以 workflow_stage / stage_status 为权威来源。
+ */
+function isProjectTerminal(data) {
+  if (data.workflow_stage === 'completed') return true
+  if (data.stage_status === 'failed') return true
+  // created/idle 等待用户触发，不算终态，但也不需要轮询
+  if (data.workflow_stage === 'created' && data.stage_status === 'idle') return true
+  return false
+}
 
 /**
  * 项目状态轮询 hook
@@ -14,7 +23,6 @@ export function useProjectPolling(projectId) {
   const [project, setProject] = useState(null)
   const [frames, setFrames] = useState([])
   const [videoUrl, setVideoUrl] = useState(null)
-  const [videoAssetId, setVideoAssetId] = useState(null)
   const [audioUrl, setAudioUrl] = useState(null)
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
@@ -24,23 +32,18 @@ export function useProjectPolling(projectId) {
 
   useEffect(() => {
     if (!projectId) {
-      queueMicrotask(() => {
-        setProject(null)
-        setFrames([])
-        setVideoUrl(null)
-        setVideoAssetId(null)
-        setAudioUrl(null)
-        setAssets([])
-        setLoading(false)
-        setError(null)
-      })
+      setProject(null)
+      setFrames([])
+      setVideoUrl(null)
+      setAudioUrl(null)
+      setAssets([])
+      setLoading(false)
+      setError(null)
       return
     }
 
     let cancelled = false
-    queueMicrotask(() => {
-      if (!cancelled) setLoading(true)
-    })
+    setLoading(true)
 
     async function fetchProject() {
       try {
@@ -49,15 +52,14 @@ export function useProjectPolling(projectId) {
         setProject(data)
         setFrames(data.frames || [])
         setVideoUrl(data.video_url || null)
-        setVideoAssetId(data.video_asset_id || null)
         setAudioUrl(data.audio_url || null)
         setAssets(data.assets || [])
         setError(null)
 
-        // 停止轮询：状态为终态
+        // 停止轮询：workflow 阶段为终态，或等待用户操作（running/awaiting_review 期间继续轮询）
         const workflowRunning = data.stage_status === 'running'
         const awaitingWorkflowReview = data.stage_status === 'awaiting_review'
-        if (TERMINAL_STATUSES.includes(data.status) && !workflowRunning && !awaitingWorkflowReview) {
+        if (!workflowRunning && !awaitingWorkflowReview && isProjectTerminal(data)) {
           clearInterval(intervalRef.current)
         }
       } catch (err) {
@@ -68,7 +70,7 @@ export function useProjectPolling(projectId) {
     }
 
     // 立即获取一次
-    queueMicrotask(fetchProject)
+    fetchProject()
     // 每 3 秒轮询
     intervalRef.current = setInterval(fetchProject, 3000)
 
@@ -82,7 +84,6 @@ export function useProjectPolling(projectId) {
     project,
     frames,
     videoUrl,
-    videoAssetId,
     audioUrl,
     assets,
     loading,

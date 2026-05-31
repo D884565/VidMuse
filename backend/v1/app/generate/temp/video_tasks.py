@@ -1,4 +1,4 @@
-﻿"""Celery video generation tasks based on frames."""
+﻿"""基于分镜帧的 Celery 视频生成任务。"""
 import os
 import logging
 import tempfile
@@ -10,7 +10,6 @@ from backend.v1.app.generate.temp.celery_app import celery_app
 from backend.store.database.sync_database import SessionLocal
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
-from backend.v1.app.models.asset import Asset
 from backend.v1.app.generate.service.tts_service import tts_service
 from backend.v1.app.generate.service.external_call_policy import ALLOW_DEGRADED_AUDIO
 from backend.v1.app.generate.service.image_generation_service import image_generation_service
@@ -38,7 +37,7 @@ class GenerationStageError(RuntimeError):
         self.error_code = error_code
 
 
-# Celery Worker 涓娇鐢ㄥ悓姝ユ暟鎹簱杩炴帴
+# Celery Worker 使用同步数据库连接
 def _get_sync_db() -> Session:
     return SessionLocal()
 
@@ -47,12 +46,77 @@ def _retry_countdown(retries: int) -> int:
     return min(300, 2 ** max(0, retries))
 
 
+def ensure_task_not_cancelled(db: Session, task_id: int | None) -> None:
+    if not task_id:
+        return
+    task = generation_task_service.get_task_sync(db, task_id)
+    if task.status == "cancelled":
+        raise ValueError(f"generation task cancelled: {task_id}")
+
+
 def _persist_frame_video_segment(project_id: int, frame: Frame, local_path: str) -> str:
     object_key = f"projects/{project_id}/frames/frame_{frame.id or frame.sequence}.mp4"
     video_url = get_storage_client().upload_file(local_path, object_key)
     frame.video_url = video_url
     frame.dirty = 0
     return video_url
+
+
+def _resolve_frame_narration_text(frame: Frame) -> str:
+    ai_params = frame.ai_params or {}
+    return (getattr(frame, "narration", None) or ai_params.get("text") or frame.description or "").strip()
+
+
+def _resolve_frame_voice_type(project: Project, frame: Frame) -> str:
+    voice_map = {
+        "excited": "zh_female_cancan_mars_bigtts",
+        "confident": "zh_female_shuangkuai_moon_bigtts",
+        "urgent": "zh_male_chunhou_mars_bigtts",
+        "warm": "zh_female_tianmei_mars_bigtts",
+        "professional": "zh_male_yangguang_mars_bigtts",
+    }
+    if getattr(project, "voice_type", None):
+        return project.voice_type
+    frame_style = (frame.ai_params or {}).get("voice_style", "")
+    return voice_map.get(frame_style, "zh_female_cancan_mars_bigtts")
+
+
+def _build_project_audio_track(project: Project, frames: list[Frame]) -> object:
+    audio_segments = []
+    fallback_used = False
+    providers = set()
+    warnings = []
+
+    for frame in frames:
+        text = _resolve_frame_narration_text(frame)
+        duration = float(frame.duration or 1.0)
+        if not text.strip():
+            audio_segments.append(tts_service.create_silent_audio_for_duration(duration))
+            providers.add("silent_duration")
+            continue
+
+        voice_type = _resolve_frame_voice_type(project, frame)
+        tts_result = tts_service.generate_audio(text, voice_type)
+        fitted_path = tts_service.fit_audio_to_duration(tts_result.path, duration)
+        audio_segments.append(fitted_path)
+        fallback_used = fallback_used or tts_result.fallback_used
+        providers.add(tts_result.provider)
+        if tts_result.warning:
+            warnings.append(tts_result.warning)
+
+    merged_path = tts_service.concat_audio_clips(audio_segments)
+    provider_label = ",".join(sorted(providers)) if providers else "unknown"
+    warning = "; ".join(warnings) if warnings else None
+    return type(
+        "ProjectAudioTrack",
+        (),
+        {
+            "path": merged_path,
+            "fallback_used": fallback_used,
+            "provider": provider_label,
+            "warning": warning,
+        },
+    )()
 
 
 def _mark_project_failed(db: Session, project_id: int, stage: str) -> None:
@@ -96,13 +160,14 @@ def _update_task_failure_state(
         fail_db.close()
 
 
-@celery_app.task(bind=True, max_retries=3, name="generate_image_task")
+@celery_app.task(bind=True, max_retries=3, soft_time_limit=900, time_limit=1200, name="generate_image_task")
 def generate_image_task(self, project_id: int, task_id: int | None = None):
-    """Generate frame images for the image workflow stage."""
+    """为图片工作流阶段生成分镜图片。"""
     db = None
     try:
         db = _get_sync_db()
         generation_task_service.start_task_sync(db, task_id, "IMAGE_GENERATING") if task_id else None
+        ensure_task_not_cancelled(db, task_id)
         project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
         project_workflow_state.mark_project_stage_running(project, "image", task_id)
         db.commit()
@@ -204,9 +269,9 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
             db.close()
 
 
-@celery_app.task(bind=True, max_retries=3, name="generate_video_task")
+@celery_app.task(bind=True, max_retries=3, soft_time_limit=3600, time_limit=4500, name="generate_video_task")
 def generate_video_task(self, project_id: int, task_id: int | None = None, trigger_source: str = "manual_render"):
-    """Generate a full project video from frame images, narration, and composition."""
+    """从分镜图片、配音和合成中生成完整项目视频。"""
     logger.info(f"[浠诲姟鍚姩] project_id={project_id}")
     temp_dir = tempfile.mkdtemp()
     db = None
@@ -215,6 +280,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
     try:
         db = _get_sync_db()
         generation_task_service.start_task_sync(db, task_id, "PROJECT_VALIDATION") if task_id else None
+        ensure_task_not_cancelled(db, task_id)
 
         # ---- Step 1: 璇诲彇 frames ----
         step = generation_task_service.start_step_sync(
@@ -234,7 +300,6 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
 
         project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
         project_workflow_state.mark_project_stage_running(project, "video", task_id)
-        project.status = "rendering"
         db.commit()
         generation_task_service.finish_step_sync(
             db,
@@ -245,27 +310,10 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         generation_task_service.update_task_sync(db, task_id, progress=10, current_step="PROJECT_VALIDATION") if task_id else None
         logger.info(f"[璇诲彇甯 project_id={project_id}, frames={len(frames)}")
 
-        # ---- Step 2: TTS ----
+        # ---- Step 2: TTS 配音生成 ----
         step = generation_task_service.start_step_sync(db, task_id, "TTS_GENERATING", progress=10) if task_id else None
         logger.info("[TTS] 寮€濮嬬敓鎴愰厤闊?..")
-        # 鎷兼帴鎵€鏈夊抚鐨勬枃妗堬紙浠?ai_params 涓彇 text锛?        texts = []
-        for frame in frames:
-            ai_params = frame.ai_params or {}
-            text = ai_params.get("text", "") or frame.description or ""
-            if text:
-                texts.append(text)
-        full_text = " ".join(texts)
-        tts_voice = (frames[0].ai_params or {}).get("voice_style", "")
-        # voice_style 鏄犲皠鍒扮伀灞卞紩鎿?TTS 闊宠壊
-        voice_map = {
-            "excited": "zh_female_cancan_mars_bigtts",
-            "confident": "zh_female_shuangkuai_moon_bigtts",
-            "urgent": "zh_male_chunhou_mars_bigtts",
-            "warm": "zh_female_tianmei_mars_bigtts",
-            "professional": "zh_male_yangguang_mars_bigtts",
-        }
-        tts_voice = project.voice_type or voice_map.get(tts_voice, "zh_female_cancan_mars_bigtts")
-        tts_result = tts_service.generate_audio(full_text, tts_voice)
+        tts_result = _build_project_audio_track(project, frames)
         audio_path = tts_result.path
         allow_degraded_audio = ALLOW_DEGRADED_AUDIO
         if tts_result.fallback_used and not allow_degraded_audio:
@@ -296,7 +344,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         generation_task_service.update_task_sync(db, task_id, progress=25, current_step="TTS_GENERATING") if task_id else None
         logger.info(f"[TTS] 椤圭洰绾ч厤闊冲畬鎴? {audio_object}")
 
-        # ---- Step 3: 涓烘瘡涓抚鐢熸垚鍥剧墖 ----
+        # ---- Step 3: 为每个分镜生成图片 ----
         step = generation_task_service.start_step_sync(db, task_id, "IMAGE_GENERATING", progress=30) if task_id else None
         logger.info("[鍥剧墖] 寮€濮嬬敓鎴愬抚閰嶅浘...")
         reference_images = extract_reference_images(project)
@@ -318,19 +366,22 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
             )
         logger.info(f"[image] completed frames: {len(frames)}")
 
-        # ---- Step 4+5: 涓烘瘡涓抚鐢熸垚瑙嗛骞舵嫾鎺?----
+        # ---- Step 4+5: 为每个分镜生成视频并拼接 ----
         step = generation_task_service.start_step_sync(db, task_id, "VIDEO_GENERATING", progress=50) if task_id else None
         logger.info("[瑙嗛] 寮€濮嬬敓鎴愬抚瑙嗛...")
         output_dir = os.path.join(temp_dir, f"project_{project_id}")
+
+        def _persist_segment(frame: Frame, segment_path: str) -> None:
+            _persist_frame_video_segment(project_id, frame, segment_path)
+            db.commit()
+
         video_path = video_composer.compose_frames(
             frames,
             output_dir,
             target_duration=project.target_duration,
             allow_placeholder_segments=False,
+            on_segment_ready=_persist_segment,
         )
-        for frame, segment_path in getattr(video_composer, "last_generated_segments", []):
-            _persist_frame_video_segment(project_id, frame, segment_path)
-        db.commit()
         failed_videos = [f.id for f in frames if f.status == 3]
         generation_task_service.finish_step_sync(db, step, status="failed" if failed_videos else "succeeded", progress=75, output_snapshot={"failed_frame_ids": failed_videos}, error_message="閮ㄥ垎鍒嗛暅瑙嗛鐢熸垚澶辫触" if failed_videos else None) if task_id else None
         generation_task_service.update_task_sync(db, task_id, progress=75, current_step="VIDEO_GENERATING") if task_id else None
@@ -342,7 +393,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
                 message=f"failed frame ids: {failed_videos}",
             )
 
-        # ---- Step 5.5: 鍚堝苟 TTS 闊抽鍒拌棰?----
+        # ---- Step 5.5: 合并 TTS 音频到视频 ----
         step = generation_task_service.start_step_sync(db, task_id, "AUDIO_MIXING", progress=78) if task_id else None
         if audio_path and os.path.exists(audio_path):
             try:
@@ -358,7 +409,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
             logger.warning("[audio] no TTS audio file, skip merging")
             generation_task_service.finish_step_sync(db, step, status="skipped", progress=85, error_message="no audio file") if task_id else None
 
-        # ---- Step 5.6: 鐢熸垚 BGM 骞舵贩鍏ヨ棰戯紙鏆傛椂绂佺敤锛屾帴鍙ｄ繚鐣欙級 ----
+        # ---- Step 5.6: 生成 BGM 并混入视频（暂时禁用，接口保留） ----
         # bgm_desc = (frames[0].ai_params or {}).get("bgm", "")
         # if bgm_desc:
         #     bgm_path = music_generation_service.generate_bgm(bgm_desc)
@@ -367,9 +418,9 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         #             bgm_output = os.path.join(output_dir, "bgm_output.mp4")
         #             ffmpeg_utils.add_bgm(video_path, bgm_path, bgm_output, bgm_volume=0.3, original_volume=1.0)
         #             video_path = bgm_output
-        #             logger.info("[BGM] 鑳屾櫙闊充箰宸叉贩鍏ヨ棰?)
+        #             logger.info("[BGM] 背景音乐已混入视频")
         #         except Exception as e:
-        #             logger.warning(f"[BGM] 娣烽煶澶辫触锛岄檷绾т笂浼犳棤 BGM 瑙嗛: {e}")
+        #             logger.warning(f"[BGM] 混音失败，降级上传无 BGM 视频: {e}")
         #         finally:
         #             try:
         #                 os.remove(bgm_path)
@@ -380,21 +431,11 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         # else:
         #     logger.info("[BGM] 鏃?BGM 鎻忚堪锛岃烦杩囩敓鎴?)
 
-        # 涓婁紶鎴愬搧瑙嗛鍒?TOS
+        # 上传成品视频到 TOS
         step = generation_task_service.start_step_sync(db, task_id, "OUTPUT_UPLOADING", progress=88) if task_id else None
         video_object = f"projects/{project_id}/output.mp4"
         video_url = get_storage_client().upload_file(video_path, video_object)
 
-        # 璁板綍璧勪骇
-        db.add(Asset(
-            user_id=project.user_id,
-            type=2,  # 瑙嗛
-            title="鎴愬搧瑙嗛",
-            url=video_url,
-            duration=int(sum(float(frame.duration or 0) for frame in frames)),
-            format="mp4",
-            source_type=1,  # AI鐢熸垚
-        ))
         db.commit()
         generation_task_service.finish_step_sync(db, step, progress=95, output_snapshot={"video_url": video_url}) if task_id else None
         logger.info(f"[瑙嗛] 瀹屾垚: {video_object}")
@@ -468,18 +509,19 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
                 pass
         if db:
             db.close()
-        # 濞撳懐鎮婃稉瀛樻閺傚洣娆?        import shutil
+        # 清理临时目录
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@celery_app.task(bind=True, max_retries=3, name="generate_frame_image_task")
+@celery_app.task(bind=True, max_retries=3, soft_time_limit=180, time_limit=300, name="generate_frame_image_task")
 def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int | None = None):
-    """Regenerate one frame image without composing the full video."""
+    """重新生成单帧图片，不合成完整视频。"""
     db = None
     try:
         db = _get_sync_db()
         generation_task_service.start_task_sync(db, task_id, "FRAME_IMAGE_GENERATING") if task_id else None
+        ensure_task_not_cancelled(db, task_id)
         step = generation_task_service.start_step_sync(
             db, task_id, "FRAME_IMAGE_GENERATING", progress=10, frame_id=frame_id
         ) if task_id else None
@@ -561,14 +603,15 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
             db.close()
 
 
-@celery_app.task(bind=True, max_retries=3, name="generate_frame_video_task")
+@celery_app.task(bind=True, max_retries=3, soft_time_limit=600, time_limit=720, name="generate_frame_video_task")
 def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int | None = None):
-    """Regenerate one frame video segment and record task output."""
+    """重新生成单帧视频片段并记录任务输出。"""
     temp_dir = tempfile.mkdtemp()
     db = None
     try:
         db = _get_sync_db()
         generation_task_service.start_task_sync(db, task_id, "FRAME_VIDEO_GENERATING") if task_id else None
+        ensure_task_not_cancelled(db, task_id)
         step = generation_task_service.start_step_sync(
             db, task_id, "FRAME_VIDEO_GENERATING", progress=10, frame_id=frame_id
         ) if task_id else None
@@ -644,78 +687,3 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
             shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@celery_app.task(bind=True, max_retries=2, name="export_video_task")
-def export_video_task(self, project_id: int, task_id: int | None = None, aspect_ratio: str = "9:16"):
-    """Export the generated project video as an asset record."""
-    db = None
-    try:
-        db = _get_sync_db()
-        generation_task_service.start_task_sync(db, task_id, "EXPORTING") if task_id else None
-        step = generation_task_service.start_step_sync(
-            db, task_id, "EXPORTING", progress=10, input_snapshot={"aspect_ratio": aspect_ratio}
-        ) if task_id else None
-        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
-        if not project.video_output_url:
-            raise ValueError("project has no generated video to export")
-        asset = Asset(
-            user_id=project.user_id,
-            type=2,
-            title=f"瀵煎嚭瑙嗛 {aspect_ratio}",
-            url=project.video_output_url,
-            duration=None,
-            format="mp4",
-            source_type=1,
-            scope="output",
-            metadata_={"aspect_ratio": aspect_ratio, "project_id": project_id},
-        )
-        db.add(asset)
-        db.commit()
-        generation_task_service.finish_step_sync(
-            db, step, progress=100, output_snapshot={"video_url": project.video_output_url}
-        ) if task_id else None
-        generation_task_service.update_task_sync(
-            db, task_id, status="succeeded", progress=100, current_step="EXPORTED"
-        ) if task_id else None
-    except SoftTimeLimitExceeded as exc:
-        logger.error(f"[瀵煎嚭浠诲姟瓒呮椂] project_id={project_id}", exc_info=True)
-        will_retry = self.request.retries < self.max_retries
-        if db:
-            db.rollback()
-        try:
-            _update_task_failure_state(
-                task_id=task_id,
-                project_id=project_id,
-                stage=None,
-                current_step="EXPORT_TIMEOUT",
-                error_code="EXPORT_TIMEOUT",
-                error_message=str(exc),
-                will_retry=will_retry,
-            )
-        except Exception:
-            logger.warning("[failure handler] failed to update export timeout state", exc_info=True)
-        if will_retry:
-            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
-        raise
-    except Exception as exc:
-        will_retry = self.request.retries < self.max_retries
-        if db:
-            db.rollback()
-        try:
-            _update_task_failure_state(
-                task_id=task_id,
-                project_id=project_id,
-                # 导出是派生任务，失败不影响项目已有成片状态。
-                stage=None,
-                current_step="EXPORT_FAILED",
-                error_code="EXPORT_FAILED",
-                error_message=str(exc),
-                will_retry=will_retry,
-            )
-        except Exception:
-            logger.warning("[failure handler] failed to update export task state", exc_info=True)
-        if will_retry:
-            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
-        raise
-    finally:
-        if db:
-            db.close()

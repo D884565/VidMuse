@@ -5,6 +5,7 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Path, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -343,35 +344,36 @@ async def render_project(
         raise BusinessException(VIDEO_ERROR, str(e))
 
 
-@router.post("/projects/{project_id}/export", response_model=Response)
+@router.get("/projects/{project_id}/export/download")
 async def export_project_video(
-    req: dict | None = Body(None),
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """导出最终视频。第一版支持 9:16 MP4，并纳入任务系统便于前端追踪。"""
+    """直接下载项目成片视频，不创建异步任务、不写入素材库。"""
+    from backend.v1.app.generate.service.export_service import export_service, ExportDownloadError
+
     project = await ProjectService.get_project(db, project_id)
     if project.get("user_id") != current_user_id:
         raise BusinessException(UNAUTHORIZED, "无权操作该项目")
-
-    aspect_ratio = (req or {}).get("aspect_ratio", "9:16")
-    if aspect_ratio != "9:16":
-        raise BusinessException(VIDEO_ERROR, f"暂不支持该导出画幅: {aspect_ratio}")
-    if not project.get("video_output_url"):
+    video_url = project.get("video_output_url")
+    if not video_url:
         raise BusinessException(VIDEO_ERROR, "项目还没有可导出的视频")
 
-    task = await generation_task_service.create_task(db, project_id, "export", status="queued")
-    from backend.v1.app.generate.temp.celery_app import celery_app
-    sent = celery_app.send_task("export_video_task", args=[project_id, task.id, aspect_ratio])
-    await generation_task_service.set_celery_task_id(db, task.id, sent.id)
-    return Response.success(data={
-        "project_id": project_id,
-        "task_id": task.id,
-        "aspect_ratio": aspect_ratio,
-        "status": "queued",
-        "video_url": project.get("video_output_url"),
-    })
+    try:
+        stream = export_service.open_download_stream(
+            video_url=video_url,
+            project_title=project.get("title"),
+            project_id=project_id,
+        )
+    except ExportDownloadError as exc:
+        raise BusinessException(VIDEO_ERROR, str(exc))
+
+    return StreamingResponse(
+        stream.iter_bytes(),
+        media_type=stream.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{stream.filename}"'},
+    )
 
 
 @router.post("/projects/{project_id}/assets", response_model=Response)
@@ -748,12 +750,28 @@ async def retry_frame(
         frame.description = f"{frame.description or ''}\n\n用户重试要求：{instruction}"
     frame.status = 0
     frame.error_message = None
+    task_type = "frame_video" if frame.image_url and str(frame.image_url).startswith("http") else "frame_image"
+    task = await generation_task_service.create_task(db, project_id, task_type, status="queued")
+    project_model = await _load_project_for_workflow_update(db, project_id)
+    if task_type == "frame_video":
+        generation_workflow_service.invalidate_from(project_model, "video")
+        frame.dirty = 1
+    else:
+        generation_workflow_service.invalidate_from(project_model, "image")
+        frame.image_url = None
+        frame.dirty = 1
     await db.commit()
 
-    render_result = await video_generation_service.submit_generation_task(db, project_id)
+    from backend.v1.app.generate.temp.celery_app import celery_app
+    if task_type == "frame_video":
+        sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
+    else:
+        sent = celery_app.send_task("generate_frame_image_task", args=[project_id, frame_id, task.id])
+    await generation_task_service.set_celery_task_id(db, task.id, sent.id)
     return Response.success(data={
         "frame_id": frame_id,
         "project_id": project_id,
-        "task_id": render_result.get("task_id"),
-        "status": render_result.get("status"),
+        "task_id": task.id,
+        "status": "queued",
+        "task_type": task_type,
     })
