@@ -431,39 +431,24 @@ class ImageService:
 class VideoComposer:
     """视频合成服务"""
 
-    def compose(
+    def compose_frames(
         self,
-        audio_path: str,
-        images: list[str],
-        subtitles: list[dict],
+        frames: list[Frame],
         output_dir: str,
-        output_format: str = "9:16",
-        bgm_path: str | None = None,
-        transitions: list[str] | None = None,
+        target_duration: float | None = None,
+        *,
+        allow_placeholder_segments: bool = False,
+        on_segment_ready=None,
     ) -> str:
         """
-        合成最终视频。
+        为每个 Frame 生成视频片段并拼接。
 
-        :param audio_path: 配音音频路径
-        :param images: 场景图片路径列表
-        :param subtitles: 字幕数据
+        :param frames: Frame 对象列表（需包含 image_url、prompt、duration 等）
         :param output_dir: 输出目录
-        :param output_format: 输出格式
-        :param bgm_path: 背景音乐路径
-        :param transitions: 转场效果列表
-        :returns: 合成视频的本地路径
-        """
-        ...
-
-    def compose_scene(
-        self,
-        scene_data: dict,
-        output_path: str,
-    ) -> str:
-        """
-        合成单个分镜。
-
-        用于分镜级干预后的局部重渲染。
+        :param target_duration: 目标总时长（可选，超出时裁剪）
+        :param allow_placeholder_segments: 失败帧是否用占位视频替代
+        :param on_segment_ready: 单帧完成回调
+        :returns: 拼接后视频的本地路径
         """
         ...
 
@@ -623,13 +608,11 @@ def step_compose(task_id: int, prev_result: dict):
     script = get_script(task.script_id)
     script_content = json.loads(script.content)
 
-    # 合成视频
-    video_path = video_composer.compose(
-        audio_path=download_from_minio(prev_result["audio_url"]),
-        images=[download_from_minio(url) for url in prev_result["image_urls"]],
-        subtitles=script_content.get("body", []),
+    # 合成视频（按 Frame 逐帧生成并拼接）
+    video_path = video_composer.compose_frames(
+        frames=frames,
         output_dir=f"/tmp/tasks/{task_id}",
-        output_format=task.output_format,
+        target_duration=project.target_duration,
     )
 
     update_task_status(task_id, "processing", step="compose", progress=100)

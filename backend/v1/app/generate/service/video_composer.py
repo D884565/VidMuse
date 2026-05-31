@@ -6,7 +6,6 @@ import tempfile
 import logging
 import shutil
 import math
-from typing import Optional
 
 # 查找 FFmpeg 路径
 FFMPEG_PATH = shutil.which("ffmpeg") or r"C:\Users\练轩成\AppData\Local\Microsoft\WinGet\Links\ffmpeg.exe"
@@ -27,66 +26,14 @@ class VideoComposer:
         self.llm = VolcanoLLM(key=None, model_name=None)
         self.storage = get_storage_client()
 
-    def compose(
-        self,
-        audio_path: str,
-        scenes: list[dict],
-        image_urls: list[str],
-        output_dir: str,
-    ) -> str:
-        """
-        生成最终视频。
-
-        流程：
-        1. 为每个场景调用视频生成模型
-        2. 下载生成的视频到本地
-        3. 拼接所有场景视频
-        4. 返回本地视频路径（后续由调用方上传 TOS）
-
-        :param audio_path: 配音音频路径（暂时未使用，视频生成模型自带音频）
-        :param scenes: 场景列表（包含 text、duration、type 等）
-        :param image_urls: 场景图片 HTTP URL 列表（作为首帧参考）
-        :param output_dir: 输出目录
-        :returns: 生成视频的本地路径
-        """
-        os.makedirs(output_dir, exist_ok=True)
-
-        # 为每个场景生成视频
-        video_paths = []
-        for i, scene in enumerate(scenes):
-            try:
-                logger.info(f"[视频生成] 开始生成场景 {i + 1}/{len(scenes)}")
-                image_url = image_urls[i] if i < len(image_urls) else None
-                video_path = self._generate_scene_video(
-                    scene=scene,
-                    reference_image=image_url,
-                    output_dir=output_dir,
-                    scene_index=i,
-                )
-                video_paths.append(video_path)
-                logger.info(f"[视频生成] 场景 {i + 1} 生成成功: {video_path}")
-            except Exception as e:
-                logger.error(f"[视频生成] 场景 {i + 1} 生成失败: {str(e)}")
-                # 失败时使用占位视频
-                placeholder_path = self._generate_placeholder_video(
-                    output_dir, scene.get("duration", 5), i
-                )
-                video_paths.append(placeholder_path)
-
-        # 拼接所有场景视频
-        if len(video_paths) > 1:
-            concat_path = self._concat_videos(video_paths, output_dir)
-            return concat_path
-        elif video_paths:
-            return video_paths[0]
-
-        # 如果所有场景都失败，返回占位视频
-        return self._generate_placeholder_video(output_dir, 30, 0)
-
     def compose_frames(
         self,
         frames: list[Frame],
         output_dir: str,
+        target_duration: float | None = None,
+        *,
+        allow_placeholder_segments: bool = False,
+        on_segment_ready=None,
     ) -> str:
         """
         为每个 Frame 生成视频片段并拼接。
@@ -96,190 +43,154 @@ class VideoComposer:
         :returns: 拼接后视频的本地路径
         """
         os.makedirs(output_dir, exist_ok=True)
+        self.validate_frames_for_video(frames)
 
         video_paths = []
+        generated_segments = []
         for i, frame in enumerate(frames):
             try:
                 logger.info(f"[视频生成] 开始生成帧 {frame.sequence}/{len(frames)}")
 
-                # 构造视频 prompt
-                prompt = frame.prompt or frame.description or ""
-                ai_params = frame.ai_params or {}
-                camera = ai_params.get("camera", "")
-                mood = ai_params.get("mood", "")
-                if camera:
-                    prompt += f"\n镜头运动：{camera}"
-                if mood:
-                    prompt += f"\n氛围：{mood}"
-
-                # 时长限制（Seedance 1.5 i2v 模式固定 5 秒）
-                generation_duration = 5
-                target_dur = max(1.0, float(frame.duration or generation_duration))
-
-                video_request = VideoRequest(
-                    duration=generation_duration,
-                    ratio="9:16",
-                    generate_audio=False,
-                    draft=False,
-                    watermark=False,
-                )
-
-                # 首帧图片
-                image_url = None
-                if frame.image_url and frame.image_url.startswith("http"):
-                    image_url = frame.image_url
-
-                response = self.llm.generate_video_sync(
-                    request=video_request,
-                    prompt=prompt,
-                    image=image_url,
-                )
-
-                if not response or not response.video_url:
-                    raise ValueError("视频生成失败，未获取到视频 URL")
-
-                local_path = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}.mp4")
-                self._download_video(response.video_url, local_path)
-
-                # 按 LLM 规划时长裁剪（Seedance 固定生成 5 秒，需裁剪到目标时长）
-                target_dur = float(frame.duration)
-                if target_dur < 5:
-                    trimmed_path = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}_trimmed.mp4")
-                    try:
-                        ffmpeg_utils.split_video(local_path, trimmed_path, start=0, end=target_dur)
-                        local_path = trimmed_path
-                        logger.info(f"[视频裁剪] 帧 {frame.sequence} 裁剪到 {target_dur} 秒")
-                    except Exception as trim_err:
-                        logger.warning(f"[视频裁剪] 裁剪失败，使用原始 5 秒: {trim_err}")
-
-                if target_dur > 5:
-                    extended_path = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}_extended.mp4")
-                    try:
-                        loops = max(1, math.ceil(target_dur / 5) - 1)
-                        cmd = [
-                            FFMPEG_PATH,
-                            "-y",
-                            "-stream_loop", str(loops),
-                            "-i", local_path,
-                            "-t", str(target_dur),
-                            "-c", "copy",
-                            extended_path,
-                        ]
-                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-                        if result.returncode != 0:
-                            raise RuntimeError(result.stderr)
-                        local_path = extended_path
-                        logger.info(f"[视频补时] 帧 {frame.sequence} 补足到 {target_dur} 秒")
-                    except Exception as extend_err:
-                        logger.warning(f"[视频补时] 补时失败，使用原始 5 秒: {extend_err}")
+                local_path = self._generate_frame_video(frame, output_dir)
 
                 video_paths.append(local_path)
+                generated_segments.append((frame, local_path))
+                if on_segment_ready:
+                    on_segment_ready(frame, local_path)
 
                 frame.status = 2  # 已完成
+                frame.error_message = None
                 logger.info(f"[视频生成] 帧 {frame.sequence} 生成成功: {local_path}")
             except Exception as e:
                 logger.error(f"[视频生成] 帧 {frame.sequence} 生成失败: {str(e)}")
                 frame.status = 3  # 失败
-                placeholder = self._generate_placeholder_video(
-                    output_dir, int(float(frame.duration)), frame.sequence
+                frame.error_message = f"视频生成失败: {str(e)}"
+                # 单帧失败不再中断整片合成，用占位片段保持时间线完整。
+                placeholder_duration = max(1.0, float(frame.duration or 5))
+                if not allow_placeholder_segments:
+                    raise
+                video_paths.append(
+                    self._generate_placeholder_video(
+                        output_dir,
+                        int(math.ceil(placeholder_duration)),
+                        i,
+                        message=f"Frame {frame.sequence} video failed",
+                    )
                 )
-                video_paths.append(placeholder)
 
         # 拼接
         if len(video_paths) > 1:
-            return self._concat_videos(video_paths, output_dir)
+            final_path = self._concat_videos(video_paths, output_dir)
         elif video_paths:
-            return video_paths[0]
+            final_path = video_paths[0]
+        else:
+            final_path = self._generate_placeholder_video(output_dir, 30, 0)
 
-        return self._generate_placeholder_video(output_dir, 30, 0)
+        self.last_generated_segments = generated_segments
+        if target_duration:
+            return self._trim_final_video(final_path, output_dir, target_duration)
+        return final_path
 
-    def _generate_scene_video(
-        self,
-        scene: dict,
-        reference_image: Optional[str],
-        output_dir: str,
-        scene_index: int,
-    ) -> str:
-        """
-        为单个场景生成视频。
+    def _generate_frame_video(self, frame: Frame, output_dir: str) -> str:
+        """生成或复用单帧视频片段。"""
+        existing_url = getattr(frame, "video_url", None)
+        if existing_url and str(existing_url).startswith("http") and not getattr(frame, "dirty", 0):
+            local_existing = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}_cached.mp4")
+            try:
+                self._download_video(existing_url, local_existing)
+                self._validate_local_video(local_existing)
+                logger.info(f"[视频复用] 帧 {frame.sequence} 使用已有视频片段")
+                return local_existing
+            except Exception as stale_err:
+                logger.warning(f"[视频复用] 帧 {frame.sequence} 已有视频不可用，重新生成: {stale_err}")
 
-        :param scene: 场景数据（包含 text、duration、type、visual）
-        :param reference_image: 参考图片 HTTP URL（可选，作为首帧）
-        :param output_dir: 输出目录
-        :param scene_index: 场景索引
-        :returns: 生成视频的本地路径
-        """
-        # 构造视频生成 prompt
-        prompt = self._build_video_prompt(scene)
+        prompt = frame.prompt or frame.description or ""
+        ai_params = frame.ai_params or {}
+        camera = ai_params.get("camera", "")
+        mood = ai_params.get("mood", "")
+        if camera:
+            prompt += f"\n镜头运动：{camera}"
+        if mood:
+            prompt += f"\n氛围：{mood}"
 
-        # 获取时长
-        duration = scene.get("duration", 5)
-        # Seedance 1.5 i2v 模式固定 5 秒
-        duration = 5
-
-        # 构造视频生成请求
+        generation_duration = 5
+        target_dur = max(1.0, float(frame.duration or generation_duration))
         video_request = VideoRequest(
-            duration=duration,
-            ratio="9:16",  # 竖屏视频
-            generate_audio=False,  # 不生成音频，后续添加 TTS
+            duration=generation_duration,
+            ratio="9:16",
+            generate_audio=False,
             draft=False,
             watermark=False,
         )
 
-        # 首帧图片：仅传有效 URL
-        image_url = None
-        if reference_image and reference_image.startswith("http"):
-            image_url = reference_image
-
-        # 调用视频生成模型（同步）
-        response = self.llm.generate_video_sync(
-            request=video_request,
-            prompt=prompt,
-            image=image_url,
-        )
-
+        image_url = frame.image_url if frame.image_url and frame.image_url.startswith("http") else None
+        response = self.llm.generate_video_sync(request=video_request, prompt=prompt, image=image_url)
         if not response or not response.video_url:
             raise ValueError("视频生成失败，未获取到视频 URL")
 
-        # 下载视频到本地
-        local_path = os.path.join(output_dir, f"scene_{scene_index}_{uuid.uuid4().hex}.mp4")
+        local_path = os.path.join(output_dir, f"frame_{frame.sequence}_{uuid.uuid4().hex}.mp4")
         self._download_video(response.video_url, local_path)
+        return self._fit_video_duration(local_path, output_dir, frame.sequence, target_dur)
 
+    def _fit_video_duration(self, local_path: str, output_dir: str, sequence: int, target_dur: float) -> str:
+        """把模型固定时长的视频裁剪或补足到分镜目标时长。"""
+        if target_dur < 5:
+            trimmed_path = os.path.join(output_dir, f"frame_{sequence}_{uuid.uuid4().hex}_trimmed.mp4")
+            try:
+                ffmpeg_utils.split_video(local_path, trimmed_path, start=0, end=target_dur)
+                return trimmed_path
+            except Exception as trim_err:
+                logger.warning(f"[视频裁剪] 裁剪失败，使用原始 5 秒: {trim_err}")
+                return local_path
+
+        if target_dur > 5:
+            extended_path = os.path.join(output_dir, f"frame_{sequence}_{uuid.uuid4().hex}_extended.mp4")
+            try:
+                loops = max(1, math.ceil(target_dur / 5) - 1)
+                cmd = [
+                    FFMPEG_PATH,
+                    "-y",
+                    "-stream_loop", str(loops),
+                    "-i", local_path,
+                    "-t", str(target_dur),
+                    "-c", "copy",
+                    extended_path,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode != 0:
+                    raise RuntimeError(result.stderr)
+                return extended_path
+            except Exception as extend_err:
+                logger.warning(f"[视频补时] 补时失败，使用原始 5 秒: {extend_err}")
         return local_path
 
-    def _build_video_prompt(self, scene: dict) -> str:
-        """
-        构造视频生成的 prompt。
+    def _validate_local_video(self, local_path: str) -> None:
+        """轻量校验缓存视频是否存在且非空。"""
+        if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+            raise RuntimeError("cached video is empty")
 
-        :param scene: 场景数据（包含 text、type、visual）
-        :returns: 视频生成 prompt
-        """
-        text = scene.get("text", "")
-        scene_type = scene.get("type", "")
-        visual = scene.get("visual", {})
-        video_prompt = visual.get("video_prompt", "")
-        camera = visual.get("camera", "")
-        mood = visual.get("mood", "")
+    def _trim_final_video(self, video_path: str, output_dir: str, target_duration: float) -> str:
+        """最终成片超过目标时长时做一次总裁剪。"""
+        trimmed_path = os.path.join(output_dir, f"final_{uuid.uuid4().hex}_trimmed.mp4")
+        try:
+            ffmpeg_utils.split_video(video_path, trimmed_path, start=0, end=float(target_duration))
+            return trimmed_path
+        except Exception as trim_err:
+            logger.warning(f"[视频总裁剪] 裁剪失败，使用未裁剪成片: {trim_err}")
+            return video_path
 
-        # 优先使用 LLM 生成的 video_prompt
-        if video_prompt:
-            prompt = video_prompt
-            if camera:
-                prompt += f"\n镜头运动：{camera}"
-            if mood:
-                prompt += f"\n氛围：{mood}"
-            return prompt
-
-        # fallback: 旧格式构造
-        source = visual.get("source", "")
-        prompt = f"生成一个带货视频片段：{text}"
-        if scene_type:
-            prompt += f"\n场景类型：{scene_type}"
-        if source:
-            prompt += f"\n画面内容：{source}"
-        prompt += "\n要求：画面清晰、流畅，适合竖屏带货视频风格。"
-
-        return prompt
+    def validate_frames_for_video(self, frames: list[Frame]) -> None:
+        """视频生成前硬校验，避免失败帧或缺图帧继续消耗 Seedance 配额。"""
+        invalid = []
+        for frame in frames:
+            image_url = getattr(frame, "image_url", None)
+            status = getattr(frame, "status", None)
+            if status == 3:
+                invalid.append(f"frame {getattr(frame, 'id', None)} status == 3")
+            elif not image_url or not str(image_url).startswith("http"):
+                invalid.append(f"frame {getattr(frame, 'id', None)} missing image_url")
+        if invalid:
+            raise ValueError("video generation requires successful frame images: " + "; ".join(invalid))
 
     def _concat_videos(self, video_paths: list[str], output_dir: str) -> str:
         """
@@ -379,8 +290,14 @@ class VideoComposer:
         except Exception as e:
             raise RuntimeError(f"下载视频失败: {str(e)}")
 
-    def _generate_placeholder_video(self, output_dir: str, duration_sec: int, scene_index: int) -> str:
-        """生成占位视频"""
+    def _generate_placeholder_video(
+        self,
+        output_dir: str,
+        duration_sec: int,
+        scene_index: int,
+        message: str | None = None,
+    ) -> str:
+        """生成兜底占位视频，保证拼接时间线不断裂。"""
         output_path = os.path.join(output_dir, f"placeholder_{scene_index}_{uuid.uuid4().hex}.mp4")
 
         try:

@@ -1,49 +1,73 @@
-"""视频帧模型"""
+"""分镜帧模型。"""
 import datetime
+
 from sqlalchemy import (
-    String, Text, BigInteger, Integer, DateTime, Numeric, JSON, func, ForeignKey
+    BigInteger,
+    DateTime,
+    ForeignKey,
+    Integer,
+    JSON,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from backend.store.database.async_database import Base
 
 
 class Frame(Base):
     __tablename__ = "frames"
+    __table_args__ = (
+        UniqueConstraint("project_id", "sequence", name="uq_frames_project_sequence"),
+    )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="帧id")
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True, comment="frame id")
     project_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("projects.id"), nullable=False, comment="项目id"
+        BigInteger,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="project id",
     )
-    sequence: Mapped[int] = mapped_column(Integer, nullable=False, comment="帧序号(第几帧)")
-    scene_type: Mapped[int | None] = mapped_column(
-        Integer, nullable=True,
-        comment="场景类型: 0-开场, 1-商品展示, 2-口播, 3-转场, 4-结尾"
+    script_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("scripts.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="script version id",
     )
-    description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="帧描述/画面描述")
-    prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="生成该帧的AI提示词")
-    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧图片URL")
-    audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="帧配音/音效URL")
-    text_overlay: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="叠加文字内容")
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, comment="frame sequence")
+    scene_type: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="scene type")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="frame description")
+    prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="video prompt")
+    narration: Mapped[str | None] = mapped_column(Text, nullable=True, comment="narration text")
+    subtitle_text: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="subtitle text")
+    subtitle_position: Mapped[str | None] = mapped_column(String(30), nullable=True, comment="subtitle position")
+    image_prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="image prompt")
+    video_prompt: Mapped[str | None] = mapped_column(Text, nullable=True, comment="video prompt")
+    image_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="frame image url")
+    audio_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="frame audio url")
+    video_url: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="frame video segment url")
+    text_overlay: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="text overlay")
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True, comment="generation error")
     duration: Mapped[float] = mapped_column(
-        Numeric(6, 3), nullable=False, server_default="3.000",
-        comment="该帧持续时间(秒)"
+        Numeric(6, 3),
+        nullable=False,
+        server_default="3.000",
+        comment="frame duration in seconds",
     )
-    transition_type: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="0",
-        comment="转场类型: 0-无, 1-淡入, 2-滑动, 3-缩放"
-    )
-    status: Mapped[int] = mapped_column(
-        Integer, nullable=False, server_default="0",
-        comment="状态: 0-待生成, 1-生成中, 2-已完成, 3-失败"
-    )
-    ai_params: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="AI生成参数")
-    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True, comment="额外元数据")
-    created_at: Mapped[datetime.datetime] = mapped_column(
-        DateTime, server_default=func.now()
-    )
+    transition_type: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", comment="transition")
+    status: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", comment="generation status")
+    dirty: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", comment="dirty flag")
+    last_edited_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
+    ai_params: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="ai params")
+    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True, comment="extra metadata")
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
-    # 关联
     project = relationship("Project", back_populates="frames")
+    script = relationship("Script", back_populates="frames")

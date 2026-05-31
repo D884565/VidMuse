@@ -63,10 +63,10 @@
 
 **步骤 3.2 — 视频合成服务**
 - 改造 `services/video_composer.py`，替换 Mock 为真实 FFmpeg 合成逻辑
-- 实现 `compose(audio_path, images, subtitles, output_dir, output_format)` 流程：
-  - 图片按时长排列生成视频片段
-  - 叠加配音音频
-  - 叠加字幕
+- 实现 `compose_frames(frames, output_dir, target_duration)` 流程：
+  - 按 Frame 对象逐帧调用 Seedance 生成视频片段
+  - 复用已有 video_url 的帧（非 dirty 状态）
+  - 拼接所有片段，总裁剪到目标时长
   - 输出 MP4
 - **产出**：`POST /projects/{id}/video/generate` 可产出真实视频
 

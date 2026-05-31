@@ -3,11 +3,15 @@ import json
 import asyncio
 import logging
 from typing import Optional
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
+from backend.v1.app.models.generation_task import GenerationTask
+from backend.v1.app.models.script import Script
+from backend.v1.app.generate.service import project_workflow_state
+from backend.v1.app.generate.service.generation_limits import normalize_target_duration
 from backend.providers import VolcanoLLM, ChatRequest, ChatMessage
 from backend.v1.app.generate.service._rag_temp.rag_service import (
     RAGService, MockRAGService, RAGResult,
@@ -38,6 +42,7 @@ class ScriptGenerationService:
         self,
         db: AsyncSession,
         project_id: int,
+        force: bool = False,
     ) -> list[Frame]:
         """
         生成带货剧本，逐帧写入 frames 表。
@@ -59,15 +64,31 @@ class ScriptGenerationService:
                 frame.status == 3 or not frame.description or not frame.prompt
                 for frame in frames_list
             )
-            if not incomplete:
+            if not force and not incomplete:
                 return frames_list
-            logger.warning(f"[script_generation] project {project_id} has incomplete frames; regenerating script")
+
+            active_task_result = await db.execute(
+                select(GenerationTask)
+                .where(
+                    GenerationTask.project_id == project_id,
+                    GenerationTask.task_type.in_(["render", "frame_retry", "export"]),
+                    GenerationTask.status.in_(["queued", "running"]),
+                )
+                .limit(1)
+            )
+            if active_task_result.scalar_one_or_none():
+                raise ValueError("项目正在渲染，不能删除分镜并重新生成剧本")
+
+            logger.warning(
+                f"[script_generation] project {project_id} regenerating script, "
+                f"force={force}, incomplete={incomplete}"
+            )
             for frame in frames_list:
                 await db.delete(frame)
             await db.flush()
 
         # 限制总时长在 12-20 秒
-        target_duration = max(12, min(20, project.target_duration or 15))
+        target_duration = normalize_target_duration(project.target_duration)
 
         # RAG 检索参考资料（带降级）
         rag_weight = float(project.rag_weight) if project.rag_weight else 0.3
@@ -84,30 +105,44 @@ class ScriptGenerationService:
             logger.warning(f"[剧本生成] LLM 调用失败，使用 Mock 数据: {str(e)}")
             script_content = self._mock_generate(project, target_duration)
 
+        script_version = await self._create_script_version(db, project, prompt, reference, script_content)
+
         # 逐场景写入 frames 表
         scenes = script_content.get("scenes", [])
         frames = []
         for index, scene in enumerate(scenes, 1):
             visual = scene.get("visual", {})
             overlay = visual.get("overlay", {})
+            narration = scene.get("text", "")
+            image_prompt = visual.get("image_prompt", narration)
+            video_prompt = visual.get("video_prompt", "")
+            subtitle_text = overlay.get("text", "")
+            subtitle_position = overlay.get("position", "bottom")
 
             frame = Frame(
                 project_id=project_id,
+                script_id=script_version.id,
                 sequence=index,
                 scene_type=SCENE_TYPE_MAP.get(scene.get("type", ""), 0),
-                description=visual.get("image_prompt", scene.get("text", "")),
-                prompt=visual.get("video_prompt", ""),
-                text_overlay=overlay.get("text", ""),
+                description=image_prompt,
+                prompt=video_prompt,
+                narration=narration,
+                subtitle_text=subtitle_text,
+                subtitle_position=subtitle_position,
+                image_prompt=image_prompt,
+                video_prompt=video_prompt,
+                text_overlay=subtitle_text,
                 duration=scene.get("duration", 3),
                 transition_type=0,
                 status=0,  # 待生成
+                dirty=0,
                 ai_params={
                     "camera": visual.get("camera", ""),
                     "mood": visual.get("mood", ""),
-                    "overlay_position": overlay.get("position", "bottom"),
+                    "overlay_position": subtitle_position,
                     "overlay_style": overlay.get("style", "highlight"),
                     "voice_style": scene.get("voice_style", ""),
-                    "text": scene.get("text", ""),
+                    "text": narration,
                 },
                 metadata_={
                     "source_scene_id": scene.get("scene_id"),
@@ -119,7 +154,7 @@ class ScriptGenerationService:
             frames.append(frame)
 
         # 更新项目状态
-        project.status = "script_ready"
+        project_workflow_state.mark_project_stage_review(project, "script")
         await db.commit()
 
         # 刷新所有 frame 获取生成的 id
@@ -128,6 +163,43 @@ class ScriptGenerationService:
 
         logger.info(f"[剧本生成] 已写入 {len(frames)} 个帧，project_id={project_id}")
         return frames
+
+    async def _create_script_version(
+        self,
+        db: AsyncSession,
+        project: Project,
+        prompt: str,
+        reference: str,
+        script_content: dict,
+    ) -> Script:
+        result = await db.execute(
+            select(func.coalesce(func.max(Script.version), 0)).where(Script.project_id == project.id)
+        )
+        next_version = int(result.scalar_one() or 0) + 1
+        script = Script(
+            project_id=project.id,
+            version=next_version,
+            status="active",
+            generation_mode="llm",
+            prompt_snapshot={
+                "prompt": prompt,
+                "title": project.title,
+                "user_prompt": project.user_prompt,
+                "target_duration": project.target_duration,
+                "style": project.style,
+                "target_audience": project.target_audience,
+                "key_points": project.key_points,
+                "avoid": project.avoid,
+            },
+            rag_snapshot={
+                "rag_weight": float(project.rag_weight) if project.rag_weight else 0,
+                "reference_text": reference,
+            },
+            content=script_content,
+        )
+        db.add(script)
+        await db.flush()
+        return script
 
     # ========== RAG 检索 ==========
 

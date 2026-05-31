@@ -52,7 +52,7 @@ export default function MediaGrid() {
   }
 
   useEffect(() => {
-    fetchAssets()
+    queueMicrotask(fetchAssets)
   }, [])
 
   // 根据文件 MIME 类型判断后端 type 值

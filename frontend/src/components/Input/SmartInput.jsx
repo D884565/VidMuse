@@ -1,22 +1,17 @@
-import { Image, Paperclip, Send, SlidersHorizontal } from 'lucide-react'
-import { useRef, useState } from 'react'
-import { useFileUpload } from '../../hooks/useFileUpload.js'
+﻿import { Image, Send, SlidersHorizontal } from 'lucide-react'
+import { useState } from 'react'
 import ParameterPanel from '../Parameters/ParameterPanel.jsx'
-import FilePreview from './FilePreview.jsx'
 
 export default function SmartInput({ onSend }) {
   const [value, setValue] = useState('')
   const [panelOpen, setPanelOpen] = useState(false)
-  const { files, addFiles, removeFile, clearFiles } = useFileUpload()
-  const inputRef = useRef(null)
-  const canSend = value.trim().length > 0 || files.length > 0
+  const canSend = value.trim().length > 0
 
   function submit(event) {
     event.preventDefault()
     if (!canSend) return
-    onSend(value, files)
+    onSend(value)
     setValue('')
-    clearFiles()
   }
 
   function handleKeyDown(event) {
@@ -30,14 +25,6 @@ export default function SmartInput({ onSend }) {
       <div className="relative mx-auto max-w-4xl">
         {panelOpen && <ParameterPanel />}
 
-        {files.length > 0 && (
-          <div className="mb-3 flex flex-wrap gap-2">
-            {files.map((file) => (
-              <FilePreview key={file.id} file={file} onRemove={removeFile} />
-            ))}
-          </div>
-        )}
-
         <form
           className="rounded-xl border border-[rgba(124,58,237,0.22)] bg-[rgba(26,26,46,0.95)] p-3 shadow-[0_4px_24px_rgba(124,58,237,0.15)]"
           onSubmit={submit}
@@ -47,27 +34,11 @@ export default function SmartInput({ onSend }) {
             value={value}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="描述你想生成的视频，Shift + Enter 换行"
+            placeholder="鎻忚堪浣犳兂鐢熸垚鐨勮棰戯紝Shift + Enter 鎹㈣"
           />
 
           <div className="mt-2 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <input
-                ref={inputRef}
-                className="hidden"
-                type="file"
-                multiple
-                accept="image/*,video/*,audio/*"
-                onChange={(event) => addFiles(event.target.files)}
-              />
-              <button
-                className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white"
-                type="button"
-                onClick={() => inputRef.current?.click()}
-                aria-label="上传文件"
-              >
-                <Paperclip size={18} />
-              </button>
               <button
                 className="rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white"
                 type="button"
@@ -93,7 +64,7 @@ export default function SmartInput({ onSend }) {
               }`}
               type="submit"
               disabled={!canSend}
-              aria-label="发送"
+              aria-label="Send message"
             >
               <Send size={18} />
             </button>

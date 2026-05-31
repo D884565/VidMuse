@@ -11,20 +11,34 @@ import Login from '../../pages/Login.jsx'
 export default function MainLayout() {
   const activeView = useAppStore((state) => state.activeView)
   const isLoggedIn = useAppStore((state) => state.isLoggedIn)
+  const authLoading = useAppStore((state) => state.authLoading)
   const user = useAppStore((state) => state.user)
   const setUser = useAppStore((state) => state.setUser)
+  const setAuthLoading = useAppStore((state) => state.setAuthLoading)
 
   // 页面刷新后恢复用户信息
   useEffect(() => {
     if (isLoggedIn && !user) {
+      setAuthLoading(true)
       getUserInfo()
         .then((data) => setUser({ id: data.id, username: data.username, role: data.role }))
         .catch(() => {
           // token 已失效，清除登录状态
           useAppStore.getState().logout()
         })
+        .finally(() => setAuthLoading(false))
+    } else {
+      setAuthLoading(false)
     }
-  }, [isLoggedIn, user, setUser])
+  }, [isLoggedIn, user, setUser, setAuthLoading])
+
+  if (authLoading) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[var(--bg-main)] text-sm text-[var(--text-muted)]">
+        正在恢复登录状态...
+      </div>
+    )
+  }
 
   // 未登录时显示登录页
   if (!isLoggedIn) {

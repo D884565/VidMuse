@@ -53,6 +53,7 @@ backend/v1/app/product/service/cookies/*.json
 # 测试文件
 test_*.py
 test_*.html
+tests/generate
 
 # 导出工具
 export_cookies.py
