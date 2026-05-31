@@ -14,12 +14,14 @@ class ProductParsingPipeline(BasePipeline):
     """
 
     def __init__(self, custom_processors: List[BaseProcessor] = None,
-                 product_schema_path: Optional[str] = None):
+                 product_schema_path: Optional[str] = None,
+                 **kwargs):
         """
         初始化商品解析流水线
 
         :param custom_processors: 自定义处理器列表，可选，用于替换默认处理器
         :param product_schema_path: 商品校验Schema路径，可选，优先使用该路径而非默认模板
+        :param kwargs: 其他参数，传递给父类
         """
         if custom_processors:
             processors = custom_processors
@@ -50,4 +52,4 @@ class ProductParsingPipeline(BasePipeline):
                 validator
             ]
 
-        super().__init__(processors)
+        super().__init__(processors, pipeline_type="product", **kwargs)

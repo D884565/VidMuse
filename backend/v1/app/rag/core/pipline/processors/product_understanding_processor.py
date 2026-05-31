@@ -1,4 +1,6 @@
 from typing import Dict, List, Union
+import asyncio
+import inspect
 
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM, ImageUnderstandingRequest
@@ -35,8 +37,8 @@ class ProductUnderstandingProcessor(BaseProcessor):
         6. 视觉资产：包含商品主图、商品细节图（数组）、使用场景图（数组）、品牌VI色（数组）
         7. 竞争差异化：包含对比维度、独家优势（数组）
         8. 合规限制：包含禁用话术（数组）、必须声明（数组）
-        
-        
+
+
         {
 
   "目标人群": {
@@ -89,6 +91,36 @@ class ProductUnderstandingProcessor(BaseProcessor):
         如果信息不足，可以留空或生成合理的模拟值，但必须保证结构完整。
         """
 
+    def _run_async(self, coro):
+        """
+        从同步上下文中运行异步函数，处理已有事件循环的情况
+        :param coro: 要运行的协程
+        :return: 协程的返回值
+        """
+        try:
+            # 检查是否有正在运行的事件循环
+            loop = asyncio.get_running_loop()
+            # 如果有运行中的循环，在新线程中运行异步函数避免死锁
+            import threading
+            result = None
+            def run_in_thread():
+                nonlocal result
+                # 新线程中创建新的事件循环
+                new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(new_loop)
+                try:
+                    result = new_loop.run_until_complete(coro)
+                finally:
+                    new_loop.close()
+
+            thread = threading.Thread(target=run_in_thread)
+            thread.start()
+            thread.join()
+            return result
+        except RuntimeError:
+            # 没有运行中的循环，直接使用asyncio.run
+            return asyncio.run(coro)
+
     def process(self, context: PipelineContext) -> PipelineContext:
         """
         执行商品理解逻辑
@@ -111,7 +143,15 @@ class ProductUnderstandingProcessor(BaseProcessor):
             top_p=0.9,
             model="_llama2_7b_chat_v2",
         )
-        response = self.llm_client.image_understanding( request)
+
+        # 尝试异步调用（如果方法是异步的）
+        if inspect.iscoroutinefunction(self.llm_client.image_understanding):
+            coro = self.llm_client.image_understanding(request)
+            # 使用辅助方法运行异步函数，处理已有事件循环的情况
+            response = self._run_async(coro)
+        else:
+            # 同步调用
+            response = self.llm_client.image_understanding(request)
         context.set("product_understanding", response)
 
 

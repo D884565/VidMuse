@@ -73,3 +73,11 @@ class ObjectStorage(ABC):
         :return: 是否存在
         """
         pass
+
+    @abstractmethod
+    def get_bucket_name(self) -> str:
+        """
+        获取存储桶名称
+        :return: 存储桶名称
+        """
+        pass

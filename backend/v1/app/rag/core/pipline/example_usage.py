@@ -29,7 +29,6 @@ def example_video_parsing():
     # 创建自定义处理器链（如果不自定义则使用默认的完整端到端流程）
     from backend.v1.app.rag.core.pipline.processors import (
         VideoSplitProcessor,
-        SliceGenerateProcessor,
         SchemaValidationProcessor,
         VideoAggregationProcessor,
         VideoGenerateProcessor
@@ -107,20 +106,9 @@ def example_video_parsing():
             print(f"  商品名称：{video_data['视频基本信息']['商品名称']}")
             print(f"  目标人群：{video_data['视频基本信息']['目标人群']}")
             print(f"  分片数量：{len(video_data['片段索引列表'])}个")
-            print(f"  生成文件：{result['data']['video_file']}")
+            print(f"  视频数据已生成并保存在上下文，无本地文件")
 
-        print("\n生成的分片文件：")
-        for i, file_path in enumerate(result["data"]["slice_files"][:3]):  # 显示前3个
-            print(f"  - {os.path.basename(file_path)}")
-        if len(result["data"]["slice_files"]) > 3:
-            print(f"  ... 共{len(result['data']['slice_files'])}个文件")
-
-        # 清理测试文件
-        for file_path in result["data"]["slice_files"]:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        if "video_file" in result["data"] and os.path.exists(result["data"]["video_file"]):
-            os.remove(result["data"]["video_file"])
+        print(f"\n分片数据已生成，共{len(result['data'].get('valid_slices', []))}个通过校验")
 
         return result["data"]
     else:
@@ -169,11 +157,7 @@ def example_product_parsing():
         print(f"\n商品信息：")
         print(f"  商品名称：{product_data['商品基础信息']['商品名称']}")
         print(f"  价格：原价{product_data['价格与服务']['原价']}元，现价{product_data['价格与服务']['现价']}元")
-        print(f"  生成文件：{result['data']['product_file']}")
-
-        # 清理测试文件
-        if os.path.exists(result["data"]["product_file"]):
-            os.remove(result["data"]["product_file"])
+        print(f"  商品数据已生成并保存在上下文，无本地文件")
 
         return result["data"]
     else:
@@ -240,6 +224,62 @@ def example_video_overall_parsing(video_slices_data):
         return None
 
 
+def example_persistence_and_resume():
+    """流水线持久化和断点续跑示例"""
+    print("\n" + "=" * 60)
+    print("💾 流水线持久化和断点续跑示例")
+    print("=" * 60)
+
+    from backend.v1.app.rag.core.pipline import PipelineExecutionDAO, PipelineExecutionStatus
+
+    # 创建流水线（默认开启持久化）
+    pipeline = VideoParsingPipeline(
+        enable_persistence=True,
+        persist_after_each_processor=True
+    )
+
+    # 第一次执行（模拟执行到一半失败）
+    print("\n1. 第一次执行流水线（模拟中途失败）...")
+    result = pipeline.run_with_persistence({
+        "video_id": "v_test_001",
+        "video_path": "/path/to/test/video.mp4",
+        "video_duration": 30000
+    })
+
+    if not result["success"]:
+        execution_id = result["execution_id"]
+        print(f"   执行失败，execution_id: {execution_id}")
+        print(f"   错误信息: {result['errors'][0]}")
+
+        # 查询执行状态
+        status = pipeline.get_execution_status(execution_id)
+        if status:
+            print(f"\n2. 查询执行状态:")
+            print(f"   状态: {status['status']}")
+            print(f"   执行到处理器索引: {status['current_processor_index']}/{status['total_processors']}")
+
+            # 修复问题后，从断点恢复执行
+            print("\n3. 从断点恢复执行...")
+            resume_result = pipeline.resume_execution(execution_id)
+
+            if resume_result["success"]:
+                print("   恢复执行成功！")
+                slice_summary = resume_result["data"]["slice_validation_summary"]
+                print(f"   分片校验结果：共{slice_summary['total']}个切片，{slice_summary['valid']}个通过，{slice_summary['invalid']}个失败")
+            else:
+                print(f"   恢复执行失败: {resume_result['errors']}")
+
+    # 演示关闭持久化的执行方式
+    print("\n4. 关闭持久化的执行方式（无断点续跑能力，性能更好）:")
+    pipeline_no_persistence = VideoParsingPipeline(enable_persistence=False)
+    result = pipeline_no_persistence.run({
+        "video_id": "v_test_002",
+        "video_path": "/path/to/test/video2.mp4",
+        "video_duration": 15000
+    })
+    print(f"   执行结果: {'成功' if result['success'] else '失败'}")
+
+
 def main():
     """主函数：运行所有示例"""
     print("🚀 运行三条流水线示例...\n")
@@ -253,6 +293,9 @@ def main():
     # 3. 运行独立的视频整体理解流水线（可选，演示如何单独使用）
     if video_data:
         overall_data = example_video_overall_parsing(video_data)
+
+    # 4. 运行持久化和断点续跑示例
+    example_persistence_and_resume()
 
     print("\n" + "=" * 60)
     print("🎉 所有流水线示例运行完成！")

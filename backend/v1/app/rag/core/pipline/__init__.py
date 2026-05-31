@@ -5,19 +5,25 @@ from .base import PipelineContext, BaseProcessor, BasePipeline
 from .processors import (
     VideoSplitProcessor,
     VideoUnderstandingProcessor,
-    SliceGenerateProcessor,
     SchemaValidationProcessor,
     ProductUnderstandingProcessor,
     ProductGenerateProcessor,
     VectorizationProcessor,
-    VideoOverallUnderstandingProcessor
+    VideoOverallUnderstandingProcessor,
+    VideoGenerateProcessor,
+    VideoAggregationProcessor
 )
 
 # 导出流水线
 from .pipelines import (
     VideoParsingPipeline,
-    ProductParsingPipeline
+    ProductParsingPipeline,
+    VideoOverallParsingPipeline
 )
+
+# 导出持久化相关
+from .dao.pipeline_execution_dao import PipelineExecutionDAO
+from backend.v1.app.models.pipeline_execution import PipelineExecution, PipelineExecutionStatus
 
 __all__ = [
     # 核心抽象
@@ -28,14 +34,21 @@ __all__ = [
     # 处理器
     "VideoSplitProcessor",
     "VideoUnderstandingProcessor",
-    "SliceGenerateProcessor",
     "SchemaValidationProcessor",
     "ProductUnderstandingProcessor",
     "ProductGenerateProcessor",
     "VectorizationProcessor",
     "VideoOverallUnderstandingProcessor",
+    "VideoGenerateProcessor",
+    "VideoAggregationProcessor",
 
     # 流水线
     "VideoParsingPipeline",
-    "ProductParsingPipeline"
+    "ProductParsingPipeline",
+    "VideoOverallParsingPipeline",
+
+    # 持久化相关
+    "PipelineExecutionDAO",
+    "PipelineExecution",
+    "PipelineExecutionStatus"
 ]

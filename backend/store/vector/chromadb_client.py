@@ -2,6 +2,8 @@ import chromadb
 from chromadb import Settings
 from typing import Dict
 
+from chromadb.api.models import Collection
+
 from backend.v1.app.config.config import settings
 from .base import VectorDatabase
 
@@ -9,34 +11,53 @@ from .base import VectorDatabase
 class ChromaDBClient(VectorDatabase):
     """ChromaDB 向量数据库客户端封装"""
     _instance = None
+    _client = None  # 共享的ChromaDB客户端连接
 
-    def __new__(cls):
-        """单例模式"""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
+    def __new__(cls, collection_name: str = None):
+        """支持指定collection的实例创建"""
+        if collection_name is None and cls._instance is not None:
+            # 返回默认collection的单例
+            return cls._instance
 
-    def __init__(self):
-        """初始化客户端（仅执行一次）"""
+        instance = super().__new__(cls)
+        instance._initialized = False
+        instance.collection_name = collection_name or settings.CHROMADB_COLLECTION
+
+        if collection_name is None:
+            # 保存默认collection的实例为单例
+            cls._instance = instance
+
+        return instance
+
+    def __init__(self, collection_name: str = None):
+        """初始化客户端（连接仅初始化一次）"""
         if self._initialized:
             return
-        self.client = chromadb.HttpClient(
-            host=settings.CHROMADB_HOST,
-            port=settings.CHROMADB_PORT,
-            settings=Settings(anonymized_telemetry=False)
-        )
-        self.collection = self._ensure_collection_exists()
+
+        # 初始化共享的ChromaDB客户端连接
+        if ChromaDBClient._client is None:
+            ChromaDBClient._client = chromadb.HttpClient(
+                host=settings.CHROMADB_HOST,
+                port=settings.CHROMADB_PORT,
+                settings=Settings(anonymized_telemetry=False)
+            )
+
+        self.client = ChromaDBClient._client
+
+        # 确保集合存在
+        self.collection = self._ensure_collection_exists(collection_name)
+
         self._initialized = True
 
-    def _ensure_collection_exists(self):
+    def _ensure_collection_exists(self, collection_name: str = None):
         """确保集合存在，不存在则创建"""
+        target_collection = collection_name or settings.CHROMADB_COLLECTION
         try:
-            collection = self.client.get_collection(name=settings.CHROMADB_COLLECTION)
+            collection = self.client.get_collection(name=target_collection)
         except Exception:
             collection = self.client.create_collection(
-                name=settings.CHROMADB_COLLECTION,
-                metadata={"description": "视频内容向量存储集合"},
+                name=target_collection,
+                metadata={"description": f"Collection: {target_collection}"},
             )
         return collection
 
@@ -100,6 +121,8 @@ class ChromaDBClient(VectorDatabase):
         raise NotImplementedError("ChromaDB does not support collection releasing")
 
 
-def get_chromadb_client():
+
+
+def get_chromadb_client(collection_name: str = None):
     """获取ChromaDB客户端实例"""
-    return ChromaDBClient()
+    return ChromaDBClient(collection_name)
