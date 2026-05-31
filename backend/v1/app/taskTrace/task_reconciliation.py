@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from backend.v1.app.generate.service import project_workflow_state
+from backend.v1.app.generate.service.workflow import state as project_workflow_state
 
 
 ACTIVE_CELERY_STATES = {"PENDING", "RECEIVED", "STARTED", "RETRY"}

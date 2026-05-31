@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.store.database.async_database import SessionLocal
 from backend.store.obj.factory import get_storage_client
-from backend.v1.app.generate.temp.celery_app import celery_app
+from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.merge_task import MergeTask
 from backend.ffmpeg import ffmpeg_tool

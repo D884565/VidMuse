@@ -1,7 +1,7 @@
 """持久化合并任务的 Celery Worker。"""
 import asyncio
 
-from backend.v1.app.generate.temp.celery_app import celery_app
+from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.v1.app.merge.service.merge_service import merge_service
 
 

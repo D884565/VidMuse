@@ -9,8 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.script import Script
-from backend.v1.app.generate.service.generation_workflow import generation_workflow_service
-from backend.v1.app.generate.service.generation_limits import validate_total_frame_duration
+from backend.v1.app.generate.service.workflow.state import generation_workflow_service
+from backend.v1.app.generate.service.workflow.limits import validate_total_frame_duration
 
 # 允许前端通过 PATCH 接口修改的帧字段
 EDITABLE_FRAME_FIELDS = {
