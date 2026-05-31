@@ -4,14 +4,15 @@
 所有业务逻辑委托给 ProductCategoryService，自身不包含业务代码。
 分类接口为公共接口，不需要登录认证。
 """
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from backend.framework.web.response import Response
 from backend.framework.exceptions.exceptions import BusinessException
 from backend.store.database.sync_database import get_db
-from backend.v1.app.product_category.service.product_category_service import ProductCategoryService
-from backend.v1.app.product_category.dao.schema import CategoryCreateRequest, CategoryUpdateRequest, CategoryInfo, CategoryTree
+from backend.v1.app.product.dao.schema import CategoryCreateRequest, CategoryUpdateRequest
+from backend.v1.app.product.service.product_category_service import ProductCategoryService
+
 
 router = APIRouter(prefix="/product/categories", tags=["商品分类模块"])
 

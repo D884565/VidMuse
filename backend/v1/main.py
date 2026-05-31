@@ -10,7 +10,7 @@ from backend.framework.web.exception_handler import register_exception_handlers
 from backend.v1.app.generate.controller.generation import router as generation_router
 from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.product.controller.product_controller import router as product_router
-from backend.v1.app.product_category.controller.product_category_controller import router as product_category_router
+from backend.v1.app.product.controller.product_category_controller import router as product_category_router
 from backend.v1.app.rag.controller.asset_controller import router as asset_router
 from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.video.controller.video import router as video_router

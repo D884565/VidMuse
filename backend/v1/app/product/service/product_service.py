@@ -7,16 +7,16 @@
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from backend.v1.app.models.product import Product
 from backend.v1.app.product.dao.product_dao import ProductDAO
 from backend.v1.app.product.dao.schema import product_to_dict, ProductCreateRequest, ProductUpdateRequest
-from backend.v1.app.product_category.dao.product_category_dao import ProductCategoryDAO
+from backend.v1.app.product.dao.product_category_dao import ProductCategoryDAO
 from backend.framework.exceptions.exceptions import BusinessException
 from backend.framework.exceptions.error_codes import (
     RESOURCE_NOT_FOUND,
     FORBIDDEN,
     PARAM_ERROR,
 )
+from backend.v1.app.rag.core.pipline.pipelines.product_parsing_pipeline import ProductParsingPipeline
 
 
 class ProductService:
@@ -47,16 +47,20 @@ class ProductService:
             product_data["category_path"] = category.path
 
         product = ProductDAO.create_product(db, product_data)
-        return {
+
+        result = {
             "id": product.id,
             "name": product.name,
             "brand": product.brand,
             "category": product.category,
             "category_id": product.category_id,
             "user_id": product.user_id,
+            "auto_parse": product.auto_parse,
             "created_at": product.created_at.isoformat() if product.created_at else "",
             "updated_at": product.updated_at.isoformat() if product.updated_at else "",
         }
+
+        return result
 
     @staticmethod
     def get_product(db: Session, product_id: int, include_category_info: bool = True) -> dict:
@@ -133,6 +137,190 @@ class ProductService:
         ProductDAO.delete_product(db, product_id)
 
     @staticmethod
+    def parse_product(db: Session, product_id: int, user_id: int, force: bool = False) -> str:
+        """手动触发商品解析
+
+        :param db: 数据库会话
+        :param product_id: 商品ID
+        :param user_id: 当前用户ID（用于权限校验）
+        :param force: 是否强制重新解析
+        :return: 解析执行ID
+        :raises BusinessException: 商品不存在或无权限时抛出异常
+        """
+        product = ProductDAO.get_product_by_id(db, product_id)
+        if not product:
+            raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
+        if product.user_id is not None and product.user_id != user_id:
+            raise BusinessException(FORBIDDEN, "无权限操作此商品")
+
+        # 检查是否正在运行
+        if product.parsing_status == "running" and not force:
+            return product.execution_id
+
+        # 获取商品图片和描述
+        from backend.v1.app.product.dao.schema import _parse_json_field
+        images = _parse_json_field(product.images, [])
+        description = product.description or ""
+
+        # 如果没有图片和描述，无法解析
+        if not images and not description:
+            raise BusinessException(PARAM_ERROR, "商品没有图片和描述信息，无法解析")
+
+        # 更新状态为运行中
+        ProductDAO.update_product(db, product_id, {
+            "parsing_status": "running",
+            "parsing_error": None
+        })
+
+        # 构造流水线输入
+        input_data = {
+            "images": images,
+            "description": description,
+            "product_id": product_id,
+            "user_id": user_id
+        }
+
+        # 执行解析流水线
+        pipeline = ProductParsingPipeline()
+        result = pipeline.run_with_persistence(input_data)
+
+        if not result["success"]:
+            error_msg = f"解析任务启动失败: {result['errors'][0] if result['errors'] else '未知错误'}"
+            ProductDAO.update_product(db, product_id, {
+                "parsing_status": "failed",
+                "parsing_error": error_msg
+            })
+            raise BusinessException(PARAM_ERROR, error_msg)
+
+        execution_id = result["execution_id"]
+
+        # 保存execution_id到商品表
+        ProductDAO.update_product(db, product_id, {
+            "execution_id": execution_id
+        })
+
+        # TODO: 异步执行解析，现在是同步的，后续可以放到后台任务
+        # 临时同步执行并更新状态
+        if result["success"]:
+            # 保存解析结果
+            if "data" in result and "product_understanding" in result["data"]:
+                ProductDAO.update_product(db, product_id, {
+                    "ai_features": result["data"]["product_understanding"],
+                    "parsing_status": "completed"
+                })
+            else:
+                ProductDAO.update_product(db, product_id, {
+                    "parsing_status": "completed"
+                })
+
+        return execution_id
+
+    @staticmethod
+    def get_parsing_progress(db: Session, product_id: int, user_id: int) -> dict:
+        """
+        查询商品解析进度
+        :param db: 数据库会话
+        :param product_id: 商品ID
+        :param user_id: 当前用户ID
+        :return: 进度信息
+        """
+        product = ProductDAO.get_product_by_id(db, product_id)
+        if not product:
+            raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
+        if product.user_id is not None and product.user_id != user_id:
+            raise BusinessException(FORBIDDEN, "无权限操作此商品")
+
+        # 基础信息
+        progress = {
+            "product_id": product.id,
+            "parsing_status": product.parsing_status,
+            "execution_id": product.execution_id,
+            "parsing_error": product.parsing_error,
+            "ai_features": product.ai_features,
+            "updated_at": product.updated_at.isoformat() + "Z" if product.updated_at else None
+        }
+
+        # 如果有execution_id，查询详细进度
+        if product.execution_id:
+            from backend.v1.app.rag.core.pipline import ProductParsingPipeline
+            execution_status = ProductParsingPipeline.get_execution_status(product.execution_id)
+            if execution_status:
+                progress["progress_detail"] = {
+                    "current_processor": execution_status["current_processor_index"] + 1,
+                    "total_processors": execution_status["total_processors"],
+                    "progress_percent": round((execution_status["current_processor_index"] + 1) / execution_status["total_processors"] * 100, 2) if execution_status["total_processors"] > 0 else 0,
+                    "status": execution_status["status"],
+                    "created_at": execution_status["created_at"],
+                    "updated_at": execution_status["updated_at"]
+                }
+
+        return progress
+
+    @staticmethod
+    def retry_parsing(db: Session, product_id: int, user_id: int) -> str:
+        """
+        重试失败的商品解析
+        :param db: 数据库会话
+        :param product_id: 商品ID
+        :param user_id: 当前用户ID
+        :return: 执行ID
+        """
+        product = ProductDAO.get_product_by_id(db, product_id)
+        if not product:
+            raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
+        if product.user_id is not None and product.user_id != user_id:
+            raise BusinessException(FORBIDDEN, "无权限操作此商品")
+
+        # 检查状态
+        if product.parsing_status not in ["failed", None]:
+            raise BusinessException(PARAM_ERROR, "只有失败的解析任务可以重试")
+
+        # 如果有execution_id，尝试断点恢复
+        if product.execution_id:
+            try:
+                from backend.v1.app.rag.core.pipline import ProductParsingPipeline
+                pipeline = ProductParsingPipeline()
+
+                # 更新状态为运行中
+                ProductDAO.update_product(db, product_id, {
+                    "parsing_status": "running",
+                    "parsing_error": None
+                })
+
+                # 恢复执行
+                result = pipeline.resume_execution(product.execution_id)
+
+                if result["success"]:
+                    # 解析成功，更新结果
+                    if "data" in result and "product_understanding" in result["data"]:
+                        ProductDAO.update_product(db, product_id, {
+                            "ai_features": result["data"]["product_understanding"],
+                            "parsing_status": "completed"
+                        })
+                    else:
+                        ProductDAO.update_product(db, product_id, {
+                            "parsing_status": "completed"
+                        })
+                    return product.execution_id  # type: ignore
+                else:
+                    # 重试失败
+                    error_msg = f"重试解析失败: {result['errors'][0] if result['errors'] else '未知错误'}"
+                    ProductDAO.update_product(db, product_id, {
+                        "parsing_status": "failed",
+                        "parsing_error": error_msg
+                    })
+                    raise BusinessException(PARAM_ERROR, error_msg)
+
+            except Exception as e:
+                # 恢复失败，降级为重新执行
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"断点恢复失败，将重新执行完整解析: {str(e)}")
+
+        # 没有execution_id或恢复失败，重新执行完整解析
+        return ProductService.parse_product(db, product_id, user_id, force=True)
+
+    @staticmethod
     def list_products(
         db: Session,
         user_id: Optional[int] = None,
@@ -183,6 +371,7 @@ class ProductService:
                 "price": float(p.price) if p.price is not None else None,
                 "main_image_url": p.main_image_url,
                 "platform": p.platform,
+                "auto_parse": p.auto_parse,
                 "is_public": p.user_id is None,  # user_id 为空表示平台公共商品
                 "created_at": p.created_at.isoformat() if p.created_at else "",
             })
