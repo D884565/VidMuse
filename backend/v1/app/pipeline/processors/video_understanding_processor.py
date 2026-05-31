@@ -5,7 +5,7 @@ from typing import Dict, List
 from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
 from backend.providers.dto.schema import VideoUnderstandingRequest
-from backend.v1.app.pipeline.utils import load_template
+from backend.v1.app.pipeline.utils import load_template, load_prompt
 from backend.v1.app.pipeline.utils.json_flattener import JsonFlattener
 
 
@@ -22,24 +22,8 @@ class VideoUnderstandingProcessor(BaseProcessor):
         :param llm_client: 大模型客户端，默认使用VolcanoLLM
         """
         self.llm_client = llm_client or VolcanoLLM(key=None, model_name=None)
-        self.prompt_template = """
-        请分析这个电商短视频片段，输出以下结构化信息：
-        1. 模板名称：片段的内容类型名称（如：主播情绪开场、产品功能展示等）
-        2. 模板类型：从以下选项选择：HOOK(钩子开场), PAIN_POINT(痛点描述), PRODUCT_SHOW(产品展示), TRUST_BUILD(信任建立), CTA(行动号召)
-        3. 创作要素：
-           - 画面：画面内容描述
-           - 动作：人物动作描述
-           - 台词：人物台词内容
-           - 运镜：镜头运动方式
-           - 时长：片段时长（如：3-5秒）
-           - 情绪评分：0-1之间的浮点数，表示主播情绪兴奋程度
-        4. 生成Prompt完整模板：可以直接用于AI视频生成的完整Prompt描述
-
-        完整的json模板如下:
-        {json_info}
-
-        请严格按照JSON格式输出，不要有其他内容。
-        """
+        prompt_config = load_prompt("slice_understanding")
+        self.prompt_template = prompt_config["template"]
 
     def _run_async(self, coro):
         """

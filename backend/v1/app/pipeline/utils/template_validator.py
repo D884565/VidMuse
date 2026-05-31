@@ -17,11 +17,20 @@ CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "../../../../../../../"))
 VALID_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve", "valid_template")
 TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve")
+PROMPT_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve", "prompts")
 
 # 缓存已加载的模板，避免重复读取文件
 _template_cache: Dict[str, Dict[str, Any]] = {}
 # 通用JSON文件缓存
 _general_json_cache: Dict[str, Any] = {}
+# 提示词类型与对应文件的映射
+PROMPT_TYPE_MAP = {
+    "slice_understanding": "slice_understanding.json",
+    "video_overall_understanding": "video_overall_understanding.json",
+    "product_understanding": "product_understanding.json"
+}
+# 提示词缓存
+_prompt_cache: Dict[str, Dict[str, Any]] = {}
 
 
 def load_json_file(file_path: str,
@@ -192,3 +201,37 @@ def get_supported_template_types() -> list[str]:
     获取支持的模板类型列表
     """
     return list(TEMPLATE_TYPE_MAP.keys())
+
+
+def load_prompt(prompt_type: str) -> Dict[str, Any]:
+    """
+    加载指定类型的提示词模板
+
+    Args:
+        prompt_type: 提示词类型，可选值：slice_understanding, video_overall_understanding, product_understanding
+
+    Returns:
+        加载成功返回提示词字典，包含 name, description, template, placeholders, output_schema, output_structure 等字段
+
+    Raises:
+        ValueError: 不支持的提示词类型
+        FileNotFoundError: 提示词文件不存在
+    """
+    if prompt_type not in PROMPT_TYPE_MAP:
+        raise ValueError(f"不支持的提示词类型: {prompt_type}，支持的类型: {list(PROMPT_TYPE_MAP.keys())}")
+
+    if prompt_type in _prompt_cache:
+        return _prompt_cache[prompt_type]
+
+    prompt_file = os.path.join(PROMPT_DIR, PROMPT_TYPE_MAP[prompt_type])
+    prompt = load_json_file(prompt_file, validate_schema=False)
+
+    _prompt_cache[prompt_type] = prompt
+    return prompt
+
+
+def get_supported_prompt_types() -> list[str]:
+    """
+    获取支持的提示词类型列表
+    """
+    return list(PROMPT_TYPE_MAP.keys())
