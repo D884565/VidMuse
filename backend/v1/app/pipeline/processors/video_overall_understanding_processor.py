@@ -6,7 +6,7 @@ from typing import Dict, List
 from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
 from backend.providers.dto.schema import ChatRequest, ChatMessage, TextContent, TextUnderstandingRequest
-from backend.v1.app.pipeline.utils import load_template
+from backend.v1.app.pipeline.utils import load_template, load_prompt
 from backend.v1.app.pipeline.utils.json_flattener import JsonFlattener
 
 
@@ -23,29 +23,8 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         :param llm_client: 大模型客户端，默认使用VolcanoLLM
         """
         self.llm_client = llm_client or VolcanoLLM(key=None, model_name=None)
-        self.prompt_template = """
-        请基于以下视频分片的解析结果，对整个视频进行整体分析，输出结构化的视频信息，严格按照JSON格式返回。
-
-        需要包含以下字段：
-        1. 视频基本信息：
-           - video_id: 视频ID
-           - 商品名称: 视频推广的商品名称
-           - 目标人群: 视频的目标受众
-           - 总时长_ms: 视频总时长（毫秒）
-           - 原片核心文案: 视频中出现的核心台词数组
-
-        2. 片段索引列表：直接使用输入中的segment_list数组，无需修改
-
-        3. 片段间关系：
-           - 转场序列: 各片段之间的转场方式数组，如["硬切", "叠化"]
-           - 情绪曲线: 视频的情绪变化曲线数组，如["高涨→平稳", "平稳→微升"]
-           - 视觉节奏: 整体视觉节奏描述
-           - BGM节奏匹配: BGM与画面的匹配情况描述
-
-
-        请严格按照如下json格式输出解析内容，请保证所有字段完整。
-        {json_template}
-        """
+        prompt_config = load_prompt("video_overall_understanding")
+        self.prompt_template = prompt_config["template"]
 
     def _run_async(self, coro):
         """
