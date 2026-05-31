@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import requests
 
 from backend.v1.app.config.config import settings
-from backend.v1.app.generate.service.external_call_policy import TTS_TIMEOUT_SECONDS
+from backend.v1.app.generate.service.generateUtils.external_call_policy import TTS_TIMEOUT_SECONDS
 from backend.ffmpeg import ffmpeg_tool
 
 logger = logging.getLogger(__name__)

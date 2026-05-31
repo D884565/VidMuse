@@ -11,15 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.store.database.async_database import get_db
 from backend.v1.app.generate.dao.project import ProjectCreate
-from backend.v1.app.generate.service.project import ProjectService
+from backend.v1.app.generate.service.generateUtils.project import ProjectService
 from backend.v1.app.generate.service.stages.script import script_generation_service
 from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
 from backend.v1.app.generate.service.chat.chat_service import chat_service
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
 from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
 from backend.v1.app.generate.service.chat.initial_message import project_initial_message_builder
-from backend.v1.app.generate.service.task_service import generation_task_service
-from backend.v1.app.generate.service.storyboard import storyboard_service
+from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
+from backend.v1.app.generate.service.generateUtils.storyboard import storyboard_service
 from backend.v1.app.generate.service.workflow.blocks import build_script_stage_blocks
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
 from backend.framework.web import Response
@@ -351,7 +351,7 @@ async def export_project_video(
     db: AsyncSession = Depends(get_db),
 ):
     """直接下载项目成片视频，不创建异步任务、不写入素材库。"""
-    from backend.v1.app.generate.service.export import export_service, ExportDownloadError
+    from backend.v1.app.generate.service.generateUtils.export import export_service, ExportDownloadError
 
     project = await ProjectService.get_project(db, project_id)
     if project.get("user_id") != current_user_id:

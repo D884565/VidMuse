@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from backend.v1.app.generate.service.task_service import generation_task_service
+from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
 
 
 class FakeSession:

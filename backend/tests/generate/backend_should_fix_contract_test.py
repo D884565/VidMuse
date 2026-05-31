@@ -1,7 +1,7 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from backend.v1.app.generate.service.reference_image_utils import (
+from backend.v1.app.generate.service.generateUtils.reference_image_utils import (
     extract_reference_images,
     select_reference_images,
 )
@@ -130,7 +130,7 @@ def test_workflow_mutations_lock_project_row():
 def test_generation_and_chat_paths_do_not_directly_assign_legacy_or_stage_status():
     generation_source = read("backend/v1/app/generate/controller/generation.py")
     chat_source = read("backend/v1/app/generate/service/chat/chat_service.py")
-    storyboard_source = read("backend/v1/app/generate/service/storyboard_service.py")
+    storyboard_source = read("backend/v1/app/generate/service/generateUtils/storyboard.py")
     video_generation_source = read("backend/v1/app/generate/service/stages/video_workflow.py")
     video_tasks_source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
