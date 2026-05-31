@@ -11,8 +11,10 @@ from backend.v1.app.generate.controller.generation import router as generation_r
 from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.product.controller.product_controller import router as product_router
 from backend.v1.app.product.controller.product_category_controller import router as product_category_router
-from backend.v1.app.rag.controller.asset_controller import router as asset_router
-from backend.v1.app.slice.controller.slice_controller import router as slice_router
+# TODO: rag 模块已移除，后续重新集成
+# from backend.v1.app.rag.controller.asset_controller import router as asset_router
+# TODO: slice 模块依赖 rag，暂时注释
+# from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.video.controller.video import router as video_router
 from backend.v1.app.merge.controller.merge import router as merge_router
 from backend.v1.app.search.rag_trace.controller.trace_controller import router as trace_router
@@ -62,8 +64,8 @@ app.include_router(generation_router)
 app.include_router(user_router, prefix="/generate/v1")
 app.include_router(product_router, prefix="/rag/v1")
 app.include_router(product_category_router, prefix="/rag/v1")
-app.include_router(asset_router, prefix="/rag/v1")
-app.include_router(slice_router, prefix="/rag/v1")
+# app.include_router(asset_router, prefix="/rag/v1")  # TODO: rag 模块已移除
+# app.include_router(slice_router, prefix="/rag/v1")  # TODO: slice 模块依赖 rag
 app.include_router(trace_router, prefix="/admin/v1")  # 后台观测系统接口
 app.include_router(video_router, prefix="/v1")
 app.include_router(merge_router, prefix="/v1")

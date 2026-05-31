@@ -29,8 +29,16 @@ class ChatService:
     """
 
     def __init__(self, rag_service=None):
-        self.llm = VolcanoLLM(key=None, model_name=None)
+        self._llm = None
         self.rag_service = rag_service
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            if VolcanoLLM is None:
+                raise RuntimeError("VolcanoLLM 不可用，请安装 openai 依赖")
+            self._llm = VolcanoLLM(key=None, model_name=None)
+        return self._llm
 
     async def handle_message(
         self,

@@ -18,8 +18,16 @@ class VideoComposer:
 
     def __init__(self):
         self.temp_dir = tempfile.gettempdir()
-        self.llm = VolcanoLLM(key=None, model_name=None)
+        self._llm = None
         self.storage = get_storage_client()
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            if VolcanoLLM is None:
+                raise RuntimeError("VolcanoLLM 不可用，请安装 openai 依赖")
+            self._llm = VolcanoLLM(key=None, model_name=None)
+        return self._llm
 
     def compose_frames(
         self,
