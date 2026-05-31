@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import Mock, patch
 from backend.v1.app.pipeline.processors.audio_info_extract_processor import AudioInfoExtractProcessor
+from backend.v1.app.pipeline.processors.audio_asr_processor import AudioASRProcessor
 from backend.v1.app.pipeline.base.context import PipelineContext
 from pydub import AudioSegment
 import io
@@ -80,3 +81,79 @@ def test_audio_info_extract_processor_download_error():
 
         assert result.has_errors()
         assert "Download failed" in str(result.errors[0])
+
+def test_audio_asr_processor_with_mock_config():
+    # 测试配置缺失时返回模拟数据
+    with patch('backend.v1.app.pipeline.processors.audio_asr_processor.settings',
+               VOLC_ENGINE_ACCESS_KEY=None,
+               VOLC_ENGINE_SECRET_KEY=None):
+        context = PipelineContext({
+            "audio_url": "https://test.com/test.mp3",
+            "object_name": "test/audio/test.mp3",
+            "duration": 10.5
+        })
+
+        processor = AudioASRProcessor()
+        result = processor.process(context)
+
+        assert "transcript" in result.data
+        assert "language" in result.data
+        assert "speakers" in result.data
+        assert isinstance(result.data["transcript"], str)
+        assert isinstance(result.data["speakers"], list)
+        assert result.data["transcript"] == "语音识别功能未配置，使用模拟识别结果"
+        assert result.data["language"] == "zh-CN"
+        assert result.data["speakers"] == ["说话人1"]
+
+def test_audio_asr_processor_missing_audio_params():
+    # 测试缺少音频参数的情况
+    with patch('backend.v1.app.pipeline.processors.audio_asr_processor.settings',
+               VOLC_ENGINE_ACCESS_KEY="test_key",
+               VOLC_ENGINE_SECRET_KEY="test_secret",
+               VOLC_ENGINE_ASR_ENDPOINT="https://asr.test.com",
+               VOLC_ENGINE_ASR_APP_ID="test_app_id"):
+        context = PipelineContext({
+            "duration": 10.5
+        })
+
+        processor = AudioASRProcessor()
+        result = processor.process(context)
+
+        assert result.data["transcript"] == "未找到音频文件"
+        assert result.data["language"] == "unknown"
+        assert result.data["speakers"] == []
+
+def test_audio_asr_processor_api_success():
+    # 测试API调用成功的情况
+    mock_response = Mock()
+    mock_response.json.return_value = {
+        "code": 0,
+        "result": {
+            "text": "这是测试语音识别结果",
+            "language": "zh-CN",
+            "speaker_info": [
+                {"speaker_id": 0, "start_time": 0, "end_time": 2},
+                {"speaker_id": 1, "start_time": 2, "end_time": 5}
+            ]
+        }
+    }
+    mock_response.raise_for_status.return_value = None
+
+    with patch('backend.v1.app.pipeline.processors.audio_asr_processor.requests.post', return_value=mock_response):
+        with patch('backend.v1.app.pipeline.processors.audio_asr_processor.settings',
+                   VOLC_ENGINE_ACCESS_KEY="test_key",
+                   VOLC_ENGINE_SECRET_KEY="test_secret",
+                   VOLC_ENGINE_ASR_ENDPOINT="https://asr.test.com",
+                   VOLC_ENGINE_ASR_APP_ID="test_app_id"):
+            context = PipelineContext({
+                "audio_url": "https://test.com/test.mp3",
+                "duration": 10.5
+            })
+
+            processor = AudioASRProcessor()
+            result = processor.process(context)
+
+            assert result.data["transcript"] == "这是测试语音识别结果"
+            assert result.data["language"] == "zh-CN"
+            assert result.data["speakers"] == ["说话人0", "说话人1"]
+
