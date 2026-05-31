@@ -11,14 +11,19 @@ from .processors import (
     VectorizationProcessor,
     VideoOverallUnderstandingProcessor,
     VideoGenerateProcessor,
-    VideoAggregationProcessor
+    VideoAggregationProcessor,
+    AudioInfoExtractProcessor,
+    AudioASRProcessor,
+    AudioClassificationProcessor,
+    AudioResultAggregator
 )
 
 # 导出流水线
 from .pipelines import (
     VideoParsingPipeline,
     ProductParsingPipeline,
-    VideoOverallParsingPipeline
+    VideoOverallParsingPipeline,
+    AudioParsingPipeline
 )
 
 # 导出持久化相关
@@ -41,11 +46,16 @@ __all__ = [
     "VideoOverallUnderstandingProcessor",
     "VideoGenerateProcessor",
     "VideoAggregationProcessor",
+    "AudioInfoExtractProcessor",
+    "AudioASRProcessor",
+    "AudioClassificationProcessor",
+    "AudioResultAggregator",
 
     # 流水线
     "VideoParsingPipeline",
     "ProductParsingPipeline",
     "VideoOverallParsingPipeline",
+    "AudioParsingPipeline",
 
     # 持久化相关
     "PipelineExecutionDAO",
