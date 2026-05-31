@@ -1,4 +1,4 @@
-from backend.v1.app.generate.service.project_workflow_state import (
+from backend.v1.app.generate.service.workflow.state import (
     advance_project_stage,
     confirm_project_stage,
     invalidate_project_from,

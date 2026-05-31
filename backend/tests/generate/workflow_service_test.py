@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-from backend.v1.app.generate.service.generation_workflow import GenerationWorkflowService
+from backend.v1.app.generate.service.workflow.state import GenerationWorkflowService
 
 
 class DummyProject:

@@ -15,7 +15,7 @@ def test_project_asset_migration_exists():
 
 
 def test_export_and_frame_tasks_have_real_celery_handlers():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert 'name="generate_frame_video_task"' in source
     assert 'name="generate_frame_image_task"' in source
@@ -34,9 +34,9 @@ def test_controller_dispatches_export_and_frame_tasks():
 def test_core_paths_use_project_workflow_state_helper():
     for path in (
         "backend/v1/app/generate/service/video_generation.py",
-        "backend/v1/app/generate/temp/video_tasks.py",
+        "backend/v1/app/generate/tasks/video_tasks.py",
         "backend/v1/app/generate/service/script_generation.py",
-        "backend/v1/app/generate/service/chat_service.py",
+        "backend/v1/app/generate/service/chat/chat_service.py",
     ):
         source = read(path)
         assert "project_workflow_state" in source

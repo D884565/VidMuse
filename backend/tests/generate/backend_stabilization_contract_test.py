@@ -1,13 +1,13 @@
 from pathlib import Path
 
-from backend.v1.app.generate.service.image_generation_service import ImageGenerationService
+from backend.v1.app.generate.service.stages.image_service import ImageGenerationService
 
 
 ROOT = Path("backend/v1/app/generate")
 
 
 def test_chat_service_executes_every_agent_action():
-    source = (ROOT / "service/chat_service.py").read_text(encoding="utf-8")
+    source = (ROOT / "service/chat/chat_service.py").read_text(encoding="utf-8")
 
     for action in (
         "GENERATE_SCRIPT",
@@ -52,7 +52,7 @@ def test_failed_frame_image_is_not_saved_as_real_image_url():
 
 
 def test_video_task_aborts_when_images_or_videos_fail():
-    source = (ROOT / "temp/video_tasks.py").read_text(encoding="utf-8")
+    source = (ROOT / "tasks/video_tasks.py").read_text(encoding="utf-8")
 
     assert "IMAGE_GENERATION_FAILED" in source
     assert "VIDEO_SEGMENT_GENERATION_FAILED" in source
