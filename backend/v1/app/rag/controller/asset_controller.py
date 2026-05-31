@@ -111,7 +111,27 @@ async def parse_asset(
 ):
     """手动触发已上传资产的AI解析，支持强制重新解析"""
     result = await AssetService.parse_asset(db=db, asset_id=asset_id, force=force)
-    return Response.success(data=result, message="解析任务已完成")
+    return Response.success(data=result, message="解析任务已启动")
+
+
+@router.get("/{asset_id}/parsing-progress", response_model=Response, summary="查询资产解析进度")
+def get_parsing_progress(
+        asset_id: int = Path(..., description="资产ID"),
+        db: Session = Depends(get_db)
+):
+    """查询资产解析的进度和状态"""
+    result = AssetService.get_parsing_progress(db=db, asset_id=asset_id)
+    return Response.success(data=result)
+
+
+@router.post("/{asset_id}/retry-parsing", response_model=Response, summary="重试失败的资产解析")
+async def retry_parsing(
+        asset_id: int = Path(..., description="资产ID"),
+        db: Session = Depends(get_db)
+):
+    """重试失败的资产解析，支持从断点处恢复执行"""
+    result = await AssetService.retry_parsing(db=db, asset_id=asset_id)
+    return Response.success(data=result, message="重试解析任务已启动")
 
 
 

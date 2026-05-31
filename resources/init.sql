@@ -8,6 +8,7 @@ DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS product_categories;
 DROP TABLE IF EXISTS projects;
 DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS pipeline_executions;
 
 
 
@@ -80,8 +81,14 @@ CREATE TABLE IF NOT EXISTS assets (
     format          VARCHAR(20) COMMENT '文件格式',
     ai_features     JSON COMMENT 'AI特征因子',
     source_type     TINYINT DEFAULT 0 COMMENT '来源',
+    parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
+    execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
+    parsing_error   TEXT COMMENT '解析错误信息',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    INDEX idx_parsing_status (parsing_status),
+    INDEX idx_execution_id (execution_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='素材库';
 
 
@@ -145,6 +152,12 @@ CREATE TABLE IF NOT EXISTS products (
     platform_id     VARCHAR(100) COMMENT '平台商品ID',
     specs           JSON COMMENT '商品规格参数',
     tags            JSON COMMENT '标签',
+    auto_parse      TINYINT(1) DEFAULT 0 COMMENT '是否创建后自动触发解析',
+    images          JSON COMMENT '商品图片URL列表',
+    parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
+    execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
+    parsing_error   TEXT COMMENT '解析错误信息',
+    ai_features     JSON COMMENT 'AI解析结果特征',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
@@ -154,6 +167,8 @@ CREATE TABLE IF NOT EXISTS products (
     INDEX idx_category (category),
     INDEX idx_category_id (category_id),
     INDEX idx_category_path (category_path),
+    INDEX idx_parsing_status (parsing_status),
+    INDEX idx_execution_id (execution_id),
     FULLTEXT INDEX ft_name_desc (name, description)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
 
@@ -215,3 +230,28 @@ CREATE TABLE IF NOT EXISTS agent_traces (
     INDEX idx_agent_traces_project_id (project_id),
     INDEX idx_agent_traces_created_at (created_at DESC)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent推理轨迹表';
+
+
+CREATE TABLE IF NOT EXISTS pipeline_executions (
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    execution_id        VARCHAR(64) NOT NULL COMMENT '执行ID，全局唯一',
+    pipeline_name       VARCHAR(100) NOT NULL COMMENT '流水线名称',
+    pipeline_type       VARCHAR(50) NOT NULL COMMENT '流水线类型：video/product/video_overall',
+    status              VARCHAR(20) NOT NULL COMMENT '执行状态：pending/running/completed/failed/cancelled',
+    current_processor_index INT NOT NULL COMMENT '当前执行到的处理器索引',
+    total_processors    INT NOT NULL COMMENT '总处理器数量',
+    input_params        JSON NOT NULL COMMENT '初始输入参数',
+    context_data        JSON COMMENT '上下文数据快照',
+    context_metadata    JSON COMMENT '上下文元数据快照',
+    errors              JSON COMMENT '错误信息列表',
+    error_message       TEXT COMMENT '最后一次错误信息',
+    result              JSON COMMENT '最终执行结果',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    completed_at        TIMESTAMP NULL COMMENT '完成时间',
+
+    UNIQUE KEY uk_execution_id (execution_id),
+    INDEX idx_pipeline_type (pipeline_type),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='流水线执行记录表';

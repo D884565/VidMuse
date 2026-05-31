@@ -1,7 +1,7 @@
 """资产/素材模型"""
 import datetime
 import json
-from sqlalchemy import String, BigInteger, Integer, DateTime, ForeignKey, func, JSON
+from sqlalchemy import String, BigInteger, Integer, DateTime, ForeignKey, func, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.store.database.async_database import Base
 
@@ -25,8 +25,20 @@ class Asset(Base):
     source_type: Mapped[int] = mapped_column(
         Integer, default=0, comment="来源：0-上传, 1-AI生成, 2-爬取, 3-购买"
     )
+    parsing_status: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, comment="解析状态：pending/running/completed/failed"
+    )
+    execution_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="流水线执行ID，用于断点续跑"
+    )
+    parsing_error: Mapped[str | None] = mapped_column(
+        Text, nullable=True, comment="解析错误信息"
+    )
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
+    )
+    updated_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
     )
 
     # 关系：资产拥有多个切片
@@ -45,5 +57,9 @@ class Asset(Base):
             "format": self.format,
             "ai_features": self.ai_features,
             "source_type": self.source_type,
+            "parsing_status": self.parsing_status,
+            "execution_id": self.execution_id,
+            "parsing_error": self.parsing_error,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
         }

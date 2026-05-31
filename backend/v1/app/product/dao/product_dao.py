@@ -24,7 +24,7 @@ class ProductDAO:
         :return: 创建后的 Product 对象
         """
         # 将 list/dict 类型的字段序列化为 JSON 字符串后存储
-        for field in ("selling_points", "specs", "tags"):
+        for field in ("selling_points", "specs", "tags", "images"):
             if isinstance(product_data.get(field), (list, dict)):
                 product_data[field] = json.dumps(product_data[field], ensure_ascii=False)
         product = Product(**product_data)

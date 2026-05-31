@@ -1,9 +1,9 @@
 """商品分类业务逻辑层"""
-from typing import Optional, List, Dict
+from typing import Optional, List
 from sqlalchemy.orm import Session
 
-from backend.v1.app.product_category.dao.product_category_dao import ProductCategoryDAO
-from backend.v1.app.product_category.dao.schema import CategoryCreateRequest, CategoryUpdateRequest, CategoryInfo, CategoryTree
+from backend.v1.app.product.dao.product_category_dao import ProductCategoryDAO
+from backend.v1.app.product.dao.schema import CategoryTree, CategoryCreateRequest, CategoryInfo, CategoryUpdateRequest
 
 
 class ProductCategoryService:
@@ -201,7 +201,6 @@ class ProductCategoryService:
             raise ValueError("该分类下有子分类，请先删除子分类")
 
         # 检查是否有商品关联该分类
-        from backend.v1.app.product.dao.product_dao import ProductDAO
         # 这里简单判断，实际应该查询是否有商品关联该分类
         # TODO: 实现查询商品是否关联该分类的逻辑
 

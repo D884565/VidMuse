@@ -1,8 +1,5 @@
-import json
-import os
 from typing import Dict, List
 from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
-from backend.v1.app.rag.core.pipline.utils.json_flattener import JsonFlattener
 
 
 class VideoAggregationProcessor(BaseProcessor):
@@ -85,44 +82,14 @@ class VideoAggregationProcessor(BaseProcessor):
 class VideoGenerateProcessor(BaseProcessor):
     """
     视频整体JSON生成处理器
-    根据整体理解结果生成符合模板要求的video.json文件
+    根据整体理解结果生成符合模板要求的视频结构化数据，保存在上下文中
     """
 
-    def __init__(self, output_dir: str = None):
+    def __init__(self):
         """
         初始化视频生成处理器
-
-        :param output_dir: 生成的JSON文件输出目录，默认使用项目内的resources/resolve目录
         """
-        if output_dir is None:
-            # 动态构建输出目录路径，适配不同操作系统
-            current_dir = os.path.abspath(__file__)
-            # 从当前文件向上找到项目根目录（通过查找.git目录或requirements.txt判断）
-            project_root = current_dir
-            max_depth = 15
-            while max_depth > 0:
-                # 优先查找项目根目录的标志性文件/目录
-                if (os.path.exists(os.path.join(project_root, ".git")) or
-                    os.path.exists(os.path.join(project_root, "requirements.txt")) or
-                    os.path.exists(os.path.join(project_root, "pyproject.toml"))):
-                    # 检查根目录下是否有resources目录
-                    if os.path.exists(os.path.join(project_root, "resources")):
-                        break
-                project_root = os.path.dirname(project_root)
-                max_depth -= 1
-            if max_depth == 0:
-                # 如果没有找到标志性文件，回退到查找最近的resources目录
-                project_root = current_dir
-                max_depth = 15
-                while max_depth > 0 and not os.path.exists(os.path.join(project_root, "resources")):
-                    project_root = os.path.dirname(project_root)
-                    max_depth -= 1
-                if max_depth == 0:
-                    raise RuntimeError("Could not find project root directory with resources folder")
-            output_dir = os.path.join(project_root, "resources", "resolve")
-
-        self.output_dir = output_dir
-        os.makedirs(self.output_dir, exist_ok=True)
+        pass
 
     def process(self, context: PipelineContext) -> PipelineContext:
         """
@@ -134,8 +101,8 @@ class VideoGenerateProcessor(BaseProcessor):
         - video_id: str 视频ID（初始输入）
 
         输出（写入上下文）：
-        - video_file: str 生成的视频JSON文件路径
         - video_data: Dict 视频结构化数据，符合Schema校验要求
+        - video_file: None 保留字段，兼容旧接口
         """
         ai_features = context.get("ai_features", {})
         aggregated_data = context.get("aggregated_video_data", {})
@@ -153,16 +120,8 @@ class VideoGenerateProcessor(BaseProcessor):
             "分片详情": aggregated_data.get("slices_detail", [])
         }
 
-        # 生成文件名
-        file_name = f"{video_id}_full.json"
-        file_path = os.path.join(self.output_dir, file_name)
-
-        # 写入文件
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(video_json, f, ensure_ascii=False, indent=2)
-
-        # 存储到上下文
-        context.set("video_file", file_path)
+        # 存储到上下文（不再写入本地文件）
+        context.set("video_file", None)  # 保留字段，兼容旧接口
         context.set("video_data", video_json)
         context.metadata["video_generated"] = True
 

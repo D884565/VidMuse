@@ -61,12 +61,13 @@ class AssetService:
         return f"assets/{type_dir}/{uuid_str[:2]}/{uuid_str[2:4]}/{uuid_str}.{ext}"
 
     @staticmethod
-    async def _extract_ai_features(id: int, asset_type: int, asset_url: str) -> dict:
+    async def _extract_ai_features(id: int, asset_type: int, asset_url: str, db: Session = None) -> dict:
         """
         提取AI特征
         :param id: 资产ID
         :param asset_type: 资产类型 1-图片 2-视频 3-音频
         :param asset_url: 资产的存储URL
+        :param db: 数据库会话，用于更新解析状态
         :return: AI特征字典
         """
         try:
@@ -86,13 +87,43 @@ class AssetService:
             elif asset_type == 2:  # 视频
                 pipeline = VideoParsingPipeline()
                 from backend.store import get_storage_client
-                result = pipeline.run({
+
+                # 更新解析状态为运行中
+                if db:
+                    AssetDAO.update_asset(db, id, {
+                        "parsing_status": "running"
+                    })
+
+                # 使用持久化方式执行流水线
+                result = pipeline.run_with_persistence({
                     "video_id": id,
                     "video_url": asset_url,
                     "object_name": AssetService.get_path_after_baseurl(asset_url)
                 })
+
+                # 保存execution_id到资产表
+                if db and "execution_id" in result:
+                    AssetDAO.update_asset(db, id, {
+                        "execution_id": result["execution_id"]
+                    })
+
                 if not result.get("success", False):
-                    raise ValueError(f"视频解析失败: {result.get('errors', [])}")
+                    error_msg = f"视频解析失败: {result.get('errors', [])}"
+                    # 更新解析状态为失败
+                    if db:
+                        AssetDAO.update_asset(db, id, {
+                            "parsing_status": "failed",
+                            "parsing_error": error_msg
+                        })
+                    raise ValueError(error_msg)
+
+                # 解析成功，更新状态
+                if db:
+                    AssetDAO.update_asset(db, id, {
+                        "parsing_status": "completed",
+                        "parsing_error": None
+                    })
+
                 content = result.get("data", {})
             elif asset_type == 3:  # 音频
                 # todo 后期实现音频解析
@@ -186,7 +217,7 @@ class AssetService:
         :return: 解析结果上下文
         """
         # 提取AI特征
-        context = await AssetService._extract_ai_features(asset_id, asset_type, asset_url)
+        context = await AssetService._extract_ai_features(asset_id, asset_type, asset_url, db=db)
 
         # 处理切片逻辑 - 只针对视频类型
         if asset_type == 2 and context.get("slice_len", 0) > 0:
@@ -564,7 +595,7 @@ class AssetService:
         :param db: 数据库会话
         :param asset_id: 资产ID
         :param force: 是否强制重新解析，即使已经解析过
-        :return: 解析结果
+        :return: 解析结果，包含execution_id
         """
         # 获取资产信息
         asset = AssetDAO.get_asset_by_id(db, asset_id)
@@ -574,6 +605,21 @@ class AssetService:
         # 检查是否已经解析过
         if asset.ai_features is not None and not force:
             raise BusinessException(PARAM_ERROR, "资产已经解析过，如需重新解析请指定force=true")
+
+        # 如果有正在运行的解析任务，直接返回
+        if asset.parsing_status == "running" and not force:
+            return {
+                "id": asset.id,
+                "parsing_status": asset.parsing_status,
+                "execution_id": asset.execution_id,
+                "message": "解析任务正在进行中"
+            }
+
+        # 更新状态为待执行
+        AssetDAO.update_asset(db, asset_id, {
+            "parsing_status": "pending",
+            "parsing_error": None
+        })
 
         # 执行解析
         context = await AssetService._process_asset_parsing(
@@ -596,8 +642,132 @@ class AssetService:
             "url": asset_dict["url"],
             "duration": asset_dict["duration"],
             "ai_features": asset_dict["ai_features"],
-            "analysis_completed": True
+            "parsing_status": asset_dict["parsing_status"],
+            "execution_id": asset_dict["execution_id"],
+            "parsing_error": asset_dict["parsing_error"],
+            "analysis_completed": asset_dict["parsing_status"] == "completed"
         }
+
+    @staticmethod
+    def get_parsing_progress(db: Session, asset_id: int) -> dict:
+        """
+        查询资产解析进度
+        :param db: 数据库会话
+        :param asset_id: 资产ID
+        :return: 进度信息
+        """
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        if not asset:
+            raise BusinessException(PARAM_ERROR, "资产不存在")
+
+        # 基础信息
+        progress = {
+            "asset_id": asset.id,
+            "parsing_status": asset.parsing_status,
+            "execution_id": asset.execution_id,
+            "parsing_error": asset.parsing_error,
+            "updated_at": asset.updated_at.isoformat() + "Z" if asset.updated_at else None
+        }
+
+        # 如果有execution_id，查询详细进度
+        if asset.execution_id:
+            from backend.v1.app.rag.core.pipline import VideoParsingPipeline
+            execution_status = VideoParsingPipeline.get_execution_status(asset.execution_id)
+            if execution_status:
+                progress["progress_detail"] = {
+                    "current_processor": execution_status["current_processor_index"] + 1,
+                    "total_processors": execution_status["total_processors"],
+                    "progress_percent": round((execution_status["current_processor_index"] + 1) / execution_status["total_processors"] * 100, 2) if execution_status["total_processors"] > 0 else 0,
+                    "status": execution_status["status"],
+                    "created_at": execution_status["created_at"],
+                    "updated_at": execution_status["updated_at"]
+                }
+
+        return progress
+
+    @staticmethod
+    async def retry_parsing(db: Session, asset_id: int) -> dict:
+        """
+        重试失败的资产解析，从断点处恢复
+        :param db: 数据库会话
+        :param asset_id: 资产ID
+        :return: 解析结果
+        """
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        if not asset:
+            raise BusinessException(PARAM_ERROR, "资产不存在")
+
+        # 检查状态
+        if asset.parsing_status not in ["failed", None]:
+            raise BusinessException(PARAM_ERROR, "只有失败的解析任务可以重试")
+
+        # 如果有execution_id，尝试断点恢复
+        if asset.execution_id:
+            try:
+                from backend.v1.app.rag.core.pipline import VideoParsingPipeline, ProductParsingPipeline
+
+                # 根据资产类型选择对应的流水线
+                if asset.type == 2:  # 视频
+                    pipeline = VideoParsingPipeline()
+                elif asset.type == 1:  # 图片（商品解析）
+                    pipeline = ProductParsingPipeline()
+                else:
+                    raise ValueError("不支持的资产类型重试")
+
+                # 更新状态为运行中
+                AssetDAO.update_asset(db, asset_id, {
+                    "parsing_status": "running",
+                    "parsing_error": None
+                })
+
+                # 恢复执行
+                result = pipeline.resume_execution(asset.execution_id)
+
+                if result["success"]:
+                    # 解析成功，更新资产信息
+                    context = result["data"]
+                    await AssetService._process_asset_parsing(
+                        db=db,
+                        asset_id=asset.id,
+                        asset_type=asset.type,
+                        asset_url=asset.url,
+                        asset_dict=asset.to_dict()
+                    )
+
+                    # 更新状态为完成
+                    AssetDAO.update_asset(db, asset_id, {
+                        "parsing_status": "completed",
+                        "parsing_error": None
+                    })
+
+                    updated_asset = AssetDAO.get_asset_by_id(db, asset_id)
+                    return {
+                        "id": updated_asset.id,
+                        "parsing_status": "completed",
+                        "execution_id": asset.execution_id,
+                        "ai_features": updated_asset.ai_features,
+                        "message": "重试解析成功"
+                    }
+                else:
+                    # 重试失败
+                    error_msg = f"重试解析失败: {result['errors'][0] if result['errors'] else '未知错误'}"
+                    AssetDAO.update_asset(db, asset_id, {
+                        "parsing_status": "failed",
+                        "parsing_error": error_msg
+                    })
+                    raise BusinessException(PARAM_ERROR, error_msg)
+
+            except Exception as e:
+                # 恢复失败，降级为重新执行
+                logger.warning(f"断点恢复失败，将重新执行完整解析: {str(e)}")
+
+        # 没有execution_id或恢复失败，重新执行完整解析
+        AssetDAO.update_asset(db, asset_id, {
+            "parsing_status": "pending",
+            "parsing_error": None
+        })
+
+        return await AssetService.parse_asset(db, asset_id, force=True)
 
     @staticmethod
     def delete_asset(db: Session, asset_id: int) -> None:

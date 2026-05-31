@@ -19,13 +19,15 @@ class VideoOverallParsingPipeline(BasePipeline):
 
     def __init__(self, custom_processors: List[BaseProcessor] = None,
                  video_schema_path: Optional[str] = None,
-                 enable_vectorization: bool = True):
+                 enable_vectorization: bool = True,
+                 **kwargs):
         """
         初始化视频整体理解流水线
 
         :param custom_processors: 自定义处理器列表，可选，用于替换默认处理器
         :param video_schema_path: 视频整体校验Schema路径，可选，优先使用该路径而非默认模板
         :param enable_vectorization: 是否启用向量化存储，默认True
+        :param kwargs: 其他参数，传递给父类
         """
         if custom_processors:
             processors = custom_processors
@@ -73,4 +75,4 @@ class VideoOverallParsingPipeline(BasePipeline):
                     ),
                 ])
 
-        super().__init__(processors)
+        super().__init__(processors, pipeline_type="video_overall", **kwargs)

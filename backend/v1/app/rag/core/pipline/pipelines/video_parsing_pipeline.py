@@ -4,7 +4,6 @@ from backend.v1.app.rag.core.pipline.base import BasePipeline, BaseProcessor
 from backend.v1.app.rag.core.pipline.processors import (
     VideoSplitProcessor,
     VideoUnderstandingProcessor,
-    SliceGenerateProcessor,
     SchemaValidationProcessor,
     VideoAggregationProcessor,
     VideoOverallUnderstandingProcessor,
@@ -22,7 +21,8 @@ class VideoParsingPipeline(BasePipeline):
     def __init__(self, custom_processors: List[BaseProcessor] = None,
                  slice_schema_path: Optional[str] = None,
                  video_schema_path: Optional[str] = None,
-                 enable_vectorization: bool = True):
+                 enable_vectorization: bool = True,
+                 **kwargs):
         """
         初始化视频解析流水线
 
@@ -30,6 +30,7 @@ class VideoParsingPipeline(BasePipeline):
         :param slice_schema_path: 切片校验Schema路径，可选，优先使用该路径而非默认模板
         :param video_schema_path: 视频整体校验Schema路径，可选，优先使用该路径而非默认模板
         :param enable_vectorization: 是否启用向量化存储，默认True
+        :param kwargs: 其他参数，传递给父类
         """
         if custom_processors:
             processors = custom_processors
@@ -71,14 +72,29 @@ class VideoParsingPipeline(BasePipeline):
                     id_field="video_id"
                 )
 
-            # 默认处理器顺序：完整的端到端流程
+            # 默认处理器顺序：完整的端到端流程（移除SliceGenerateProcessor，直接在上下文转换数据）
             processors = [
                 # 第一阶段：视频拆分
                 VideoSplitProcessor(),
                 # 第二阶段：分片理解
                 VideoUnderstandingProcessor(),
-                # 第三阶段：分片JSON生成
-                SliceGenerateProcessor(),
+                # 第三阶段：分片数据格式转换（替代SliceGenerateProcessor，不写入本地文件）
+                type('SliceDataTransformProcessor', (BaseProcessor,), {
+                    'process': lambda self, context: (
+                        context.set('slice_data', [
+                            {
+                                "slice_id": slice_info["slice_id"],
+                                "video_id": slice_info["video_id"],
+                                "slice_index": slice_info["slice_index"],
+                                "slice_url": slice_info["slice_url"],
+                                "cover_url": slice_info["cover_url"],
+                                "单片段模板": slice_info["understanding"]
+                            } for slice_info in context.get("understood_slices", [])
+                        ]),
+                        context.set('slice_files', []),  # 空列表，保持兼容性
+                        context
+                    )[-1]
+                })(),
                 # 第四阶段：分片结构校验
                 slice_validator,
             ]
@@ -127,4 +143,4 @@ class VideoParsingPipeline(BasePipeline):
                     ),
                 ])
 
-        super().__init__(processors)
+        super().__init__(processors, pipeline_type="video", **kwargs)
