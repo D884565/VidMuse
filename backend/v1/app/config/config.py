@@ -122,6 +122,12 @@ class Settings(BaseSettings):
     # 火山引擎图片生成 (Seedream 4.5)
     IMAGE_API_KEY: str = ""
 
+    # 火山引擎语音识别
+    VOLC_ENGINE_ACCESS_KEY: str = os.getenv('VOLC_ENGINE_ACCESS_KEY', '')
+    VOLC_ENGINE_SECRET_KEY: str = os.getenv('VOLC_ENGINE_SECRET_KEY', '')
+    VOLC_ENGINE_ASR_ENDPOINT: str = os.getenv('VOLC_ENGINE_ASR_ENDPOINT', 'https://openspeech.bytedance.com/api/v1/asr')
+    VOLC_ENGINE_AUDIO_CLASSIFICATION_ENDPOINT: str = os.getenv('VOLC_ENGINE_AUDIO_CLASSIFICATION_ENDPOINT', 'https://openspeech.bytedance.com/api/v1/audio/classification')
+
     # FFmpeg 视频处理
     FFMPEG_PATH: str = ""
     FFPROBE_PATH: str = ""
