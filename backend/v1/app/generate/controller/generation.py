@@ -11,16 +11,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.store.database.async_database import get_db
 from backend.v1.app.generate.dao.project import ProjectCreate
-from backend.v1.app.generate.service.project_service import ProjectService
-from backend.v1.app.generate.service.script_generation import script_generation_service
-from backend.v1.app.generate.service.video_generation import video_generation_service
-from backend.v1.app.generate.service.chat_service import chat_service
-from backend.v1.app.generate.service.generation_workflow import generation_workflow_service
-from backend.v1.app.generate.service.image_workflow import image_workflow_service
-from backend.v1.app.generate.service.project_initial_message import project_initial_message_builder
+from backend.v1.app.generate.service.project import ProjectService
+from backend.v1.app.generate.service.stages.script import script_generation_service
+from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
+from backend.v1.app.generate.service.chat.chat_service import chat_service
+from backend.v1.app.generate.service.workflow.state import generation_workflow_service
+from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
+from backend.v1.app.generate.service.chat.initial_message import project_initial_message_builder
 from backend.v1.app.generate.service.task_service import generation_task_service
-from backend.v1.app.generate.service.storyboard_service import storyboard_service
-from backend.v1.app.generate.service.workflow_blocks import build_script_stage_blocks
+from backend.v1.app.generate.service.storyboard import storyboard_service
+from backend.v1.app.generate.service.workflow.blocks import build_script_stage_blocks
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
 from backend.framework.web import Response
 from backend.framework.web.auth import get_current_user_id
@@ -351,7 +351,7 @@ async def export_project_video(
     db: AsyncSession = Depends(get_db),
 ):
     """直接下载项目成片视频，不创建异步任务、不写入素材库。"""
-    from backend.v1.app.generate.service.export_service import export_service, ExportDownloadError
+    from backend.v1.app.generate.service.export import export_service, ExportDownloadError
 
     project = await ProjectService.get_project(db, project_id)
     if project.get("user_id") != current_user_id:
@@ -676,7 +676,7 @@ async def regenerate_frame_image(
         instruction = (req or {}).get("instruction")
         result = await chat_service.regenerate_frame_image(db, project_id, frame_id, instruction)
         task = await generation_task_service.create_task(db, project_id, "frame_image", status="queued")
-        from backend.v1.app.generate.temp.celery_app import celery_app
+        from backend.v1.app.generate.tasks.celery_app import celery_app
         sent = celery_app.send_task("generate_frame_image_task", args=[project_id, frame_id, task.id])
         await generation_task_service.set_celery_task_id(db, task.id, sent.id)
         result.update({"task_id": task.id, "status": "queued"})
@@ -710,7 +710,7 @@ async def regenerate_frame_video(
     generation_workflow_service.invalidate_from(project_model, "video")
     frame.dirty = 1
     await db.commit()
-    from backend.v1.app.generate.temp.celery_app import celery_app
+    from backend.v1.app.generate.tasks.celery_app import celery_app
     sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
     await generation_task_service.set_celery_task_id(db, task.id, sent.id)
     return Response.success(data={
@@ -762,7 +762,7 @@ async def retry_frame(
         frame.dirty = 1
     await db.commit()
 
-    from backend.v1.app.generate.temp.celery_app import celery_app
+    from backend.v1.app.generate.tasks.celery_app import celery_app
     if task_type == "frame_video":
         sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
     else:

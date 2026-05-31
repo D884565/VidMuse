@@ -6,21 +6,21 @@ from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.v1.app.generate.temp.celery_app import celery_app
+from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.store.database.sync_database import SessionLocal
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.providers.tts import tts_service
 from backend.v1.app.generate.service.external_call_policy import ALLOW_DEGRADED_AUDIO
-from backend.v1.app.generate.service.image_generation_service import image_generation_service
+from backend.v1.app.generate.service.stages.image_service import image_generation_service
 from backend.v1.app.generate.service.reference_image_utils import extract_reference_images
-from backend.v1.app.generate.service.video_composer import video_composer
+from backend.v1.app.generate.service.stages.video_composer import video_composer
 from backend.ffmpeg import ffmpeg_tool
-from backend.v1.app.generate.service.music_generation_service import music_generation_service
+from backend.v1.app.generate.service.stages.music_service import music_generation_service
 from backend.v1.app.generate.service.task_service import generation_task_service
-from backend.v1.app.generate.service.workflow_blocks import build_video_stage_blocks
-from backend.v1.app.generate.service.image_workflow import build_image_stage_message
-from backend.v1.app.generate.service import project_workflow_state
+from backend.v1.app.generate.service.workflow.blocks import build_video_stage_blocks
+from backend.v1.app.generate.service.stages.image_workflow import build_image_stage_message
+from backend.v1.app.generate.service.workflow import state as project_workflow_state
 from backend.v1.app.models.conversation import Conversation
 from backend.store.obj.factory import get_storage_client
 

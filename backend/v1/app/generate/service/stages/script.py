@@ -10,12 +10,9 @@ from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.generation_task import GenerationTask
 from backend.v1.app.models.script import Script
-from backend.v1.app.generate.service import project_workflow_state
-from backend.v1.app.generate.service.generation_limits import normalize_target_duration
+from backend.v1.app.generate.service.workflow import state as project_workflow_state
+from backend.v1.app.generate.service.workflow.limits import normalize_target_duration
 from backend.providers import VolcanoLLM, ChatRequest, ChatMessage
-from backend.v1.app.generate.service._rag_temp.rag_service import (
-    RAGService, MockRAGService, RAGResult,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -31,12 +28,11 @@ SCENE_TYPE_MAP = {
 
 
 class ScriptGenerationService:
-    """剧本生成服务（接入火山引擎 LLM + RAG 检索）"""
+    """剧本生成服务（接入火山引擎 LLM）"""
 
-    def __init__(self, rag_service: Optional[RAGService] = None):
-        """初始化 LLM 客户端和 RAG 服务"""
+    def __init__(self, rag_service=None):
         self.llm = VolcanoLLM(key=None, model_name=None)
-        self.rag_service: RAGService = rag_service or MockRAGService()
+        self.rag_service = rag_service  # TODO: RAG 后续单独集成
 
     async def generate_script(
         self,
@@ -215,6 +211,8 @@ class ScriptGenerationService:
 
     async def _retrieve_references(self, project: Project, rag_weight: float) -> str:
         """并行三路 RAG 检索，返回格式化的参考文本"""
+        if not self.rag_service:
+            return ""
         top_k = self._rag_top_k(rag_weight)
         if top_k == 0:
             logger.info("[RAG] rag_weight=0，跳过检索")
@@ -258,7 +256,7 @@ class ScriptGenerationService:
             logger.warning(f"[RAG] 检索整体异常，降级为无参考模式: {e}")
             return ""
 
-    def _format_rag_section(self, title: str, results: list[RAGResult], detail: str) -> str:
+    def _format_rag_section(self, title: str, results: list, detail: str) -> str:
         """将 RAG 结果格式化为 prompt 参考区文本"""
         lines = [f"### {title}"]
         for i, r in enumerate(results, 1):

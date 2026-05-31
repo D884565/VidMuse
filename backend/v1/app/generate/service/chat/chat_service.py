@@ -7,15 +7,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.providers import VolcanoLLM
-from backend.v1.app.generate.service._rag_temp.rag_service import MockRAGService, RAGService
-from backend.v1.app.generate.service.generation_workflow import generation_workflow_service
-from backend.v1.app.generate.service.image_workflow import image_workflow_service
-from backend.v1.app.generate.service.script_generation import script_generation_service
+# TODO: RAG 依赖已移除，后续单独集成
+from backend.v1.app.generate.service.workflow.state import generation_workflow_service
+from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
+from backend.v1.app.generate.service.stages.script import script_generation_service
 from backend.v1.app.generate.service.task_service import generation_task_service
-from backend.v1.app.generate.service.video_generation import video_generation_service
-from backend.v1.app.generate.service import project_workflow_state
-from backend.v1.app.generate.service.workflow_agent import workflow_agent_service
-from backend.v1.app.generate.service.workflow_blocks import build_progress_block, build_script_stage_blocks
+from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
+from backend.v1.app.generate.service.workflow import state as project_workflow_state
+from backend.v1.app.generate.service.workflow.agent import workflow_agent_service
+from backend.v1.app.generate.service.workflow.blocks import build_progress_block, build_script_stage_blocks
 from backend.v1.app.models.conversation import Conversation
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
@@ -28,9 +28,9 @@ class ChatService:
     只有用户明确确认图片进入视频阶段时，才触发昂贵的视频生成。
     """
 
-    def __init__(self, rag_service: Optional[RAGService] = None):
+    def __init__(self, rag_service=None):
         self.llm = VolcanoLLM(key=None, model_name=None)
-        self.rag_service: RAGService = rag_service or MockRAGService()
+        self.rag_service = rag_service
 
     async def handle_message(
         self,

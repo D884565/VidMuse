@@ -6,13 +6,13 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.v1.app.generate.temp.celery_app import celery_app
-from backend.v1.app.generate.service.generation_workflow import generation_workflow_service
-from backend.v1.app.generate.service.image_generation_service import image_generation_service
+from backend.v1.app.generate.tasks.celery_app import celery_app
+from backend.v1.app.generate.service.workflow.state import generation_workflow_service
+from backend.v1.app.generate.service.stages.image_service import image_generation_service
 from backend.v1.app.generate.service.reference_image_utils import extract_reference_images
-from backend.v1.app.generate.service import project_workflow_state
+from backend.v1.app.generate.service.workflow import state as project_workflow_state
 from backend.v1.app.generate.service.task_service import generation_task_service
-from backend.v1.app.generate.service.workflow_blocks import build_image_stage_blocks, build_progress_block
+from backend.v1.app.generate.service.workflow.blocks import build_image_stage_blocks, build_progress_block
 from backend.v1.app.models.conversation import Conversation
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
