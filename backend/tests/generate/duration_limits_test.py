@@ -1,6 +1,6 @@
 import pytest
 
-from backend.v1.app.generate.service.generation_limits import (
+from backend.v1.app.generate.service.workflow.limits import (
     DEFAULT_TARGET_DURATION_SECONDS,
     MAX_TARGET_DURATION_SECONDS,
     MIN_TARGET_DURATION_SECONDS,

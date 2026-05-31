@@ -31,7 +31,7 @@ def test_reference_image_extraction_is_user_first_deduped_and_limited():
 
 
 def test_video_tasks_use_shared_sync_session_and_failure_helper():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert "from backend.store.database.sync_database import SessionLocal" in source
     assert "create_engine(" not in source
@@ -40,7 +40,7 @@ def test_video_tasks_use_shared_sync_session_and_failure_helper():
 
 
 def test_video_task_try_blocks_do_not_commit_project_failed_before_retry_handler():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert "def _mark_project_failed" in source
     assert "db.commit()\n\n\ndef _update_task_failure_state" not in source
@@ -49,14 +49,14 @@ def test_video_task_try_blocks_do_not_commit_project_failed_before_retry_handler
 
 
 def test_failure_state_updates_retry_count_when_retrying():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert "retry_count" in source
     assert "will_retry" in source
 
 
 def test_video_task_raises_stage_specific_errors_for_image_and_video_failures():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert "class GenerationStageError" in source
     assert 'stage="image"' in source
@@ -66,7 +66,7 @@ def test_video_task_raises_stage_specific_errors_for_image_and_video_failures():
 
 
 def test_video_task_failure_handler_uses_error_stage_metadata():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert 'stage=getattr(exc, "stage", "video")' in source
     assert 'current_step=getattr(exc, "current_step", "FAILED")' in source
@@ -74,7 +74,7 @@ def test_video_task_failure_handler_uses_error_stage_metadata():
 
 
 def test_frame_and_export_tasks_retry_before_final_failure():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     for task_name in ("generate_frame_image_task", "generate_frame_video_task"):
         start = source.index(f"def {task_name}")
@@ -85,7 +85,7 @@ def test_frame_and_export_tasks_retry_before_final_failure():
 
 
 def test_generation_tasks_explicitly_handle_soft_time_limit_and_log_frame_task_failures():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert "SoftTimeLimitExceeded" in source
 
@@ -103,7 +103,7 @@ def test_generation_tasks_explicitly_handle_soft_time_limit_and_log_frame_task_f
 
 
 def test_generation_tasks_check_for_cancellation_and_use_task_specific_time_limits():
-    source = read("backend/v1/app/generate/temp/video_tasks.py")
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert "ensure_task_not_cancelled" in source
     assert '@celery_app.task(bind=True, max_retries=3, soft_time_limit=600, time_limit=720, name="generate_frame_video_task")' in source
@@ -111,7 +111,7 @@ def test_generation_tasks_check_for_cancellation_and_use_task_specific_time_limi
 
 
 def test_project_detail_uses_project_asset_join_not_url_contains():
-    source = read("backend/v1/app/generate/service/video_generation.py")
+    source = read("backend/v1/app/generate/service/stages/video_workflow.py")
 
     assert "ProjectAsset" in source
     assert ".join(ProjectAsset" in source or "join(ProjectAsset" in source
@@ -129,10 +129,10 @@ def test_workflow_mutations_lock_project_row():
 
 def test_generation_and_chat_paths_do_not_directly_assign_legacy_or_stage_status():
     generation_source = read("backend/v1/app/generate/controller/generation.py")
-    chat_source = read("backend/v1/app/generate/service/chat_service.py")
+    chat_source = read("backend/v1/app/generate/service/chat/chat_service.py")
     storyboard_source = read("backend/v1/app/generate/service/storyboard_service.py")
-    video_generation_source = read("backend/v1/app/generate/service/video_generation.py")
-    video_tasks_source = read("backend/v1/app/generate/temp/video_tasks.py")
+    video_generation_source = read("backend/v1/app/generate/service/stages/video_workflow.py")
+    video_tasks_source = read("backend/v1/app/generate/tasks/video_tasks.py")
 
     assert 'project_model.stage_status = "running"' not in generation_source
     assert 'project_model.stage_status = task_result.get("status", "running")' not in generation_source
@@ -143,7 +143,7 @@ def test_generation_and_chat_paths_do_not_directly_assign_legacy_or_stage_status
 
 
 def test_submit_generation_task_does_not_guard_on_legacy_status_strings():
-    source = read("backend/v1/app/generate/service/video_generation.py")
+    source = read("backend/v1/app/generate/service/stages/video_workflow.py")
 
     assert 'if project.status in ("script_generating", "render_queued", "rendering"):' not in source
     assert 'if project.status not in ("script_ready", "review_required", "processing", "completed", "failed"):' not in source

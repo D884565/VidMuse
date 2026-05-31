@@ -9,7 +9,7 @@ def test_frame_model_has_separate_video_url_field():
 
 
 def test_frame_video_task_writes_video_url_not_audio_url():
-    source = Path("backend/v1/app/generate/temp/video_tasks.py").read_text(encoding="utf-8")
+    source = Path("backend/v1/app/generate/tasks/video_tasks.py").read_text(encoding="utf-8")
     start = source.index("def generate_frame_video_task")
     body = source[start:]
 

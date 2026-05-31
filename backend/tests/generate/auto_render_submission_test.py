@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.v1.app.generate.service.video_generation import VideoGenerationService
+from backend.v1.app.generate.service.stages.video_workflow import VideoGenerationService
 
 
 class FakeFrame:
