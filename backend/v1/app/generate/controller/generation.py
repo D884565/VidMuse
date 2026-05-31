@@ -4,7 +4,9 @@ import logging
 
 from typing import Optional
 
-from fastapi import APIRouter, Body, Depends, Path
+from fastapi import APIRouter, Body, Depends, Path, Query
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.store.database.async_database import get_db
@@ -13,24 +15,46 @@ from backend.v1.app.generate.service.project_service import ProjectService
 from backend.v1.app.generate.service.script_generation import script_generation_service
 from backend.v1.app.generate.service.video_generation import video_generation_service
 from backend.v1.app.generate.service.chat_service import chat_service
+from backend.v1.app.generate.service.generation_workflow import generation_workflow_service
+from backend.v1.app.generate.service.image_workflow import image_workflow_service
+from backend.v1.app.generate.service.project_initial_message import project_initial_message_builder
+from backend.v1.app.generate.service.task_service import generation_task_service
+from backend.v1.app.generate.service.storyboard_service import storyboard_service
+from backend.v1.app.generate.service.workflow_blocks import build_script_stage_blocks
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
 from backend.framework.web import Response
 from backend.framework.web.auth import get_current_user_id
 from backend.framework.exceptions import BusinessException
 from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR, UNAUTHORIZED
+from backend.v1.app.models.asset import Asset
+from backend.v1.app.models.project_asset import ProjectAsset
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/generate/v1/projects", tags=["视频生成"])
+router = APIRouter(prefix="/generate/v1", tags=["视频生成"])
+
+SCRIPT_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering", "processing"}
+SCRIPT_REGENERATE_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering"}
 
 
-@router.post("", response_model=Response)
+async def _load_project_for_workflow_update(db: AsyncSession, project_id: int):
+    from backend.v1.app.models.project import Project
+
+    # 工作流推进/确认前先加行锁，尽量避免并发请求把阶段状态推进乱掉。
+    result = await db.execute(
+        select(Project).where(Project.id == project_id).with_for_update()
+    )
+    return result.scalar_one_or_none()
+
+
+@router.post("/projects", response_model=Response)
 async def create_project(
     project: ProjectCreate,
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
-    """创建视频项目，自动触发剧本+视频生成"""
+    """创建视频项目。默认只保存项目；auto_render=true 时保留一键成片体验。"""
+    from backend.v1.app.models.conversation import Conversation
     from backend.v1.app.models.project import Project
 
     product_info_str = None
@@ -64,30 +88,104 @@ async def create_project(
     await db.commit()
     await db.refresh(p)
 
-    try:
-        await script_generation_service.generate_script(db, p.id)
-        result = await video_generation_service.submit_generation_task(db, p.id)
-        logger.info(f"[项目创建] 自动触发生成成功: project_id={p.id}")
-        return Response.success(data={
-            "id": p.id,
-            "title": p.title,
-            "product_info_crawled": product_info_str is not None,
-            "frames_count": result.get("frames_count"),
-            "status": result.get("status", "processing"),
-        })
-    except Exception as e:
-        logger.warning(f"[项目创建] 自动触发生成失败: {e}")
-        await db.refresh(p)
-        return Response.success(data={
-            "id": p.id,
-            "title": p.title,
-            "product_info_crawled": product_info_str is not None,
-            "status": p.status,
-            "generate_error": str(e),
-        })
+    product_info_data = None
+    if product_info_str:
+        try:
+            product_info_data = json.loads(product_info_str)
+        except (json.JSONDecodeError, TypeError):
+            product_info_data = None
+    initial_message = project_initial_message_builder.build(
+        title=p.title,
+        user_prompt=p.user_prompt,
+        style=p.style,
+        target_audience=p.target_audience,
+        key_points=p.key_points or [],
+        avoid=p.avoid or [],
+        target_duration=p.target_duration,
+        voice_type=p.voice_type,
+        product_url=p.product_url,
+        reference_images=p.reference_images or [],
+        product_info=product_info_data,
+    )
+    db.add(Conversation(
+        project_id=p.id,
+        role=initial_message["role"],
+        content=initial_message["content"],
+        message_type=initial_message["message_type"],
+        stage=initial_message["stage"],
+        blocks=initial_message["blocks"],
+        metadata_=initial_message["metadata"],
+    ))
+    await db.commit()
+
+    response_data = {
+        "id": p.id,
+        "project_id": p.id,
+        "title": p.title,
+        "product_info_crawled": product_info_str is not None,
+        "status": p.status,
+        "workflow_stage": p.workflow_stage,
+        "stage_status": p.stage_status,
+    }
+
+    if project.auto_render:
+        script_task = None
+        try:
+            script_task = await generation_task_service.create_task(db, p.id, "script", status="running")
+            p.status = "script_generating"
+            generation_workflow_service.mark_stage_running(p, "script", script_task.id)
+            await db.commit()
+
+            frames = await script_generation_service.generate_script(db, p.id)
+            generation_workflow_service.mark_stage_review(p, "script", script_task.id)
+            db.add(Conversation(
+                project_id=p.id,
+                role="assistant",
+                content="剧本阶段已完成。请检查主题、风格和每个分镜内容，满意后可以确认并生成图片。",
+                message_type="stage_card",
+                stage="script",
+                blocks=build_script_stage_blocks(frames),
+                action_type="GENERATE_SCRIPT",
+                task_id=script_task.id,
+            ))
+            from datetime import datetime
+            script_task.status = "succeeded"
+            script_task.progress = 100
+            script_task.current_step = "SCRIPT_GENERATED"
+            script_task.finished_at = datetime.utcnow()
+            await db.commit()
+
+            result = await video_generation_service.submit_generation_task(
+                db,
+                p.id,
+                require_ready_images=False,
+                trigger_source="auto_render",
+            )
+            logger.info(f"[项目创建] 自动触发生成成功: project_id={p.id}")
+            response_data.update({
+                "task_id": result.get("task_id"),
+                "script_task_id": script_task.id,
+                "frames_count": len(frames),
+                "status": result.get("status", "render_queued"),
+            })
+        except Exception as e:
+            logger.warning(f"[项目创建] 自动触发生成失败: {e}")
+            p.status = "failed"
+            generation_workflow_service.fail_stage(p, "script", script_task.id if script_task else None)
+            if script_task:
+                from datetime import datetime
+                script_task.status = "failed"
+                script_task.progress = 100
+                script_task.error_message = str(e)
+                script_task.finished_at = datetime.utcnow()
+                await db.commit()
+            await db.refresh(p)
+            response_data.update({"status": p.status, "generate_error": str(e)})
+
+    return Response.success(data=response_data)
 
 
-@router.get("", response_model=Response)
+@router.get("/projects", response_model=Response)
 async def list_projects(
     status: Optional[int] = None,
     keyword: Optional[str] = None,
@@ -103,7 +201,7 @@ async def list_projects(
     return Response.success(data=result)
 
 
-@router.get("/{project_id}", response_model=Response)
+@router.get("/projects/{project_id}", response_model=Response)
 async def get_project(
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
@@ -120,7 +218,7 @@ async def get_project(
         raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
 
 
-@router.put("/{project_id}", response_model=Response)
+@router.put("/projects/{project_id}", response_model=Response)
 async def update_project(
     update_data: dict = Body(...),
     project_id: int = Path(..., gt=0),
@@ -140,7 +238,7 @@ async def update_project(
         raise BusinessException(RESOURCE_NOT_FOUND, f"更新失败: {e}")
 
 
-@router.delete("/{project_id}", response_model=Response)
+@router.delete("/projects/{project_id}", response_model=Response)
 async def delete_project(
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
@@ -159,7 +257,280 @@ async def delete_project(
         raise BusinessException(RESOURCE_NOT_FOUND, f"删除失败: {e}")
 
 
-@router.post("/{project_id}/chat", response_model=Response)
+@router.post("/projects/{project_id}/script/generate", response_model=Response)
+async def generate_project_script(
+    project_id: int = Path(..., gt=0),
+    force: bool = Query(False),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """独立生成项目剧本。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    from backend.v1.app.models.project import Project
+
+    status_result = await db.execute(select(Project.status).where(Project.id == project_id))
+    current_status = status_result.scalar_one()
+    blocked_statuses = SCRIPT_REGENERATE_BLOCKED_STATUSES if force else SCRIPT_BLOCKED_STATUSES
+    if current_status in blocked_statuses:
+        raise BusinessException(VIDEO_ERROR, f"当前状态不允许重新生成剧本: {current_status}")
+
+    task = await generation_task_service.create_task(db, project_id, "script", status="running")
+    try:
+        from datetime import datetime
+
+        result = await db.execute(select(Project).where(Project.id == project_id))
+        project_model = result.scalar_one()
+        project_model.status = "script_generating"
+        generation_workflow_service.mark_stage_running(project_model, "script", task.id)
+        await db.commit()
+
+        frames = await script_generation_service.generate_script(db, project_id, force=force)
+        generation_workflow_service.mark_stage_review(project_model, "script", task.id)
+        from backend.v1.app.models.conversation import Conversation
+
+        db.add(Conversation(
+            project_id=project_id,
+            role="assistant",
+            content="剧本阶段已完成。请检查主题、风格和每个分镜内容，满意后可以确认并生成图片。",
+            message_type="stage_card",
+            stage="script",
+            blocks=build_script_stage_blocks(frames),
+            action_type="GENERATE_SCRIPT",
+            task_id=task.id,
+        ))
+        task.status = "succeeded"
+        task.progress = 100
+        task.current_step = "SCRIPT_GENERATED"
+        task.finished_at = datetime.utcnow()
+        await db.commit()
+
+        return Response.success(data={
+            "task_id": task.id,
+            "project_id": project_id,
+            "frames_count": len(frames),
+            "status": "script_ready",
+        })
+    except Exception as e:
+        from datetime import datetime
+        result = await db.execute(select(Project).where(Project.id == project_id))
+        project_model = result.scalar_one_or_none()
+        if project_model:
+            project_model.status = "failed"
+            generation_workflow_service.fail_stage(project_model, "script", task.id)
+        task.status = "failed"
+        task.progress = 100
+        task.error_message = str(e)
+        task.finished_at = datetime.utcnow()
+        await db.commit()
+        raise BusinessException(VIDEO_ERROR, str(e))
+
+
+@router.post("/projects/{project_id}/render", response_model=Response)
+async def render_project(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """提交项目渲染任务。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    try:
+        result = await video_generation_service.submit_generation_task(db, project_id)
+        return Response.success(data=result)
+    except ValueError as e:
+        raise BusinessException(VIDEO_ERROR, str(e))
+
+
+@router.get("/projects/{project_id}/export/download")
+async def export_project_video(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """直接下载项目成片视频，不创建异步任务、不写入素材库。"""
+    from backend.v1.app.generate.service.export_service import export_service, ExportDownloadError
+
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    video_url = project.get("video_output_url")
+    if not video_url:
+        raise BusinessException(VIDEO_ERROR, "项目还没有可导出的视频")
+
+    try:
+        stream = export_service.open_download_stream(
+            video_url=video_url,
+            project_title=project.get("title"),
+            project_id=project_id,
+        )
+    except ExportDownloadError as exc:
+        raise BusinessException(VIDEO_ERROR, str(exc))
+
+    return StreamingResponse(
+        stream.iter_bytes(),
+        media_type=stream.media_type,
+        headers={"Content-Disposition": f'attachment; filename="{stream.filename}"'},
+    )
+
+
+@router.post("/projects/{project_id}/assets", response_model=Response)
+async def bind_project_asset(
+    req: dict = Body(...),
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """将用户素材绑定到当前项目，作为剧本/创作阶段可用参考素材。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+
+    asset_id = req.get("asset_id")
+    if not asset_id:
+        raise BusinessException(VIDEO_ERROR, "asset_id 不能为空")
+    asset = await db.get(Asset, asset_id)
+    if not asset or asset.user_id != current_user_id:
+        raise BusinessException(RESOURCE_NOT_FOUND, "素材不存在")
+
+    binding = ProjectAsset(project_id=project_id, asset_id=asset_id, role=req.get("role", "reference"))
+    asset.scope = "project"
+    db.add(binding)
+    await db.commit()
+    await db.refresh(binding)
+    return Response.success(data={
+        "id": binding.id,
+        "project_id": project_id,
+        "asset_id": asset_id,
+        "role": binding.role,
+    })
+
+
+@router.get("/tasks/{task_id}", response_model=Response)
+async def get_generation_task(
+    task_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询生成任务状态。"""
+    try:
+        result = await generation_task_service.get_task(db, task_id, current_user_id)
+        return Response.success(data=result)
+    except PermissionError:
+        raise BusinessException(UNAUTHORIZED, "无权访问该任务")
+    except ValueError:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"任务不存在: {task_id}")
+
+
+@router.get("/tasks/{task_id}/steps", response_model=Response)
+async def get_generation_task_steps(
+    task_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询生成任务步骤。"""
+    try:
+        result = await generation_task_service.list_steps(db, task_id, current_user_id)
+        return Response.success(data=result)
+    except PermissionError:
+        raise BusinessException(UNAUTHORIZED, "无权访问该任务")
+    except ValueError:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"任务不存在: {task_id}")
+
+
+@router.post("/projects/{project_id}/workflow/confirm", response_model=Response)
+async def confirm_workflow_stage(
+    req: dict = Body(...),
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """确认当前工作流阶段（不触发下一阶段任务）。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    from backend.v1.app.models.project import Project
+
+    stage = req.get("stage")
+    if not stage:
+        raise BusinessException(VIDEO_ERROR, "stage 不能为空")
+
+    project_model = await _load_project_for_workflow_update(db, project_id)
+    if not project_model:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
+    try:
+        generation_workflow_service.confirm_stage(project_model, stage)
+    except ValueError as e:
+        raise BusinessException(VIDEO_ERROR, str(e))
+    await db.commit()
+    await db.refresh(project_model)
+    return Response.success(data={
+        "project_id": project_id,
+        "workflow_stage": project_model.workflow_stage,
+        "stage_status": project_model.stage_status,
+        "dirty_stage": project_model.dirty_stage,
+        "script_confirmed_at": project_model.script_confirmed_at.isoformat() if project_model.script_confirmed_at else None,
+        "images_confirmed_at": project_model.images_confirmed_at.isoformat() if project_model.images_confirmed_at else None,
+        "video_confirmed_at": project_model.video_confirmed_at.isoformat() if project_model.video_confirmed_at else None,
+    })
+
+
+@router.post("/projects/{project_id}/workflow/advance", response_model=Response)
+async def advance_workflow_stage(
+    req: dict = Body(...),
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """确认当前阶段并推进到下一工作流阶段，自动触发对应的任务生成。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    from backend.v1.app.models.project import Project
+
+    confirmed_stage = req.get("confirmed_stage")
+    if not confirmed_stage:
+        raise BusinessException(VIDEO_ERROR, "confirmed_stage 不能为空")
+
+    project_model = await _load_project_for_workflow_update(db, project_id)
+    if not project_model:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
+    if project_model.stage_status == "running":
+        return Response.success(data={
+            "project_id": project_id,
+            "workflow_stage": project_model.workflow_stage,
+            "stage_status": project_model.stage_status,
+            "dirty_stage": project_model.dirty_stage,
+            "task_id": project_model.last_task_id,
+            "next_stage": project_model.workflow_stage,
+            "message": "任务已在运行中",
+        })
+    try:
+        generation_workflow_service.advance_stage(project_model, confirmed_stage)
+    except ValueError as e:
+        raise BusinessException(VIDEO_ERROR, str(e))
+
+    task_result = None
+    if project_model.workflow_stage == "video":
+        task_result = await video_generation_service.submit_generation_task(db, project_id)
+    elif project_model.workflow_stage == "image":
+        task_result = await image_workflow_service.submit_image_task(db, project_id)
+    await db.commit()
+    await db.refresh(project_model)
+    return Response.success(data={
+        "project_id": project_id,
+        "workflow_stage": project_model.workflow_stage,
+        "stage_status": project_model.stage_status,
+        "dirty_stage": project_model.dirty_stage,
+        "task_id": task_result.get("task_id") if task_result else project_model.last_task_id,
+        "next_stage": project_model.workflow_stage,
+        "next_action": None,
+    })
+
+
+@router.post("/projects/{project_id}/chat", response_model=Response)
 async def chat_refinement(
     req: dict = Body(...),
     project_id: int = Path(..., gt=0),
@@ -181,7 +552,7 @@ async def chat_refinement(
         raise BusinessException(VIDEO_ERROR, str(e))
 
 
-@router.get("/{project_id}/conversations", response_model=Response)
+@router.get("/projects/{project_id}/conversations", response_model=Response)
 async def get_conversations(
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
@@ -205,6 +576,12 @@ async def get_conversations(
             "id": c.id,
             "role": c.role,
             "content": c.content,
+            "message_type": c.message_type,
+            "stage": c.stage,
+            "blocks": c.blocks or [],
+            "action_type": c.action_type,
+            "task_id": c.task_id,
+            "metadata": c.metadata_ or {},
             "frame_id": c.frame_id,
             "created_at": c.created_at.isoformat() if c.created_at else None,
         }
@@ -212,7 +589,58 @@ async def get_conversations(
     ])
 
 
-@router.post("/{project_id}/frames/{frame_id}/regenerate", response_model=Response)
+@router.get("/projects/{project_id}/scripts", response_model=Response)
+async def list_project_scripts(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询项目脚本版本列表。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权访问该项目")
+    scripts = await storyboard_service.list_scripts(db, project_id)
+    return Response.success(data=scripts)
+
+
+@router.get("/projects/{project_id}/scripts/{script_id}", response_model=Response)
+async def get_project_script(
+    project_id: int = Path(..., gt=0),
+    script_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """查询项目脚本版本详情。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权访问该项目")
+    try:
+        script = await storyboard_service.get_script(db, project_id, script_id)
+        return Response.success(data=script)
+    except ValueError as e:
+        raise BusinessException(RESOURCE_NOT_FOUND, str(e))
+
+
+@router.patch("/projects/{project_id}/frames/{frame_id}", response_model=Response)
+async def update_project_frame(
+    patch: dict = Body(...),
+    project_id: int = Path(..., gt=0),
+    frame_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """保存分镜编辑草稿，并标记为待合成。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    try:
+        frame = await storyboard_service.update_frame(db, project_id, frame_id, patch)
+        return Response.success(data=frame)
+    except ValueError as e:
+        raise BusinessException(RESOURCE_NOT_FOUND, str(e))
+
+
+@router.post("/projects/{project_id}/frames/{frame_id}/regenerate", response_model=Response)
 async def regenerate_frame(
     req: dict | None = Body(None),
     project_id: int = Path(..., gt=0),
@@ -232,7 +660,7 @@ async def regenerate_frame(
         raise BusinessException(VIDEO_ERROR, str(e))
 
 
-@router.post("/{project_id}/frames/{frame_id}/regenerate-image", response_model=Response)
+@router.post("/projects/{project_id}/frames/{frame_id}/regenerate-image", response_model=Response)
 async def regenerate_frame_image(
     req: dict | None = Body(None),
     project_id: int = Path(..., gt=0),
@@ -247,6 +675,103 @@ async def regenerate_frame_image(
     try:
         instruction = (req or {}).get("instruction")
         result = await chat_service.regenerate_frame_image(db, project_id, frame_id, instruction)
+        task = await generation_task_service.create_task(db, project_id, "frame_image", status="queued")
+        from backend.v1.app.generate.temp.celery_app import celery_app
+        sent = celery_app.send_task("generate_frame_image_task", args=[project_id, frame_id, task.id])
+        await generation_task_service.set_celery_task_id(db, task.id, sent.id)
+        result.update({"task_id": task.id, "status": "queued"})
         return Response.success(data=result)
     except ValueError as e:
         raise BusinessException(VIDEO_ERROR, str(e))
+
+
+@router.post("/projects/{project_id}/frames/{frame_id}/regenerate-video", response_model=Response)
+async def regenerate_frame_video(
+    req: dict | None = Body(None),
+    project_id: int = Path(..., gt=0),
+    frame_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """提交单分镜视频重生成任务，成功后只更新该分镜视频产物，不自动整片合成。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+
+    from backend.v1.app.models.frame import Frame
+
+    result = await db.execute(select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id))
+    frame = result.scalar_one_or_none()
+    if not frame:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
+
+    task = await generation_task_service.create_task(db, project_id, "frame_video", status="queued")
+    project_model = await _load_project_for_workflow_update(db, project_id)
+    generation_workflow_service.invalidate_from(project_model, "video")
+    frame.dirty = 1
+    await db.commit()
+    from backend.v1.app.generate.temp.celery_app import celery_app
+    sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
+    await generation_task_service.set_celery_task_id(db, task.id, sent.id)
+    return Response.success(data={
+        "project_id": project_id,
+        "frame_id": frame_id,
+        "task_id": task.id,
+        "status": "queued",
+        "message": "单分镜视频重生成任务已提交",
+    })
+
+
+@router.post("/projects/{project_id}/frames/{frame_id}/retry", response_model=Response)
+async def retry_frame(
+    req: dict | None = Body(None),
+    project_id: int = Path(..., gt=0),
+    frame_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """重试失败分镜并提交整片重新渲染。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+
+    from sqlalchemy import select
+    from backend.v1.app.models.frame import Frame
+
+    result = await db.execute(select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id))
+    frame = result.scalar_one_or_none()
+    if not frame:
+        raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
+    if frame.status != 3:
+        raise BusinessException(VIDEO_ERROR, "只能重试失败的分镜")
+
+    instruction = (req or {}).get("instruction")
+    if instruction:
+        frame.description = f"{frame.description or ''}\n\n用户重试要求：{instruction}"
+    frame.status = 0
+    frame.error_message = None
+    task_type = "frame_video" if frame.image_url and str(frame.image_url).startswith("http") else "frame_image"
+    task = await generation_task_service.create_task(db, project_id, task_type, status="queued")
+    project_model = await _load_project_for_workflow_update(db, project_id)
+    if task_type == "frame_video":
+        generation_workflow_service.invalidate_from(project_model, "video")
+        frame.dirty = 1
+    else:
+        generation_workflow_service.invalidate_from(project_model, "image")
+        frame.image_url = None
+        frame.dirty = 1
+    await db.commit()
+
+    from backend.v1.app.generate.temp.celery_app import celery_app
+    if task_type == "frame_video":
+        sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
+    else:
+        sent = celery_app.send_task("generate_frame_image_task", args=[project_id, frame_id, task.id])
+    await generation_task_service.set_celery_task_id(db, task.id, sent.id)
+    return Response.success(data={
+        "frame_id": frame_id,
+        "project_id": project_id,
+        "task_id": task.id,
+        "status": "queued",
+        "task_type": task_type,
+    })

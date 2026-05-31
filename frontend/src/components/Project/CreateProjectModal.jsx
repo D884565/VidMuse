@@ -30,6 +30,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
 
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
   const setActiveView = useAppStore((state) => state.setActiveView)
+  const bumpProjectListVersion = useAppStore((state) => state.bumpProjectListVersion)
   const parameters = useAppStore((state) => state.parameters)
   const updateParameters = useAppStore((state) => state.updateParameters)
 
@@ -124,6 +125,7 @@ export default function CreateProjectModal({ isOpen, onClose, onCreated }) {
       // 创建成功：切换到项目并关闭弹窗
       setActiveProjectId(data.id)
       setActiveView('chat')
+      bumpProjectListVersion()
       onCreated?.(data.id)
       handleClose()
     } catch (err) {

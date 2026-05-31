@@ -8,6 +8,8 @@ from backend.store.database.async_database import Base
 
 engine = create_engine(
     settings.sync_db_url,
+    pool_size=10,
+    max_overflow=20,
     pool_pre_ping=True,
     pool_recycle=3600,
     echo=settings.APP_ENV == "development"

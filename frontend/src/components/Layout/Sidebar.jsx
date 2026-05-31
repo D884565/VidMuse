@@ -7,7 +7,6 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
-  Settings,
   Sparkles,
   User,
 } from 'lucide-react'
@@ -24,12 +23,10 @@ export default function Sidebar() {
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
 
   const storeLogout = useAppStore((state) => state.logout)
-  const user = useAppStore((state) => state.user)
-
   const [showCreateModal, setShowCreateModal] = useState(false)
 
   const handleLogout = async () => {
-    try { await logoutApi() } catch (err) { /* 忽略 */ }
+    try { await logoutApi() } catch { /* 忽略退出接口错误，本地仍清理登录态。 */ }
     storeLogout()
   }
 
@@ -46,10 +43,10 @@ export default function Sidebar() {
         </div>
         <div className={`${collapsed ? 'hidden' : 'block'} max-[1024px]:hidden`}>
           <p className="m-0 text-base font-semibold">VidMuse</p>
-          <p className="m-0 text-xs text-[var(--text-muted)]">AI Video Studio</p>
+          <p className="m-0 text-xs text-[var(--text-muted)]">AI 视频创作台</p>
         </div>
         <button
-          aria-label="Toggle sidebar"
+          aria-label="切换侧边栏"
           className="ml-auto rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white max-[1024px]:hidden"
           type="button"
           onClick={toggleSidebar}
@@ -70,7 +67,7 @@ export default function Sidebar() {
         >
           <FolderKanban size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            Projects
+            项目
           </span>
         </button>
 
@@ -86,7 +83,7 @@ export default function Sidebar() {
           onClick={() => setActiveView('media')}
         >
           <Images size={18} />
-          <span className="max-[1024px]:hidden">Media</span>
+          <span className="max-[1024px]:hidden">素材库</span>
           <span className="ml-auto rounded-full bg-[rgba(124,58,237,0.22)] px-2 py-0.5 text-xs text-white max-[1024px]:hidden">
             12
           </span>
@@ -102,7 +99,7 @@ export default function Sidebar() {
           onClick={() => setActiveView('keyframes')}
         >
           <KeyRound size={18} />
-          <span className="max-[1024px]:hidden">Keyframes</span>
+          <span className="max-[1024px]:hidden">关键帧</span>
         </button>
 
         <button
@@ -127,7 +124,7 @@ export default function Sidebar() {
         >
           <Plus size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            New Project
+            新建项目
           </span>
         </button>
       </nav>

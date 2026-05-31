@@ -5,5 +5,18 @@ from backend.v1.app.models.product import Product
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.conversation import Conversation
 from backend.v1.app.models.merge_task import MergeTask
+from backend.v1.app.models.generation_task import GenerationTask, GenerationTaskStep
+from backend.v1.app.models.script import Script
 
-__all__ = ["Project", "Frame", "User", "Product", "Asset", "Conversation", "MergeTask"]
+__all__ = [
+    "Project",
+    "Frame",
+    "User",
+    "Product",
+    "Asset",
+    "Conversation",
+    "MergeTask",
+    "GenerationTask",
+    "GenerationTaskStep",
+    "Script",
+]

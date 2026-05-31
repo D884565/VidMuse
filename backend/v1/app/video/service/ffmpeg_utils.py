@@ -1,5 +1,6 @@
 """FFmpeg 工具类"""
 import os
+import uuid
 import shutil
 import subprocess
 import json
@@ -150,7 +151,10 @@ class FFmpegUtils:
         output_path: str,
     ) -> str:
         """
-        替换视频音频
+        替换视频音频，自动处理音视频时长不一致的情况。
+
+        - 音频 > 视频：冻结最后一帧延长视频（避免截断配音/CTA）
+        - 音频 <= 视频：音频末尾填充静音对齐视频时长
 
         Args:
             video_path: 视频文件路径
@@ -165,9 +169,17 @@ class FFmpegUtils:
         if not os.path.exists(audio_path):
             raise FileNotFoundError(f"音频文件不存在: {audio_path}")
 
-        # 构建 FFmpeg 命令
         video_duration = self.get_video_info(video_path)["duration"]
+        audio_duration = self.get_audio_duration(audio_path)
 
+        # 音频比视频长：需要延长视频来匹配音频，避免截断配音
+        if audio_duration > video_duration:
+            return self._replace_audio_extend_video(
+                video_path, audio_path, output_path, video_duration, audio_duration
+            )
+
+        # 音频 <= 视频：用 apad 在音频末尾填充静音，对齐到视频时长
+        # -t 截断输出到视频时长，确保音视频等长
         cmd = [
             FFMPEG_PATH, "-y",
             "-i", video_path,
@@ -194,6 +206,127 @@ class FFmpegUtils:
             raise RuntimeError(f"音频替换失败: {e.stderr}")
 
         return output_path
+
+    def get_audio_duration(self, audio_path: str) -> float:
+        """用 ffprobe 获取音频文件时长（秒），失败时返回 0.0"""
+        cmd = [
+            FFPROBE_PATH,
+            "-v", "quiet",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            audio_path,
+        ]
+        try:
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, check=True, timeout=_TIMEOUT_PROBE,
+            )
+            return float(result.stdout.strip())
+        except (subprocess.CalledProcessError, ValueError):
+            # ffprobe 失败时返回 0，调用方会走音频<=视频的分支（即老逻辑）
+            return 0.0
+
+    def _replace_audio_extend_video(
+        self,
+        video_path: str,
+        audio_path: str,
+        output_path: str,
+        video_duration: float,
+        audio_duration: float,
+    ) -> str:
+        """
+        音频比视频长时，通过冻结最后一帧来延长视频，再合并音频。
+
+        步骤：
+        1. 从原视频提取最后一帧图片
+        2. 用最后一帧生成一段静默视频（画面冻结，无声音）
+        3. 把原视频和冻结视频拼接成一个完整视频
+        4. 将 TTS 音频替换进拼接后的视频
+
+        Args:
+            video_path: 原视频路径
+            audio_path: TTS 音频路径
+            output_path: 输出路径
+            video_duration: 原视频时长（秒）
+            audio_duration: TTS 音频时长（秒）
+
+        Returns:
+            输出文件路径
+        """
+        output_dir = os.path.dirname(output_path)
+        # 需要延长的时长 = 音频时长 - 视频时长，多留 0.5s 余量防止边界截断
+        extend_duration = audio_duration - video_duration + 0.5
+
+        # 所有临时文件共用一个 uid，方便 finally 清理
+        uid = uuid.uuid4().hex
+        last_frame_path = os.path.join(output_dir, f"_last_frame_{uid}.png")
+        extend_video_path = os.path.join(output_dir, f"_extend_{uid}.mp4")
+        concat_video_path = os.path.join(output_dir, f"_concat_{uid}.mp4")
+        concat_list_path = os.path.join(output_dir, f"_concat_{uid}.txt")
+
+        try:
+            # 步骤 1：提取原视频最后一帧（-sseof -0.1 从末尾前 0.1 秒处取帧）
+            subprocess.run(
+                [FFMPEG_PATH, "-y", "-sseof", "-0.1", "-i", video_path,
+                 "-frames:v", "1", "-q:v", "2", last_frame_path],
+                capture_output=True, text=True, check=True, timeout=_TIMEOUT_SPLIT,
+            )
+
+            # 步骤 2：用最后一帧循环播放 + 静音音轨，生成延长片段
+            # -loop 1 循环图片，anullsrc 生成静音，-t 控制时长
+            subprocess.run(
+                [FFMPEG_PATH, "-y",
+                 "-loop", "1", "-i", last_frame_path,
+                 "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+                 "-t", str(extend_duration),
+                 "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                 "-c:a", "aac", "-shortest",
+                 extend_video_path],
+                capture_output=True, text=True, check=True, timeout=_TIMEOUT_SPLIT,
+            )
+
+            # 步骤 3：用 FFmpeg concat 协议把原视频和延长片段拼接
+            with open(concat_list_path, "w", encoding="utf-8") as f:
+                v1 = video_path.replace("\\", "/").replace("'", "'\\''")
+                v2 = extend_video_path.replace("\\", "/").replace("'", "'\\''")
+                f.write(f"file '{v1}'\nfile '{v2}'\n")
+            subprocess.run(
+                [FFMPEG_PATH, "-y", "-f", "concat", "-safe", "0",
+                 "-i", concat_list_path, "-c", "copy", concat_video_path],
+                capture_output=True, text=True, check=True, timeout=_TIMEOUT_SPLIT,
+            )
+
+            # 步骤 4：将 TTS 音频替换进拼接后的视频
+            # 此时视频时长 >= 音频时长，apad 处理边界对齐，-t 截断到音频时长
+            video_duration_new = self.get_video_info(concat_video_path)["duration"]
+            cmd = [
+                FFMPEG_PATH, "-y",
+                "-i", concat_video_path,
+                "-i", audio_path,
+                "-filter_complex", f"[1:a]apad=whole_dur={video_duration_new}[a]",
+                "-c:v", "copy",
+                "-map", "0:v:0",
+                "-map", "[a]",
+                "-t", str(audio_duration),
+                output_path,
+            ]
+            subprocess.run(
+                cmd, capture_output=True, text=True, check=True, timeout=_TIMEOUT_AUDIO,
+            )
+
+            return output_path
+
+        except subprocess.TimeoutExpired:
+            raise RuntimeError(f"音频替换（视频延长）超时: {video_path}")
+        except subprocess.CalledProcessError as e:
+            raise RuntimeError(f"音频替换（视频延长）失败: {e.stderr}")
+        finally:
+            # 清理所有中间临时文件
+            for p in [last_frame_path, extend_video_path, concat_video_path, concat_list_path]:
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except OSError:
+                    pass
 
     def add_bgm(
         self,
