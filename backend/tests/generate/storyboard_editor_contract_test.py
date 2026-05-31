@@ -2,7 +2,7 @@ from pathlib import Path
 
 
 def test_storyboard_service_supports_sequence_and_dirty_stage():
-    source = Path("backend/v1/app/generate/service/storyboard_service.py").read_text(encoding="utf-8")
+    source = Path("backend/v1/app/generate/service/generateUtils/storyboard.py").read_text(encoding="utf-8")
 
     assert '"sequence"' in source
     assert "invalidate_from" in source

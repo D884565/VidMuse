@@ -11,7 +11,7 @@ import requests
 
 from backend.v1.app.config.config import settings
 from backend.v1.app.models.frame import Frame
-from backend.v1.app.generate.service.reference_image_utils import (
+from backend.v1.app.generate.service.generateUtils.reference_image_utils import (
     MAX_REFERENCE_IMAGES,
     select_reference_images,
 )

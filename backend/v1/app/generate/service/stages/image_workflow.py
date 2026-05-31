@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
 from backend.v1.app.generate.service.stages.image_service import image_generation_service
-from backend.v1.app.generate.service.reference_image_utils import extract_reference_images
+from backend.v1.app.generate.service.generateUtils.reference_image_utils import extract_reference_images
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
-from backend.v1.app.generate.service.task_service import generation_task_service
+from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
 from backend.v1.app.generate.service.workflow.blocks import build_image_stage_blocks, build_progress_block
 from backend.v1.app.models.conversation import Conversation
 from backend.v1.app.models.frame import Frame

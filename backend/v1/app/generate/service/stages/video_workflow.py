@@ -7,7 +7,7 @@ from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.project_asset import ProjectAsset
 from backend.v1.app.generate.tasks.celery_app import celery_app
-from backend.v1.app.generate.service.task_service import generation_task_service
+from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
 
 
