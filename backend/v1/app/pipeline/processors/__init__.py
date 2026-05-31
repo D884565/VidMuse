@@ -7,6 +7,10 @@ from .product_generate_processor import ProductGenerateProcessor
 from .vectorization_processor import VectorizationProcessor
 from .video_overall_understanding_processor import VideoOverallUnderstandingProcessor
 from .video_aggregation_processor import VideoAggregationProcessor, VideoGenerateProcessor
+from .audio_info_extract_processor import AudioInfoExtractProcessor
+from .audio_asr_processor import AudioASRProcessor
+from .audio_classification_processor import AudioClassificationProcessor
+from .audio_result_aggregator import AudioResultAggregator
 
 
 __all__ = [
@@ -20,4 +24,8 @@ __all__ = [
     "VideoOverallUnderstandingProcessor",
     "VideoAggregationProcessor",
     "VideoGenerateProcessor",
+    "AudioInfoExtractProcessor",
+    "AudioASRProcessor",
+    "AudioClassificationProcessor",
+    "AudioResultAggregator",
 ]
