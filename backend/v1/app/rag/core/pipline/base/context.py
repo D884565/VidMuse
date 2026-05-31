@@ -51,3 +51,30 @@ class PipelineContext:
         :return: 错误信息列表
         """
         return [str(e) for e in self.errors]
+
+    def to_dict(self) -> dict:
+        """
+        将上下文转换为可序列化的字典
+
+        :return: 序列化后的字典
+        """
+        return {
+            "data": self.data,
+            "errors": [str(e) for e in self.errors],
+            "metadata": self.metadata
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "PipelineContext":
+        """
+        从字典恢复上下文对象
+
+        :param data: 序列化的字典数据
+        :return: 恢复后的PipelineContext对象
+        """
+        context = cls(initial_data=data.get("data", {}))
+        context.metadata = data.get("metadata", {})
+        # 错误信息只能恢复为字符串形式
+        for error_str in data.get("errors", []):
+            context.add_error(Exception(error_str))
+        return context

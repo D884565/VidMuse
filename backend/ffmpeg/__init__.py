@@ -1,3 +1,7 @@
-__all__=["FFmpegVideoProcessor"]
 
-from backend.ffmpeg.pyutils import FFmpegVideoProcessor
+
+__all__ = [
+   "FFmpegVideoTool"
+]
+
+from backend.ffmpeg.pyutils import FFmpegVideoTool

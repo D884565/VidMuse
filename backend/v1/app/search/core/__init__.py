@@ -8,6 +8,7 @@ from .exceptions import (
     ConfigurationError,
     DataSourceError
 )
+from .component_registry import ComponentRegistry, component_registry
 
 __all__ = [
     "Query",
@@ -23,5 +24,7 @@ __all__ = [
     "RetrievalError",
     "PostProcessingError",
     "ConfigurationError",
-    "DataSourceError"
+    "DataSourceError",
+    "ComponentRegistry",
+    "component_registry"
 ]

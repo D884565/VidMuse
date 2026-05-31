@@ -50,13 +50,20 @@ class SliceGenerateProcessor(BaseProcessor):
         """
         执行切片JSON生成逻辑
 
+        输入（从上下文获取）：
+        - understood_slices: List[Dict] 理解后的分片结构化数据（VideoUnderstandingProcessor输出）
+
+        输出（写入上下文）：
+        - slice_files: List[str] 生成的切片JSON文件路径列表
+        - slice_data: List[Dict] 切片结构化数据列表，符合Schema校验要求
+
         :param context: 流水线上下文
         :return: 修改后的上下文，包含生成的文件路径和数据
         """
         understood_slices = context.get("understood_slices", [])
 
         if not understood_slices:
-            raise ValueError("No understood slices found in context")
+            raise ValueError("No understood slices found in context, please ensure VideoUnderstandingProcessor executed successfully")
 
         slice_files: List[str] = []
         slice_data: List[Dict] = []
@@ -65,8 +72,10 @@ class SliceGenerateProcessor(BaseProcessor):
             # 构建符合模板的JSON结构
             slice_json = {
                 "slice_id": slice_info["slice_id"],
-                "time_range": slice_info["time_range"],
                 "video_id": slice_info["video_id"],
+                "slice_index": slice_info["slice_index"],
+                "slice_url": slice_info["slice_url"],
+                "cover_url": slice_info["cover_url"],
                 "单片段模板": slice_info["understanding"]
             }
 
@@ -83,6 +92,6 @@ class SliceGenerateProcessor(BaseProcessor):
 
         context.set("slice_files", slice_files)
         context.set("slice_data", slice_data)
-        context.metadata["generated_count"] = len(slice_files)
+        context.metadata["slice_generated_count"] = len(slice_files)
 
         return context

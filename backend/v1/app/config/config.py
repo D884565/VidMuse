@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     MYSQL_PORT: int = 3306
     MYSQL_DATABASE: str = "aigc_video"
     MYSQL_USER: str = "aigc_user"
+    MYSQL_ROOT: str = "root"
+    MYSQL_ROOT_PASSWORD: str = "root_password"
     MYSQL_PASSWORD: str = "123456"
     DATABASE_URL: str | None = None  # 显式指定时优先
 
@@ -35,7 +37,7 @@ class Settings(BaseSettings):
         if self.DATABASE_URL:
             return self.DATABASE_URL.replace("+aiomysql", "+pymysql")
         return (
-            f"mysql+pymysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
+            f"mysql+pymysql://{self.MYSQL_ROOT}:{self.MYSQL_ROOT_PASSWORD}"
             f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
             "?charset=utf8mb4"
         )
@@ -71,11 +73,12 @@ class Settings(BaseSettings):
     # ChromaDB
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8001
-    PRODUCT_COLLECTION: str = "product_knowledge"
-    SLICE_COLLECTION: str = "slice_knowledge"
-    VIDEO_COLLECTION: str = "video_knowledge"
-    IMG_COLLECTION: str = "img_knowledge"
-    AUDIO_COLLECTION: str = "audio_knowledge"
+    CHROMADB_PRODUCT_COLLECTION: str = "product_knowledge"
+    CHROMADB_SLICE_COLLECTION: str = "slice_knowledge"
+    CHROMADB_VIDEO_COLLECTION: str = "video_knowledge"
+    CHROMADB_IMAGE_COLLECTION: str = "img_knowledge"
+    CHROMADB_AUDIO_COLLECTION: str = "audio_knowledge"
+
 
     # Milvus配置
     MILVUS_HOST: str = "localhost"

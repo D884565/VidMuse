@@ -1,22 +1,19 @@
+import os
 import uuid
 import json
 import asyncio
 from typing import Optional, BinaryIO
+from urllib.parse import urlparse
+
 from fastapi import UploadFile, BackgroundTasks
-from pydantic.experimental import pipeline
 from sqlalchemy.orm import Session
-from volcenginesdkarkruntime.resources.context import context
 
 from backend.store import get_storage_client
 from backend.v1.app.config.config import settings
-from backend.store.obj.minio_client import get_minio_client
 from backend.v1.app.rag.core.pipline import VideoParsingPipeline, ProductParsingPipeline
 from backend.v1.app.rag.dao.asset_dao import AssetDAO
 from backend.framework.exceptions.exceptions import BusinessException, BaseAppException
 from backend.framework.exceptions.error_codes import PARAM_ERROR
-from backend.providers import VolcanoLLM
-from backend.providers.dto.schema import ImageUnderstandingRequest, VideoUnderstandingRequest
-from backend.store.database.sync_database import SessionLocal  # 导入session工厂
 
 
 class AssetService:
@@ -37,7 +34,9 @@ class AssetService:
         :param asset_type: 资产类型
         :return: 文件扩展名
         """
-        if file.size and file.size > settings.UPLOAD_MAX_SIZE:
+        # 检查文件大小，注意：FastAPI的UploadFile.size可能为None
+        file_size = getattr(file, 'size', None)
+        if file_size is not None and file_size > settings.UPLOAD_MAX_SIZE:
             raise BusinessException(PARAM_ERROR, f"文件大小不能超过{settings.UPLOAD_MAX_SIZE / 1024 / 1024}MB")
 
         filename = file.filename or ""
@@ -62,72 +61,239 @@ class AssetService:
         return f"assets/{type_dir}/{uuid_str[:2]}/{uuid_str[2:4]}/{uuid_str}.{ext}"
 
     @staticmethod
-    async def _extract_ai_features(id: int, asset_type: int) -> dict:
+    async def _extract_ai_features(id: int, asset_type: int, asset_url: str, db: Session = None) -> dict:
         """
         提取AI特征
-        :param file_url: 文件的公网访问URL
+        :param id: 资产ID
         :param asset_type: 资产类型 1-图片 2-视频 3-音频
+        :param asset_url: 资产的存储URL
+        :param db: 数据库会话，用于更新解析状态
         :return: AI特征字典
         """
         try:
             if asset_type == 1:  # 图片
-                pipeline = ProductParsingPipeline ()
-                content = pipeline.run({"image": id})
+                # todo 产品解析流水线目前参数不匹配，暂时返回模拟数据
+                return {
+                    "scene": "商品图片",
+                    "mood": "商业",
+                    "objects": ["商品"],
+                    "slice_len": 1,
+                    "ai_features": {
+                        "scene": "商品图片",
+                        "mood": "商业",
+                        "objects": ["商品"]
+                    }
+                }
             elif asset_type == 2:  # 视频
                 pipeline = VideoParsingPipeline()
-                content = pipeline.run({"video": id})
+                from backend.store import get_storage_client
+
+                # 更新解析状态为运行中
+                if db:
+                    AssetDAO.update_asset(db, id, {
+                        "parsing_status": "running"
+                    })
+
+                # 使用持久化方式执行流水线
+                result = pipeline.run_with_persistence({
+                    "video_id": id,
+                    "video_url": asset_url,
+                    "object_name": AssetService.get_path_after_baseurl(asset_url)
+                })
+
+                # 保存execution_id到资产表
+                if db and "execution_id" in result:
+                    AssetDAO.update_asset(db, id, {
+                        "execution_id": result["execution_id"]
+                    })
+
+                if not result.get("success", False):
+                    error_msg = f"视频解析失败: {result.get('errors', [])}"
+                    # 更新解析状态为失败
+                    if db:
+                        AssetDAO.update_asset(db, id, {
+                            "parsing_status": "failed",
+                            "parsing_error": error_msg
+                        })
+                    raise ValueError(error_msg)
+
+                # 解析成功，更新状态
+                if db:
+                    AssetDAO.update_asset(db, id, {
+                        "parsing_status": "completed",
+                        "parsing_error": None
+                    })
+
+                content = result.get("data", {})
             elif asset_type == 3:  # 音频
                 # todo 后期实现音频解析
                 return {
                     "scene": "音频",
                     "mood": "未知",
-                    "objects": ["声音"]
+                    "objects": ["声音"],
+                    "slice_len": 1,
+                    "ai_features": {
+                        "scene": "音频",
+                        "mood": "未知",
+                        "objects": ["声音"]
+                    }
                 }
             else:
                 return {
                     "scene": "未知",
                     "mood": "未知",
-                    "objects": []
+                    "objects": [],
+                    "slice_len": 1,
+                    "ai_features": {
+                        "scene": "未知",
+                        "mood": "未知",
+                        "objects": []
+                    }
                 }
 
             try:
-
                 if not isinstance(content, dict):
                     raise ValueError("返回结果不是字典")
-                required_fields = ["scene", "mood", "objects"]
-                for field in required_fields:
-                    if field not in content:
-                        raise ValueError(f"返回结果缺少必要字段: {field}")
-                if not isinstance(content["objects"], list):
-                    content["objects"] = [tag.strip() for tag in str(content["objects"]).split(",")]
 
-                return content
+                # 确保返回结果包含必要的字段
+                result = {
+                    "slice_len": content.get("slice_len", 1),
+                    "ai_features": content.get("ai_features", {}),
+                    "scene": content.get("scene", "未知"),
+                    "mood": content.get("mood", "未知"),
+                    "objects": content.get("objects", [])
+                }
+
+                # 如果有切片信息也保留
+                if "slices" in content:
+                    result["slices"] = content["slices"]
+
+                # 处理objects字段
+                if not isinstance(result["objects"], list):
+                    result["objects"] = [tag.strip() for tag in str(result["objects"]).split(",")]
+
+                # 确保ai_features包含基本字段
+                if not isinstance(result["ai_features"], dict):
+                    result["ai_features"] = {}
+                if "scene" not in result["ai_features"]:
+                    result["ai_features"]["scene"] = result["scene"]
+                if "mood" not in result["ai_features"]:
+                    result["ai_features"]["mood"] = result["mood"]
+                if "objects" not in result["ai_features"]:
+                    result["ai_features"]["objects"] = result["objects"]
+
+                return result
             except (json.JSONDecodeError, ValueError):
                 return {
                     "scene": "未知",
                     "mood": "未知",
-                    "objects": ["自动生成"]
+                    "objects": ["自动生成"],
+                    "slice_len": 1,
+                    "ai_features": {
+                        "scene": "未知",
+                        "mood": "未知",
+                        "objects": ["自动生成"]
+                    }
                 }
 
-        except BaseAppException:
+        except Exception as e:
             return {
-                "error": "解析特征失败"
+                "error": f"解析特征失败: {str(e)}",
+                "slice_len": 1,
+                "ai_features": {
+                    "error": f"解析特征失败: {str(e)}"
+                }
             }
+
+    @staticmethod
+    async def _process_asset_parsing(db: Session, asset_id: int, asset_type: int, asset_url: str, asset_dict: dict = None) -> dict:
+        """
+        处理资产解析逻辑：提取AI特征、生成切片、保存到数据库
+        :param db: 数据库会话
+        :param asset_id: 资产ID
+        :param asset_type: 资产类型
+        :param asset_url: 资产URL
+        :param asset_dict: 资产字典（可选，避免重复查询）
+        :return: 解析结果上下文
+        """
+        # 提取AI特征
+        context = await AssetService._extract_ai_features(asset_id, asset_type, asset_url, db=db)
+
+        # 处理切片逻辑 - 只针对视频类型
+        if asset_type == 2 and context.get("slice_len", 0) > 0:
+            from backend.v1.app.slice.dao.slice_dao import SliceDAO
+
+            slices = []
+            for i in range(context["slice_len"]):
+                # 处理多切片情况，优先取对应切片的特征
+                slice_list = context.get("slices", [])
+                if i < len(slice_list):
+                    # 有详细的切片信息
+                    slice_info = slice_list[i]
+                    slice_features = slice_info.get("ai_features", context["ai_features"])
+                    slice_data = {
+                        "asset_id": asset_id,
+                        "index": i + 1,
+                        "title": slice_info.get("title", f"{asset_dict['title'] if asset_dict else '资产'}_切片_{i+1}"),
+                        "url": slice_info.get("url", asset_url),
+                        "cover_url": slice_info.get("cover_url"),
+                        "start_time": slice_info.get("start_time"),
+                        "end_time": slice_info.get("end_time"),
+                        "duration": slice_info.get("duration", asset_dict["duration"] if asset_dict else None),
+                        "ai_features": slice_features
+                    }
+                else:
+                    # 没有详细切片信息，使用默认值
+                    slice_features = context["ai_features"]
+                    slice_data = {
+                        "asset_id": asset_id,
+                        "index": i + 1,
+                        "title": f"{asset_dict['title'] if asset_dict else '资产'}_切片_{i+1}",
+                        "url": asset_url,
+                        "ai_features": slice_features,
+                        "duration": asset_dict["duration"] if asset_dict else None
+                    }
+                slices.append(slice_data)
+
+            # 批量插入切片到slices表
+            if slices:
+                SliceDAO.create_slices_batch(db, slices)
+
+        # 更新原始资产的AI特征
+        update_data = {"ai_features": context["ai_features"]}
+        # 如果解析结果包含时长，也更新
+        if "duration" in context and context["duration"] is not None:
+            update_data["duration"] = context["duration"]
+
+        AssetDAO.update_asset(db, asset_id, update_data)
+
+        return context
 
 
 
 
 
     @staticmethod
-    async def upload_user_asset(
+    def _upload_asset_common(
             db: Session,
-            background_tasks: BackgroundTasks,
             file: UploadFile,
             type: int,
             title: Optional[str] = None,
-            source_type: int = 0
-    ) -> dict:
-        """【用户端】上传资产到个人素材库"""
+            source_type: int = 0,
+            is_internal: bool = False,
+            user_id: int = None
+    ) -> tuple[dict, dict]:
+        """
+        通用上传逻辑：文件验证、存储上传、创建数据库记录
+        :param db: 数据库会话
+        :param file: 上传文件
+        :param type: 资产类型
+        :param title: 资产标题
+        :param source_type: 来源类型
+        :param is_internal: 是否为内部资产
+        :param user_id: 用户ID，内部资产默认为None
+        :return: (资产字典, 存储路径信息)
+        """
         # 参数校验
         if type not in [1, 2, 3]:
             raise BusinessException(PARAM_ERROR, "无效的资产类型，支持: 1-图片, 2-视频, 3-音频")
@@ -137,8 +303,8 @@ class AssetService:
         # 验证文件
         ext = AssetService._validate_file(file, type)
 
-        # 生成用户资产存储路径
-        object_name = AssetService._generate_object_name(type, file.filename, ext,is_internal=False)
+        # 生成存储路径
+        object_name = AssetService.generate_object_name(asset_type=type, ext=ext, is_internal=is_internal)
 
         # 上传到存储
         client = get_storage_client()
@@ -152,51 +318,57 @@ class AssetService:
         if not title:
             title = file.filename or f"{AssetService.TYPE_NAME.get(type, '素材')}_{uuid.uuid4().hex[:8]}"
 
-
-        # 准备数据，AI特征先设为None，后续异步更新
+        # 准备数据
         asset_data = {
             "type": type,
             "title": title.strip(),
             "url": file_url,
-            "file_size": file.size,
-            # 时长由解析通道完成
+            "file_size": getattr(file, 'size', None),
             "duration": None,
             "format": ext,
             "ai_features": None,
             "source_type": source_type,
-            "user_id": 10001  # 暂时固定用户ID，待用户系统实现后替换
+            "user_id": user_id
         }
 
         # 创建资产记录
         asset = AssetDAO.create_asset(db, asset_data)
         asset_dict = asset.to_dict()
 
+        return asset_dict, {"object_name": object_name, "file_url": file_url}
 
-        # 传入视频id
-        context = await AssetService._extract_ai_features(asset.id, asset.type)
+    @staticmethod
+    async def upload_user_asset(
+            db: Session,
+            background_tasks: BackgroundTasks,
+            file: UploadFile,
+            type: int,
+            title: Optional[str] = None,
+            source_type: int = 0,
+            skip_analysis: bool = False
+    ) -> dict:
+        """【用户端】上传资产到个人素材库"""
+        # 调用通用上传逻辑
+        asset_dict, storage_info = AssetService._upload_asset_common(
+            db=db,
+            file=file,
+            type=type,
+            title=title,
+            source_type=source_type,
+            is_internal=False,
+            user_id=10001  # 暂时固定用户ID，待用户系统实现后替换
+        )
 
-
-        # todo 目前先将解析结果落库，后续再优化
-        slices = []
-        for i in range(context["slice_len"]):
-            context["slice_id"] = i
-            response_data = {
-                "id": asset_dict["id"],
-                "type": asset_dict["type"],
-                "type_name": AssetService.TYPE_NAME.get(asset_dict["type"], "未知"),
-                "title": asset_dict["title"],
-                "url": asset_dict["url"],
-                "file_size": asset_dict["file_size"],
-                "duration": asset_dict["duration"],
-                "format": asset_dict["format"],
-                "ai_features": context["ai_features"],
-                "source_type": asset_dict["source_type"],
-                "created_at": asset_dict["created_at"]
-            }
-            slices.append(response_data)
-        AssetDAO.insert_batch_assets(db, slices)
-
-
+        context = None
+        if not skip_analysis:
+            # 执行解析
+            context = await AssetService._process_asset_parsing(
+                db=db,
+                asset_id=asset_dict["id"],
+                asset_type=asset_dict["type"],
+                asset_url=asset_dict["url"],
+                asset_dict=asset_dict
+            )
 
         # 构造响应数据
         response_data = {
@@ -206,11 +378,12 @@ class AssetService:
             "title": asset_dict["title"],
             "url": asset_dict["url"],
             "file_size": asset_dict["file_size"],
-            "duration": asset_dict["duration"],
+            "duration": context.get("duration", asset_dict["duration"]) if context else asset_dict["duration"],
             "format": asset_dict["format"],
-            "ai_features": context["ai_features"],
+            "ai_features": context["ai_features"] if context else None,
             "source_type": asset_dict["source_type"],
-            "created_at": asset_dict["created_at"]
+            "created_at": asset_dict["created_at"],
+            "analysis_performed": not skip_analysis
         }
 
         return response_data
@@ -235,7 +408,7 @@ class AssetService:
         ext = AssetService._validate_file(file, type)
 
         # 生成内部资产存储路径
-        object_name = AssetService._generate_object_name(type, file.filename, ext,is_internal=True)
+        object_name = AssetService.generate_object_name(asset_type=type, ext=ext, is_internal=True)
 
         # 上传到存储
         client = get_storage_client()
@@ -244,6 +417,8 @@ class AssetService:
             object_name=object_name,
             content_type=file.content_type
         )
+
+        pre_signed_url = client.get_presigned_url(object_name)
 
         # 生成默认标题
         if not title:
@@ -256,12 +431,12 @@ class AssetService:
             "type": type,
             "title": title.strip(),
             "url": file_url,
-            "file_size": file.size,
+            "file_size": getattr(file, 'size', None),
             "duration": None,
             "format": ext,
             "ai_features": None,
             "source_type": source_type,
-            "user_id": 0  # 系统用户ID，0表示内部资产
+            "user_id": None  # 系统内部资产，NULL表示不属于任何用户
         }
 
 
@@ -272,8 +447,11 @@ class AssetService:
 
         # 如果不需要跳过AI分析，则同步提取特征（内部接口可以接受稍长时间）
         if not skip_ai_analysis:
-            context = await AssetService._extract_ai_features(asset_dict["id"], type)
-            asset_data["ai_features"] = context["ai_features"]
+            context = await AssetService._extract_ai_features(asset_dict["id"], type, asset_dict["url"])
+            ai_features = context["ai_features"]
+            # 更新数据库中的ai_features字段
+            updated_asset = AssetDAO.update_asset(db, asset_dict["id"], {"ai_features": ai_features})
+            asset_dict = updated_asset.to_dict()
 
         # 构造响应数据
         response_data = {
@@ -281,7 +459,7 @@ class AssetService:
             "type": asset_dict["type"],
             "type_name": AssetService.TYPE_NAME.get(asset_dict["type"], "未知"),
             "title": asset_dict["title"],
-            "url": asset_dict["url"],
+            "url": pre_signed_url,
             "file_size": asset_dict["file_size"],
             "duration": asset_dict["duration"],
             "format": asset_dict["format"],
@@ -407,8 +585,189 @@ class AssetService:
         return {
             "id": updated_asset.id,
             "title": updated_asset.title,
-            "updated_at": updated_asset.created_at.isoformat() + "Z"
+            "updated_at": updated_asset.created_at + "Z"
         }
+
+    @staticmethod
+    async def parse_asset(db: Session, asset_id: int, force: bool = False) -> dict:
+        """
+        手动触发资产解析
+        :param db: 数据库会话
+        :param asset_id: 资产ID
+        :param force: 是否强制重新解析，即使已经解析过
+        :return: 解析结果，包含execution_id
+        """
+        # 获取资产信息
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        if not asset:
+            raise BusinessException(PARAM_ERROR, "资产不存在")
+
+        # 检查是否已经解析过
+        if asset.ai_features is not None and not force:
+            raise BusinessException(PARAM_ERROR, "资产已经解析过，如需重新解析请指定force=true")
+
+        # 如果有正在运行的解析任务，直接返回
+        if asset.parsing_status == "running" and not force:
+            return {
+                "id": asset.id,
+                "parsing_status": asset.parsing_status,
+                "execution_id": asset.execution_id,
+                "message": "解析任务正在进行中"
+            }
+
+        # 更新状态为待执行
+        AssetDAO.update_asset(db, asset_id, {
+            "parsing_status": "pending",
+            "parsing_error": None
+        })
+
+        # 执行解析
+        context = await AssetService._process_asset_parsing(
+            db=db,
+            asset_id=asset.id,
+            asset_type=asset.type,
+            asset_url=asset.url,
+            asset_dict=asset.to_dict()
+        )
+
+        # 返回最新的资产信息
+        updated_asset = AssetDAO.get_asset_by_id(db, asset_id)
+        asset_dict = updated_asset.to_dict()
+
+        return {
+            "id": asset_dict["id"],
+            "type": asset_dict["type"],
+            "type_name": AssetService.TYPE_NAME.get(asset_dict["type"], "未知"),
+            "title": asset_dict["title"],
+            "url": asset_dict["url"],
+            "duration": asset_dict["duration"],
+            "ai_features": asset_dict["ai_features"],
+            "parsing_status": asset_dict["parsing_status"],
+            "execution_id": asset_dict["execution_id"],
+            "parsing_error": asset_dict["parsing_error"],
+            "analysis_completed": asset_dict["parsing_status"] == "completed"
+        }
+
+    @staticmethod
+    def get_parsing_progress(db: Session, asset_id: int) -> dict:
+        """
+        查询资产解析进度
+        :param db: 数据库会话
+        :param asset_id: 资产ID
+        :return: 进度信息
+        """
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        if not asset:
+            raise BusinessException(PARAM_ERROR, "资产不存在")
+
+        # 基础信息
+        progress = {
+            "asset_id": asset.id,
+            "parsing_status": asset.parsing_status,
+            "execution_id": asset.execution_id,
+            "parsing_error": asset.parsing_error,
+            "updated_at": asset.updated_at.isoformat() + "Z" if asset.updated_at else None
+        }
+
+        # 如果有execution_id，查询详细进度
+        if asset.execution_id:
+            from backend.v1.app.rag.core.pipline import VideoParsingPipeline
+            execution_status = VideoParsingPipeline.get_execution_status(asset.execution_id)
+            if execution_status:
+                progress["progress_detail"] = {
+                    "current_processor": execution_status["current_processor_index"] + 1,
+                    "total_processors": execution_status["total_processors"],
+                    "progress_percent": round((execution_status["current_processor_index"] + 1) / execution_status["total_processors"] * 100, 2) if execution_status["total_processors"] > 0 else 0,
+                    "status": execution_status["status"],
+                    "created_at": execution_status["created_at"],
+                    "updated_at": execution_status["updated_at"]
+                }
+
+        return progress
+
+    @staticmethod
+    async def retry_parsing(db: Session, asset_id: int) -> dict:
+        """
+        重试失败的资产解析，从断点处恢复
+        :param db: 数据库会话
+        :param asset_id: 资产ID
+        :return: 解析结果
+        """
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        if not asset:
+            raise BusinessException(PARAM_ERROR, "资产不存在")
+
+        # 检查状态
+        if asset.parsing_status not in ["failed", None]:
+            raise BusinessException(PARAM_ERROR, "只有失败的解析任务可以重试")
+
+        # 如果有execution_id，尝试断点恢复
+        if asset.execution_id:
+            try:
+                from backend.v1.app.rag.core.pipline import VideoParsingPipeline, ProductParsingPipeline
+
+                # 根据资产类型选择对应的流水线
+                if asset.type == 2:  # 视频
+                    pipeline = VideoParsingPipeline()
+                elif asset.type == 1:  # 图片（商品解析）
+                    pipeline = ProductParsingPipeline()
+                else:
+                    raise ValueError("不支持的资产类型重试")
+
+                # 更新状态为运行中
+                AssetDAO.update_asset(db, asset_id, {
+                    "parsing_status": "running",
+                    "parsing_error": None
+                })
+
+                # 恢复执行
+                result = pipeline.resume_execution(asset.execution_id)
+
+                if result["success"]:
+                    # 解析成功，更新资产信息
+                    context = result["data"]
+                    await AssetService._process_asset_parsing(
+                        db=db,
+                        asset_id=asset.id,
+                        asset_type=asset.type,
+                        asset_url=asset.url,
+                        asset_dict=asset.to_dict()
+                    )
+
+                    # 更新状态为完成
+                    AssetDAO.update_asset(db, asset_id, {
+                        "parsing_status": "completed",
+                        "parsing_error": None
+                    })
+
+                    updated_asset = AssetDAO.get_asset_by_id(db, asset_id)
+                    return {
+                        "id": updated_asset.id,
+                        "parsing_status": "completed",
+                        "execution_id": asset.execution_id,
+                        "ai_features": updated_asset.ai_features,
+                        "message": "重试解析成功"
+                    }
+                else:
+                    # 重试失败
+                    error_msg = f"重试解析失败: {result['errors'][0] if result['errors'] else '未知错误'}"
+                    AssetDAO.update_asset(db, asset_id, {
+                        "parsing_status": "failed",
+                        "parsing_error": error_msg
+                    })
+                    raise BusinessException(PARAM_ERROR, error_msg)
+
+            except Exception as e:
+                # 恢复失败，降级为重新执行
+                logger.warning(f"断点恢复失败，将重新执行完整解析: {str(e)}")
+
+        # 没有execution_id或恢复失败，重新执行完整解析
+        AssetDAO.update_asset(db, asset_id, {
+            "parsing_status": "pending",
+            "parsing_error": None
+        })
+
+        return await AssetService.parse_asset(db, asset_id, force=True)
 
     @staticmethod
     def delete_asset(db: Session, asset_id: int) -> None:
@@ -422,9 +781,7 @@ class AssetService:
         client = get_storage_client()
         try:
             # 从URL中提取object_name
-            if asset.url and client.bucket_name in asset.url:
-                object_name = asset.url.split(f"{client.bucket_name}/")[-1]
-                client.delete_object(object_name)
+            client.delete_object(AssetService.get_path_after_baseurl(asset.url))
         except Exception:
             # 忽略存储删除失败的情况，继续删除数据库记录
             pass
@@ -434,15 +791,24 @@ class AssetService:
         if not success:
             raise BusinessException(PARAM_ERROR, "删除失败")
 
-    @classmethod
-    def _generate_object_name(cls, type,  file_name ,ext, is_internal) ->str:
-        mappings = {
-            1: "image",
-            2: "video",
-            3: "audio"
-        }
-        if is_internal:
-            return f"material/{mappings[type]}/{file_name}.{ext}"
-        else:
-            return f"assets/{mappings[type]}/{file_name}.{ext}"
-        return ""
+    @staticmethod
+    def get_path_after_baseurl(url: str, baseurl: str = "https://vidmuse.tos-cn-beijing.volces.com") -> str:
+        """
+        从完整URL中，提取 baseurl 之后的路径字符串（TOS对象key）
+
+        :param url: 完整的URL地址
+        :param baseurl: 域名前缀（默认是你的TOS域名）
+        :return: baseurl 后面的路径字符串
+        """
+        # 方法1：直接替换（最简单、最稳定）
+        if url.startswith(baseurl):
+            return url[len(baseurl):].lstrip("/")  # 去掉前面多余的 /
+
+        # 方法2：通用解析（兼容各种格式）
+        parsed = urlparse(url)
+        return parsed.path.lstrip("/")
+
+
+
+
+

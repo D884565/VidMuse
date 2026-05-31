@@ -1,10 +1,14 @@
+DROP TABLE IF EXISTS agent_traces;
 DROP TABLE IF EXISTS conversations;
 DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS merge_tasks;
+DROP TABLE IF EXISTS slices;
 DROP TABLE IF EXISTS assets;
 DROP TABLE IF EXISTS products;
+DROP TABLE IF EXISTS product_categories;
 DROP TABLE IF EXISTS projects;
 DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS pipeline_executions;
 
 
 
@@ -20,6 +24,22 @@ CREATE TABLE IF NOT EXISTS users(
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
+
+CREATE TABLE IF NOT EXISTS product_categories (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '分类ID',
+    name            VARCHAR(100) NOT NULL COMMENT '分类名称',
+    parent_id       BIGINT NOT NULL DEFAULT 0 COMMENT '父分类ID，0表示一级分类',
+    level           TINYINT NOT NULL COMMENT '分类层级：1-一级分类，2-二级分类，3-三级分类',
+    path            VARCHAR(200) NOT NULL COMMENT '分类路径，如"/1/2/3/"，方便查询子树',
+    sort            INT NOT NULL DEFAULT 0 COMMENT '排序权重，数值越大越靠前',
+    is_deleted      TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_name_parent (name, parent_id, is_deleted),
+    INDEX idx_parent_id (parent_id),
+    INDEX idx_level (level),
+    INDEX idx_path (path)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品分类表';
 
 
 CREATE TABLE IF NOT EXISTS projects (
@@ -61,10 +81,33 @@ CREATE TABLE IF NOT EXISTS assets (
     format          VARCHAR(20) COMMENT '文件格式',
     ai_features     JSON COMMENT 'AI特征因子',
     source_type     TINYINT DEFAULT 0 COMMENT '来源',
+    parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
+    execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
+    parsing_error   TEXT COMMENT '解析错误信息',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    INDEX idx_parsing_status (parsing_status),
+    INDEX idx_execution_id (execution_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='素材库';
 
+
+CREATE TABLE IF NOT EXISTS slices (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '切片id',
+    asset_id        BIGINT NOT NULL COMMENT '所属资产id',
+    `index`         INT NOT NULL COMMENT '切片序号(从1开始)',
+    title           VARCHAR(200) COMMENT '切片标题',
+    url             VARCHAR(500) NOT NULL COMMENT '切片视频URL',
+    cover_url       VARCHAR(500) COMMENT '切片封面图URL',
+    start_time      INT COMMENT '切片在原视频中的开始时间(毫秒)',
+    end_time        INT COMMENT '切片在原视频中的结束时间(毫秒)',
+    duration        INT COMMENT '切片时长(毫秒)',
+    ai_features     JSON COMMENT 'AI特征因子',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_asset_index (asset_id, `index`),
+    INDEX idx_asset_id (asset_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频切片表';
 
 
 CREATE TABLE IF NOT EXISTS frames (
@@ -97,9 +140,11 @@ CREATE TABLE IF NOT EXISTS products (
     user_id         BIGINT COMMENT '所属用户id(为空表示平台公共商品)',
     name            VARCHAR(200) NOT NULL COMMENT '商品名称',
     brand           VARCHAR(100) COMMENT '品牌',
-    category        VARCHAR(100) COMMENT '商品分类',
+    category        VARCHAR(100) COMMENT '商品分类（冗余存储三级分类名称）',
+    category_id     BIGINT COMMENT '关联分类ID，对应product_categories.id',
+    category_path   VARCHAR(200) COMMENT '分类路径，冗余存储方便检索，如"/1/2/3/"',
     description     TEXT COMMENT '商品描述',
-    selling_points  JSON COMMENT '卖点列表',
+    selling_points  JSON COMMENT 'ai解析特征',
     price           DECIMAL(12, 2) COMMENT '价格',
     main_image_url  VARCHAR(500) COMMENT '主图URL',
     detail_url      VARCHAR(1000) COMMENT '商品详情页链接',
@@ -107,12 +152,23 @@ CREATE TABLE IF NOT EXISTS products (
     platform_id     VARCHAR(100) COMMENT '平台商品ID',
     specs           JSON COMMENT '商品规格参数',
     tags            JSON COMMENT '标签',
+    auto_parse      TINYINT(1) DEFAULT 0 COMMENT '是否创建后自动触发解析',
+    images          JSON COMMENT '商品图片URL列表',
+    parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
+    execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
+    parsing_error   TEXT COMMENT '解析错误信息',
+    ai_features     JSON COMMENT 'AI解析结果特征',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL,
     INDEX idx_user (user_id),
     INDEX idx_platform (platform, platform_id),
     INDEX idx_category (category),
+    INDEX idx_category_id (category_id),
+    INDEX idx_category_path (category_path),
+    INDEX idx_parsing_status (parsing_status),
+    INDEX idx_execution_id (execution_id),
     FULLTEXT INDEX ft_name_desc (name, description)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
 
@@ -145,3 +201,57 @@ CREATE TABLE IF NOT EXISTS conversations (
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE SET NULL,
     INDEX idx_conversations_project (project_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话记录表';
+
+
+CREATE TABLE IF NOT EXISTS agent_traces (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '推理轨迹ID',
+    session_id      VARCHAR(64) NOT NULL COMMENT '会话ID',
+    user_id         BIGINT COMMENT '用户ID',
+    project_id      BIGINT COMMENT '项目ID',
+    user_input      TEXT NOT NULL COMMENT '用户原始输入',
+    system_prompt   TEXT NOT NULL COMMENT '系统提示词',
+    model           VARCHAR(64) NOT NULL COMMENT '使用的模型名称',
+    temperature     FLOAT NOT NULL COMMENT '模型温度参数',
+    max_tokens      BIGINT NOT NULL COMMENT '最大生成长度',
+    top_p           FLOAT NOT NULL COMMENT '核采样参数',
+    messages_history JSON NOT NULL COMMENT '完整的消息历史',
+    iterations      BIGINT NOT NULL DEFAULT 0 COMMENT '推理迭代次数',
+    tool_calls      JSON COMMENT '所有工具调用信息',
+    tool_results    JSON COMMENT '所有工具返回结果',
+    final_answer    TEXT COMMENT '最终回答内容',
+    cost_time       FLOAT NOT NULL COMMENT '执行耗时(秒)',
+    success         TINYINT(1) NOT NULL DEFAULT 1 COMMENT '是否执行成功：1-成功，0-失败',
+    error_msg       TEXT COMMENT '错误信息',
+    meta_data        JSON COMMENT '扩展元数据',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+
+    INDEX idx_agent_traces_session_id (session_id),
+    INDEX idx_agent_traces_user_id (user_id),
+    INDEX idx_agent_traces_project_id (project_id),
+    INDEX idx_agent_traces_created_at (created_at DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent推理轨迹表';
+
+
+CREATE TABLE IF NOT EXISTS pipeline_executions (
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    execution_id        VARCHAR(64) NOT NULL COMMENT '执行ID，全局唯一',
+    pipeline_name       VARCHAR(100) NOT NULL COMMENT '流水线名称',
+    pipeline_type       VARCHAR(50) NOT NULL COMMENT '流水线类型：video/product/video_overall',
+    status              VARCHAR(20) NOT NULL COMMENT '执行状态：pending/running/completed/failed/cancelled',
+    current_processor_index INT NOT NULL COMMENT '当前执行到的处理器索引',
+    total_processors    INT NOT NULL COMMENT '总处理器数量',
+    input_params        JSON NOT NULL COMMENT '初始输入参数',
+    context_data        JSON COMMENT '上下文数据快照',
+    context_metadata    JSON COMMENT '上下文元数据快照',
+    errors              JSON COMMENT '错误信息列表',
+    error_message       TEXT COMMENT '最后一次错误信息',
+    result              JSON COMMENT '最终执行结果',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    completed_at        TIMESTAMP NULL COMMENT '完成时间',
+
+    UNIQUE KEY uk_execution_id (execution_id),
+    INDEX idx_pipeline_type (pipeline_type),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='流水线执行记录表';

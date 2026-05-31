@@ -6,6 +6,7 @@ from .product_understanding_processor import ProductUnderstandingProcessor
 from .product_generate_processor import ProductGenerateProcessor
 from .vectorization_processor import VectorizationProcessor
 from .video_overall_understanding_processor import VideoOverallUnderstandingProcessor
+from .video_aggregation_processor import VideoAggregationProcessor, VideoGenerateProcessor
 
 
 __all__ = [
@@ -17,4 +18,6 @@ __all__ = [
     "ProductGenerateProcessor",
     "VectorizationProcessor",
     "VideoOverallUnderstandingProcessor",
+    "VideoAggregationProcessor",
+    "VideoGenerateProcessor",
 ]

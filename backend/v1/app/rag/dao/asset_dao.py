@@ -14,7 +14,7 @@ class AssetDAO:
         db.add(asset)
         db.commit()
         db.refresh(asset)
-        return
+        return asset
 
     @staticmethod
     def insert_batch_assets(db: Session, assets_data: list[dict]) -> None:
