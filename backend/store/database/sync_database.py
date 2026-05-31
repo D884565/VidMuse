@@ -13,8 +13,6 @@ engine = create_engine(
     pool_pre_ping=True,
     pool_recycle=3600,
     echo=False,
-    pool_size=10,
-    max_overflow=20
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
