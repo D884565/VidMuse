@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import Mock, patch
 from backend.v1.app.pipeline.processors.audio_info_extract_processor import AudioInfoExtractProcessor
 from backend.v1.app.pipeline.processors.audio_asr_processor import AudioASRProcessor
+from backend.v1.app.pipeline.processors.audio_classification_processor import AudioClassificationProcessor
 from backend.v1.app.pipeline.base.context import PipelineContext
 from pydub import AudioSegment
 import io
@@ -156,4 +157,62 @@ def test_audio_asr_processor_api_success():
             assert result.data["transcript"] == "这是测试语音识别结果"
             assert result.data["language"] == "zh-CN"
             assert result.data["speakers"] == ["说话人0", "说话人1"]
+
+def test_audio_classification_processor_with_mock_config():
+    # 测试配置缺失时返回模拟数据
+    with patch('backend.v1.app.pipeline.processors.audio_classification_processor.settings',
+               VOLC_ENGINE_ACCESS_KEY=None,
+               VOLC_ENGINE_SECRET_KEY=None):
+        context = PipelineContext({
+            "audio_url": "https://test.com/test.mp3",
+            "object_name": "test/audio/test.mp3",
+            "transcript": "这是一段访谈内容"
+        })
+
+        processor = AudioClassificationProcessor()
+        result = processor.process(context)
+
+        assert "audio_type" in result.data
+        assert "has_background_music" in result.data
+        assert "background_music_genre" in result.data
+        assert "objects" in result.data
+        assert isinstance(result.data["objects"], list)
+        assert result.data["audio_type"] == "未知"
+        assert result.data["has_background_music"] == False
+        assert result.data["background_music_genre"] == "未知"
+        assert result.data["objects"] == ["音频"]
+
+def test_audio_classification_processor_api_success():
+    # 测试API调用成功的情况
+    mock_response = Mock()
+    mock_response.json.return_value = {
+        "code": 0,
+        "result": {
+            "audio_type": "访谈",
+            "music_detection": {
+                "has_music": True,
+                "genre": "流行"
+            },
+            "sound_effects": ["笑声", "掌声"]
+        }
+    }
+    mock_response.raise_for_status.return_value = None
+
+    with patch('backend.v1.app.pipeline.processors.audio_classification_processor.requests.post', return_value=mock_response):
+        with patch('backend.v1.app.pipeline.processors.audio_classification_processor.settings',
+                   VOLC_ENGINE_ACCESS_KEY="test_key",
+                   VOLC_ENGINE_SECRET_KEY="test_secret",
+                   VOLC_ENGINE_AUDIO_CLASSIFICATION_ENDPOINT="https://audio-classify.test.com"):
+            context = PipelineContext({
+                "audio_url": "https://test.com/test.mp3",
+                "transcript": "这是一段访谈内容"
+            })
+
+            processor = AudioClassificationProcessor()
+            result = processor.process(context)
+
+            assert result.data["audio_type"] == "访谈"
+            assert result.data["has_background_music"] == True
+            assert result.data["background_music_genre"] == "流行"
+            assert set(result.data["objects"]) == {"访谈", "背景音乐", "笑声", "掌声"}
 
