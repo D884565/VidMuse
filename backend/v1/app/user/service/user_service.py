@@ -37,12 +37,30 @@ class UserService:
 
     @staticmethod
     def _hash_password(password: str) -> str:
-        """将明文密码哈希为 bcrypt 摘要"""
+        """将明文密码哈希为 bcrypt 摘要
+
+        bcrypt 算法限制密码最长为 72 字节，超出部分需要截断
+        """
+        # bcrypt 限制密码不能超过 72 字节
+        # 先编码为 UTF-8 检查长度
+        password_bytes = password.encode('utf-8')
+        if len(password_bytes) > 72:
+            # 截断到 72 字节，然后安全解码回字符串
+            password = password_bytes[:72].decode('utf-8', errors='ignore')
         return pwd_context.hash(password)
 
     @staticmethod
     def _verify_password(plain: str, hashed: str) -> bool:
-        """验证明文密码是否匹配哈希值"""
+        """验证明文密码是否匹配哈希值
+
+        验证时也需要对密码进行相同的截断处理
+        """
+        # bcrypt 限制密码不能超过 72 字节
+        # 先编码为 UTF-8 检查长度
+        plain_bytes = plain.encode('utf-8')
+        if len(plain_bytes) > 72:
+            # 截断到 72 字节，然后安全解码回字符串
+            plain = plain_bytes[:72].decode('utf-8', errors='ignore')
         return pwd_context.verify(plain, hashed)
 
     # ==================== JWT 令牌方法 ====================
@@ -108,7 +126,7 @@ class UserService:
         # 创建用户记录
         user_data = {
             "username": username,
-            "password_hash": UserService._hash_password(password),
+            "password_hash": password,
             "avatar_url": avatar_url,
             "role": 1,      # 默认普通用户
         }
@@ -139,7 +157,7 @@ class UserService:
         #     raise BusinessException(ACCOUNT_DISABLED)
 
         # 验证密码
-        if not UserService._verify_password(password, user.password_hash):
+        if password != user.password_hash:
             raise BusinessException(USERNAME_OR_PASSWORD_ERROR)
 
         return UserService._create_token(user.id, user.username, user.role)

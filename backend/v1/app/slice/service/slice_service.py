@@ -2,8 +2,9 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
+from backend.v1.app.assets.dao import AssetDAO
 from backend.v1.app.slice.dao.slice_dao import SliceDAO
-from backend.v1.app.rag.dao.asset_dao import AssetDAO
+
 from backend.framework.exceptions.exceptions import BusinessException
 from backend.framework.exceptions.error_codes import PARAM_ERROR
 

@@ -7,7 +7,7 @@ import api from './api'
  * @param {string} [instruction] - 可选的调整指令
  */
 export async function regenerateFrame(projectId, frameId, instruction) {
-  return api.post(`/generate/v1/projects/${projectId}/frames/${frameId}/regenerate`, {
+  return api.post(`/v1/projects/${projectId}/frames/${frameId}/regenerate`, {
     instruction,
   })
 }
@@ -19,23 +19,23 @@ export async function regenerateFrame(projectId, frameId, instruction) {
  * @param {string} [instruction] - 可选的图片调整指令
  */
 export async function regenerateFrameImage(projectId, frameId, instruction) {
-  return api.post(`/generate/v1/projects/${projectId}/frames/${frameId}/regenerate-image`, {
+  return api.post(`/v1/projects/${projectId}/frames/${frameId}/regenerate-image`, {
     instruction,
   })
 }
 
 export async function regenerateFrameVideo(projectId, frameId, instruction) {
-  return api.post(`/generate/v1/projects/${projectId}/frames/${frameId}/regenerate-video`, {
+  return api.post(`/v1/projects/${projectId}/frames/${frameId}/regenerate-video`, {
     instruction,
   })
 }
 
 export async function retryFrame(projectId, frameId, instruction) {
-  return api.post(`/generate/v1/projects/${projectId}/frames/${frameId}/retry`, {
+  return api.post(`/v1/projects/${projectId}/frames/${frameId}/retry`, {
     instruction,
   })
 }
 
 export async function updateFrame(projectId, frameId, patch) {
-  return api.patch(`/generate/v1/projects/${projectId}/frames/${frameId}`, patch)
+  return api.patch(`/v1/projects/${projectId}/frames/${frameId}`, patch)
 }

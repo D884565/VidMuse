@@ -31,7 +31,7 @@ from backend.v1.app.models.project_asset import ProjectAsset
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/generate/v1", tags=["视频生成"])
+router = APIRouter(prefix="/v1", tags=["视频生成"])
 
 SCRIPT_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering", "processing"}
 SCRIPT_REGENERATE_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering"}
