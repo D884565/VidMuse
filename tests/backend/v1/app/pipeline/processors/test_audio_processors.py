@@ -3,6 +3,7 @@ from unittest.mock import Mock, patch
 from backend.v1.app.pipeline.processors.audio_info_extract_processor import AudioInfoExtractProcessor
 from backend.v1.app.pipeline.processors.audio_asr_processor import AudioASRProcessor
 from backend.v1.app.pipeline.processors.audio_classification_processor import AudioClassificationProcessor
+from backend.v1.app.pipeline.processors.audio_result_aggregator import AudioResultAggregator
 from backend.v1.app.pipeline.base.context import PipelineContext
 from pydub import AudioSegment
 import io
@@ -215,4 +216,31 @@ def test_audio_classification_processor_api_success():
             assert result.data["has_background_music"] == True
             assert result.data["background_music_genre"] == "流行"
             assert set(result.data["objects"]) == {"访谈", "背景音乐", "笑声", "掌声"}
+
+def test_audio_result_aggregator():
+    context = PipelineContext({
+        "duration": 125.5,
+        "sample_rate": 44100,
+        "channels": 2,
+        "bitrate": 192000,
+        "transcript": "这是一段访谈内容，包含背景音乐",
+        "language": "zh-CN",
+        "speakers": ["说话人1", "说话人2"],
+        "audio_type": "访谈",
+        "has_background_music": True,
+        "background_music_genre": "轻快",
+        "objects": ["访谈", "背景音乐", "对话"]
+    })
+
+    processor = AudioResultAggregator()
+    result = processor.process(context)
+
+    assert "slice_len" in result.data
+    assert "scene" in result.data
+    assert "mood" in result.data
+    assert "ai_features" in result.data
+    assert result.data["slice_len"] == 1
+    assert isinstance(result.data["ai_features"], dict)
+    assert result.data["ai_features"]["duration"] == 125.5
+    assert result.data["ai_features"]["transcript"] == "这是一段访谈内容，包含背景音乐"
 
