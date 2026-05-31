@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from backend.store import get_storage_client
 from backend.v1.app.assets.dao import AssetDAO
 from backend.v1.app.config.config import settings
-from backend.v1.app.pipeline import VideoParsingPipeline, ProductParsingPipeline
+from backend.v1.app.pipeline import VideoParsingPipeline, ProductParsingPipeline, AudioParsingPipeline
 
 from backend.framework.exceptions.exceptions import BusinessException, BaseAppException
 from backend.framework.exceptions.error_codes import PARAM_ERROR
@@ -128,18 +128,46 @@ class AssetService:
 
                 content = result.get("data", {})
             elif asset_type == 3:  # 音频
-                # todo 后期实现音频解析
-                return {
-                    "scene": "音频",
-                    "mood": "未知",
-                    "objects": ["声音"],
-                    "slice_len": 1,
-                    "ai_features": {
-                        "scene": "音频",
-                        "mood": "未知",
-                        "objects": ["声音"]
-                    }
-                }
+                pipeline = AudioParsingPipeline()
+                from backend.store import get_storage_client
+
+                # 更新解析状态为运行中
+                if db:
+                    AssetDAO.update_asset(db, id, {
+                        "parsing_status": "running"
+                    })
+
+                # 使用持久化方式执行流水线
+                result = pipeline.run_with_persistence({
+                    "audio_id": id,
+                    "audio_url": asset_url,
+                    "object_name": AssetService.get_path_after_baseurl(asset_url)
+                })
+
+                # 保存execution_id到资产表
+                if db and "execution_id" in result:
+                    AssetDAO.update_asset(db, id, {
+                        "execution_id": result["execution_id"]
+                    })
+
+                if not result.get("success", False):
+                    error_msg = f"音频解析失败: {result.get('errors', [])}"
+                    # 更新解析状态为失败
+                    if db:
+                        AssetDAO.update_asset(db, id, {
+                            "parsing_status": "failed",
+                            "parsing_error": error_msg
+                        })
+                    raise ValueError(error_msg)
+
+                # 解析成功，更新状态
+                if db:
+                    AssetDAO.update_asset(db, id, {
+                        "parsing_status": "completed",
+                        "parsing_error": None
+                    })
+
+                content = result.get("data", {})
             else:
                 return {
                     "scene": "未知",
@@ -706,13 +734,15 @@ class AssetService:
         # 如果有execution_id，尝试断点恢复
         if asset.execution_id:
             try:
-                from backend.v1.app.pipeline import VideoParsingPipeline, ProductParsingPipeline
+                from backend.v1.app.pipeline import VideoParsingPipeline, ProductParsingPipeline, AudioParsingPipeline
 
                 # 根据资产类型选择对应的流水线
                 if asset.type == 2:  # 视频
                     pipeline = VideoParsingPipeline()
                 elif asset.type == 1:  # 图片（商品解析）
                     pipeline = ProductParsingPipeline()
+                elif asset.type == 3:  # 音频
+                    pipeline = AudioParsingPipeline()
                 else:
                     raise ValueError("不支持的资产类型重试")
 
