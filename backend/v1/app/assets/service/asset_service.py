@@ -5,13 +5,15 @@ import asyncio
 from typing import Optional, BinaryIO
 from urllib.parse import urlparse
 
+import logger
 from fastapi import UploadFile, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from backend.store import get_storage_client
+from backend.v1.app.assets.dao import AssetDAO
 from backend.v1.app.config.config import settings
 from backend.v1.app.pipeline import VideoParsingPipeline, ProductParsingPipeline
-from backend.v1.app.rag.dao.asset_dao import AssetDAO
+
 from backend.framework.exceptions.exceptions import BusinessException, BaseAppException
 from backend.framework.exceptions.error_codes import PARAM_ERROR
 

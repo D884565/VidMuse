@@ -2,35 +2,35 @@ import api from './api'
 
 // 创建新项目
 export async function createProject(data) {
-  return api.post('/generate/v1/projects', data)
+  return api.post('/v1/projects', data)
 }
 
 export async function generateProjectScript(projectId, options = {}) {
-  return api.post(`/generate/v1/projects/${projectId}/script/generate`, null, {
+  return api.post(`/v1/projects/${projectId}/script/generate`, null, {
     params: { force: !!options.force },
   })
 }
 
 export async function renderProject(projectId) {
-  return api.post(`/generate/v1/projects/${projectId}/render`)
+  return api.post(`/v1/projects/${projectId}/render`)
 }
 
 export async function confirmWorkflowStage(projectId, stage) {
-  return api.post(`/generate/v1/projects/${projectId}/workflow/confirm`, { stage })
+  return api.post(`/v1/projects/${projectId}/workflow/confirm`, { stage })
 }
 
 export async function advanceWorkflowStage(projectId, confirmedStage) {
-  return api.post(`/generate/v1/projects/${projectId}/workflow/advance`, {
+  return api.post(`/v1/projects/${projectId}/workflow/advance`, {
     confirmed_stage: confirmedStage,
   })
 }
 
 export async function getGenerationTask(taskId) {
-  return api.get(`/generate/v1/tasks/${taskId}`)
+  return api.get(`/v1/tasks/${taskId}`)
 }
 
 export async function getGenerationTaskSteps(taskId) {
-  return api.get(`/generate/v1/tasks/${taskId}/steps`)
+  return api.get(`/v1/tasks/${taskId}/steps`)
 }
 
 // 获取项目详情（轮询用）

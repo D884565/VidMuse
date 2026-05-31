@@ -6,5 +6,5 @@ import api from './api'
  * @returns {Promise<Array<{id, role, content, frame_id, created_at}>>}
  */
 export async function getConversations(projectId) {
-  return api.get(`/generate/v1/projects/${projectId}/conversations`)
+  return api.get(`/v1/projects/${projectId}/conversations`)
 }
