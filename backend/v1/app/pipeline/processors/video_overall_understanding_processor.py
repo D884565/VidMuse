@@ -3,11 +3,11 @@ import os
 import asyncio
 import inspect
 from typing import Dict, List
-from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
+from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
 from backend.providers.dto.schema import ChatRequest, ChatMessage, TextContent, TextUnderstandingRequest
-from backend.v1.app.rag.core.pipline.utils import load_template
-from backend.v1.app.rag.core.pipline.utils.json_flattener import JsonFlattener
+from backend.v1.app.pipeline.utils import load_template
+from backend.v1.app.pipeline.utils.json_flattener import JsonFlattener
 
 
 class VideoOverallUnderstandingProcessor(BaseProcessor):

@@ -16,7 +16,7 @@ from backend.framework.exceptions.error_codes import (
     FORBIDDEN,
     PARAM_ERROR,
 )
-from backend.v1.app.rag.core.pipline.pipelines.product_parsing_pipeline import ProductParsingPipeline
+from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
 
 
 class ProductService:
@@ -242,7 +242,7 @@ class ProductService:
 
         # 如果有execution_id，查询详细进度
         if product.execution_id:
-            from backend.v1.app.rag.core.pipline import ProductParsingPipeline
+            from backend.v1.app.pipeline import ProductParsingPipeline
             execution_status = ProductParsingPipeline.get_execution_status(product.execution_id)
             if execution_status:
                 progress["progress_detail"] = {
@@ -278,7 +278,7 @@ class ProductService:
         # 如果有execution_id，尝试断点恢复
         if product.execution_id:
             try:
-                from backend.v1.app.rag.core.pipline import ProductParsingPipeline
+                from backend.v1.app.pipeline import ProductParsingPipeline
                 pipeline = ProductParsingPipeline()
 
                 # 更新状态为运行中

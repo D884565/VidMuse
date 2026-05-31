@@ -1,7 +1,7 @@
 import os
 from typing import Dict, List, Tuple, Optional
-from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
-from backend.v1.app.rag.core.pipline.utils.template_validator import (
+from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
+from backend.v1.app.pipeline.utils.template_validator import (
     load_json_file,
     validate_with_schema,
     load_template,

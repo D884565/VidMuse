@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from backend.store import get_storage_client
 from backend.v1.app.config.config import settings
-from backend.v1.app.rag.core.pipline import VideoParsingPipeline, ProductParsingPipeline
+from backend.v1.app.pipeline import VideoParsingPipeline, ProductParsingPipeline
 from backend.v1.app.rag.dao.asset_dao import AssetDAO
 from backend.framework.exceptions.exceptions import BusinessException, BaseAppException
 from backend.framework.exceptions.error_codes import PARAM_ERROR
@@ -671,7 +671,7 @@ class AssetService:
 
         # 如果有execution_id，查询详细进度
         if asset.execution_id:
-            from backend.v1.app.rag.core.pipline import VideoParsingPipeline
+            from backend.v1.app.pipeline import VideoParsingPipeline
             execution_status = VideoParsingPipeline.get_execution_status(asset.execution_id)
             if execution_status:
                 progress["progress_detail"] = {
@@ -704,7 +704,7 @@ class AssetService:
         # 如果有execution_id，尝试断点恢复
         if asset.execution_id:
             try:
-                from backend.v1.app.rag.core.pipline import VideoParsingPipeline, ProductParsingPipeline
+                from backend.v1.app.pipeline import VideoParsingPipeline, ProductParsingPipeline
 
                 # 根据资产类型选择对应的流水线
                 if asset.type == 2:  # 视频

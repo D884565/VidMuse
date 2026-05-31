@@ -1,7 +1,10 @@
 
 
 __all__ = [
-   "FFmpegVideoTool"
+    "FFmpegVideoTool",
+    "ffmpeg_tool",
+    "FFMPEG_PATH",
+    "FFPROBE_PATH",
 ]
 
-from backend.ffmpeg.pyutils import FFmpegVideoTool
+from backend.ffmpeg.pyutils import FFmpegVideoTool, ffmpeg_tool, FFMPEG_PATH, FFPROBE_PATH

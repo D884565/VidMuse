@@ -2,7 +2,7 @@ from typing import Dict, List, Union
 import asyncio
 import inspect
 
-from backend.v1.app.rag.core.pipline.base import BaseProcessor, PipelineContext
+from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM, ImageUnderstandingRequest
 from backend.providers.dto.schema import (
     ChatRequest,

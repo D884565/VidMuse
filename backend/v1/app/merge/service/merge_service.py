@@ -15,7 +15,7 @@ from backend.store.obj.factory import get_storage_client
 from backend.v1.app.generate.temp.celery_app import celery_app
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.merge_task import MergeTask
-from backend.v1.app.video.service.ffmpeg_utils import ffmpeg_utils
+from backend.ffmpeg import ffmpeg_tool
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +201,7 @@ class MergeService:
             if audio_is_temp:
                 temp_files.append(audio_local)
             output_path = self._generate_output_path(video_local, "replaced")
-            await asyncio.to_thread(ffmpeg_utils.replace_audio, video_local, audio_local, output_path)
+            await asyncio.to_thread(ffmpeg_tool.replace_audio, video_local, audio_local, output_path)
             output_url = self._upload_to_storage(output_path, task_id, "replaced")
             self._cleanup_temp_files([output_path])
             await self._update_task_status(task_id, "completed", {"output_url": output_url})
@@ -228,7 +228,7 @@ class MergeService:
                 temp_files.append(bgm_local)
             output_path = self._generate_output_path(video_local, "bgm")
             await asyncio.to_thread(
-                ffmpeg_utils.add_bgm,
+                ffmpeg_tool.add_bgm,
                 video_local,
                 bgm_local,
                 output_path,
@@ -263,7 +263,7 @@ class MergeService:
                 local_audio_paths.append(local_path)
             output_path = self._generate_output_path(video_local, "mixed")
             await asyncio.to_thread(
-                ffmpeg_utils.mix_audio_tracks,
+                ffmpeg_tool.mix_audio_tracks,
                 video_local,
                 local_audio_paths,
                 output_path,

@@ -3,12 +3,12 @@
 """
 import os
 from unittest.mock import Mock
-from backend.v1.app.rag.core.pipline import (
+from backend.v1.app.pipeline import (
     VideoParsingPipeline,
     ProductParsingPipeline,
     VideoOverallParsingPipeline
 )
-from backend.v1.app.rag.core.pipline.processors import (
+from backend.v1.app.pipeline.processors import (
     VideoUnderstandingProcessor,
     ProductUnderstandingProcessor,
     VideoOverallUnderstandingProcessor
@@ -27,7 +27,7 @@ def example_video_parsing():
     video_overall_processor = VideoOverallUnderstandingProcessor(llm_client=mock_llm)
 
     # 创建自定义处理器链（如果不自定义则使用默认的完整端到端流程）
-    from backend.v1.app.rag.core.pipline.processors import (
+    from backend.v1.app.pipeline.processors import (
         VideoSplitProcessor,
         SchemaValidationProcessor,
         VideoAggregationProcessor,
@@ -128,7 +128,7 @@ def example_product_parsing():
     product_understanding_processor = ProductUnderstandingProcessor(llm_client=mock_llm)
 
     # 创建流水线
-    from backend.v1.app.rag.core.pipline.processors import (
+    from backend.v1.app.pipeline.processors import (
         ProductGenerateProcessor,
         SchemaValidationProcessor
     )
@@ -181,7 +181,7 @@ def example_video_overall_parsing(video_slices_data):
     video_overall_processor = VideoOverallUnderstandingProcessor(llm_client=mock_llm)
 
     # 创建流水线
-    from backend.v1.app.rag.core.pipline.processors import (
+    from backend.v1.app.pipeline.processors import (
         VideoAggregationProcessor,
         VideoGenerateProcessor,
         SchemaValidationProcessor
@@ -230,7 +230,7 @@ def example_persistence_and_resume():
     print("💾 流水线持久化和断点续跑示例")
     print("=" * 60)
 
-    from backend.v1.app.rag.core.pipline import PipelineExecutionDAO, PipelineExecutionStatus
+    from backend.v1.app.pipeline import PipelineExecutionDAO, PipelineExecutionStatus
 
     # 创建流水线（默认开启持久化）
     pipeline = VideoParsingPipeline(
