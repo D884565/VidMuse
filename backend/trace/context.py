@@ -11,10 +11,7 @@ trace_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     "trace_id",
     default=""
 )
-span_stack_var: contextvars.ContextVar[List["Span"]] = contextvars.ContextVar(
-    "span_stack",
-    default=[]
-)
+span_stack_var: contextvars.ContextVar[List["Span"]] = contextvars.ContextVar("span_stack")
 
 
 @dataclass
@@ -83,7 +80,7 @@ def start_span(
     meta_data: Optional[Dict[str, Any]] = None
 ) -> Span:
     """启动一个新的span"""
-    span_stack = span_stack_var.get()
+    span_stack = span_stack_var.get([])
     parent_span_id = span_stack[-1].span_id if span_stack else None
 
     # 如果没有trace_id，自动生成一个
@@ -107,7 +104,7 @@ def start_span(
 def end_span(span: Span) -> None:
     """结束span，如果是当前栈顶则弹出"""
     span.end()
-    span_stack = span_stack_var.get()
+    span_stack = span_stack_var.get([])
 
     if span_stack and span_stack[-1] is span:
         span_stack.pop()
@@ -116,19 +113,19 @@ def end_span(span: Span) -> None:
 
 def get_current_span() -> Optional[Span]:
     """获取当前活跃的span（栈顶）"""
-    span_stack = span_stack_var.get()
+    span_stack = span_stack_var.get([])
     return span_stack[-1] if span_stack else None
 
 
 def get_root_span() -> Optional[Span]:
     """获取根span（栈底）"""
-    span_stack = span_stack_var.get()
+    span_stack = span_stack_var.get([])
     return span_stack[0] if span_stack else None
 
 
 def get_all_spans() -> List[Span]:
     """获取当前链路的所有span"""
-    return span_stack_var.get().copy()
+    return span_stack_var.get([]).copy()
 
 
 def clear_context() -> None:

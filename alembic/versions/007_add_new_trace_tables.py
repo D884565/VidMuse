@@ -32,7 +32,7 @@ def upgrade():
         sa.Column('response_headers', sa.JSON(), nullable=True),
         sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP'), nullable=True),
         sa.PrimaryKeyConstraint('id'),
-        sa.UniqueConstraint('trace_id', name='uq_traces_trace_id')
+        sa.UniqueConstraint('trace_id', name='uk_trace_id')
     )
 
     # Add indexes for traces
