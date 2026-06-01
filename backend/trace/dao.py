@@ -1,3 +1,6 @@
+"""链路追踪数据访问层
+职责：封装所有对traces和spans表的数据库操作，提供批量写入功能
+"""
 import asyncio
 import json
 import logging
@@ -7,7 +10,6 @@ from backend.store.database.async_database import SessionLocal
 from .models import Trace, Span as SpanModel
 from .context import Span, get_trace_id
 from .config import trace_config
-
 
 logger = logging.getLogger("trace.dao")
 
@@ -49,14 +51,13 @@ def _convert_span_to_model(span: Span, trace_id: str) -> SpanModel:
     根据配置决定是否记录参数、返回值和堆栈信息
     """
     # 序列化参数
-    args = None
+    serialized_args = None
+    serialized_kwargs = None
     if trace_config.TRACE_RECORD_ARGS:
-        serialized_args = [_serialize_value(arg, trace_config.TRACE_MAX_ARG_LENGTH) for arg in span.args]
-        serialized_kwargs = {k: _serialize_value(v, trace_config.TRACE_MAX_ARG_LENGTH) for k, v in span.kwargs.items()}
-        args = {
-            "args": serialized_args,
-            "kwargs": serialized_kwargs
-        }
+        if span.args:
+            serialized_args = [_serialize_value(arg, trace_config.TRACE_MAX_ARG_LENGTH) for arg in span.args]
+        if span.kwargs:
+            serialized_kwargs = {k: _serialize_value(v, trace_config.TRACE_MAX_ARG_LENGTH) for k, v in span.kwargs.items()}
 
     # 序列化返回值
     return_value = None
@@ -64,27 +65,29 @@ def _convert_span_to_model(span: Span, trace_id: str) -> SpanModel:
         return_value = _serialize_value(span.return_value, trace_config.TRACE_MAX_RETURN_LENGTH)
 
     # 处理异常信息
-    error = None
+    exception = None
     stack_trace = None
-    if span.error is not None:
-        error = str(span.error)
+    if span.exception is not None:
+        exception = str(span.exception)
         if trace_config.TRACE_RECORD_STACK and span.stack_trace:
-            stack_trace = str(span.stack_trace)
+            stack_trace = span.stack_trace
 
     return SpanModel(
         trace_id=trace_id,
         span_id=span.span_id,
         parent_span_id=span.parent_span_id,
         name=span.name,
+        class_name=span.class_name,
+        module_name=span.module_name,
         start_time=span.start_time,
         end_time=span.end_time,
         duration_ms=span.duration_ms,
-        status=span.status,
-        args=args,
+        args=serialized_args,
+        kwargs=serialized_kwargs,
         return_value=return_value,
-        error=error,
+        exception=exception,
         stack_trace=stack_trace,
-        metadata=span.metadata
+        meta_data=span.meta_data
     )
 
 
@@ -115,7 +118,7 @@ async def save_trace_data(
                 method=method,
                 path=path,
                 status_code=status_code,
-                duration_ms=duration_ms,
+                duration_ms=round(duration_ms, 2),
                 client_ip=client_ip,
                 user_agent=user_agent,
                 request_headers=request_headers,
@@ -174,8 +177,12 @@ async def add_to_batch(span: Span, trace_id: Optional[str] = None) -> None:
     if not trace_config.TRACE_ENABLED:
         return
 
+    # 如果提供了trace_id，覆盖span中的trace_id
+    if trace_id:
+        span.trace_id = trace_id
+
     async with _batch_lock:
-        _batch_queue.append((span, trace_id))
+        _batch_queue.append(span)
 
         # 达到批量大小则触发写入
         if len(_batch_queue) >= trace_config.TRACE_BATCH_SIZE:
@@ -205,8 +212,8 @@ async def _flush_batch_internal() -> None:
     try:
         # 按trace_id分组spans
         spans_by_trace = {}
-        for span, trace_id in _batch_queue:
-            current_trace_id = trace_id or get_trace_id()
+        for span in _batch_queue:
+            current_trace_id = span.trace_id
             if current_trace_id:
                 if current_trace_id not in spans_by_trace:
                     spans_by_trace[current_trace_id] = []
