@@ -4,8 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from backend.framework.web.response import Response
-from backend.framework.log.logger import setup_logging
-from backend.trace import TraceMiddleware
+from backend.framework.trace import TraceMiddleware
 from backend.framework.web.exception_handler import register_exception_handlers
 from backend.v1.app.generate.controller.generation import router as generation_router
 from backend.v1.app.user.controller.user_controller import router as user_router
@@ -46,8 +45,6 @@ async def lifespan(app: FastAPI):
     yield
 
 
-# 初始化结构化日志
-setup_logging()
 
 app = FastAPI(title="VidMuse", version="0.1.0", lifespan=lifespan)
 

@@ -22,11 +22,6 @@ class Asset(Base):
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="时长(视频/音频)")
     format: Mapped[str | None] = mapped_column(String(20), nullable=True, comment="文件格式")
     ai_features: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="AI特征因子")
-    tags: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="素材标签")
-    scope: Mapped[str] = mapped_column(
-        String(30), nullable=False, default="library", comment="library/project/output"
-    )
-    metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True, comment="素材扩展元数据")
     source_type: Mapped[int] = mapped_column(
         Integer, default=0, comment="来源：0-上传, 1-AI生成, 2-爬取, 3-购买"
     )
@@ -61,9 +56,6 @@ class Asset(Base):
             "duration": self.duration,
             "format": self.format,
             "ai_features": self.ai_features,
-            "tags": self.tags,
-            "scope": self.scope,
-            "metadata": self.metadata_,
             "source_type": self.source_type,
             "parsing_status": self.parsing_status,
             "execution_id": self.execution_id,

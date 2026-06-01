@@ -1,6 +1,8 @@
 from typing import Dict, List
 import io
 import tempfile
+
+from backend.framework.trace import trace
 from backend.store import get_storage_client
 from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext, constants
 from backend.ffmpeg import FFmpegVideoTool
@@ -22,6 +24,7 @@ class VideoSplitProcessor(BaseProcessor):
         """
         self.slice_duration = slice_duration
 
+    @trace
     def process(self, context: PipelineContext) -> PipelineContext:
         """
         执行视频拆分逻辑

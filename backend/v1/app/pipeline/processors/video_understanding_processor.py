@@ -2,6 +2,7 @@ import asyncio
 import json
 from typing import Dict, List
 
+from backend.framework.trace import trace
 from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
 from backend.providers import VolcanoLLM
 from backend.providers.dto.schema import VideoUnderstandingRequest
@@ -55,6 +56,7 @@ class VideoUnderstandingProcessor(BaseProcessor):
             # 没有运行中的循环，直接使用asyncio.run
             return asyncio.run(coro)
 
+    @trace
     def process(self, context: PipelineContext) -> PipelineContext:
         """
         执行视频理解逻辑
