@@ -4,7 +4,7 @@ import json
 import sys
 from datetime import datetime
 
-from .trace_context import get_request_id, span_stack_var
+from backend.trace import get_trace_id, span_stack_var
 
 
 class TraceFormatter(logging.Formatter):

@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from backend.framework.web.response import Response
 from backend.framework.log.logger import setup_logging
-from backend.framework.log.middleware import TraceMiddleware
+from backend.trace import TraceMiddleware
 from backend.framework.web.exception_handler import register_exception_handlers
 from backend.v1.app.generate.controller.generation import router as generation_router
 from backend.v1.app.user.controller.user_controller import router as user_router
@@ -15,7 +15,7 @@ from backend.v1.app.assets.controller.asset_controller import router as asset_ro
 from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.video.controller.video import router as video_router
 from backend.v1.app.merge.controller.merge import router as merge_router
-from backend.v1.app.search.rag_trace.controller.trace_controller import router as trace_router
+from backend.v1.app.rag_trace.controller.trace_controller import router as trace_router
 
 logger = logging.getLogger(__name__)
 
