@@ -1,3 +1,5 @@
+DROP TABLE IF EXISTS spans;
+DROP TABLE IF EXISTS traces;
 DROP TABLE IF EXISTS agent_traces;
 DROP TABLE IF EXISTS conversations;
 DROP TABLE IF EXISTS frames;
@@ -255,3 +257,141 @@ CREATE TABLE IF NOT EXISTS pipeline_executions (
     INDEX idx_status (status),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='流水线执行记录表';
+
+-- ----------------------------
+-- 灵感模板模块相关表
+-- ----------------------------
+
+DROP TABLE IF EXISTS factors;
+CREATE TABLE IF NOT EXISTS factors (
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    factor_id           VARCHAR(32) NOT NULL COMMENT '全局唯一因子ID',
+    factor_type         VARCHAR(50) NOT NULL COMMENT '因子类型：content_structure/product_expression/user_operation',
+    name                VARCHAR(100) NOT NULL COMMENT '因子名称',
+    description         TEXT COMMENT '因子详细描述',
+    applicable_scenarios JSON COMMENT '适用场景列表',
+    data_schema         JSON COMMENT '因子数据结构定义',
+    example             JSON COMMENT '因子示例数据',
+    tags                JSON COMMENT '标签列表',
+    popularity          DECIMAL(4, 3) NOT NULL DEFAULT 0.0 COMMENT '流行度，0-1之间',
+    usage_count         INT NOT NULL DEFAULT 0 COMMENT '使用次数统计',
+    is_deleted          TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+    UNIQUE KEY uk_factor_id (factor_id, is_deleted),
+    INDEX idx_factor_type (factor_type),
+    INDEX idx_popularity (popularity),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='创作因子表';
+
+
+DROP TABLE IF EXISTS strategies;
+CREATE TABLE IF NOT EXISTS strategies (
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    strategy_id         VARCHAR(32) NOT NULL COMMENT '全局唯一策略ID',
+    name                VARCHAR(100) NOT NULL COMMENT '策略名称',
+    description         TEXT COMMENT '策略详细描述',
+    applicable_scenarios JSON COMMENT '适用场景列表',
+    core_logic          TEXT COMMENT '核心创作逻辑描述',
+    required_factor_types JSON COMMENT '必填因子类型列表',
+    optional_factor_types JSON COMMENT '可选因子类型列表',
+    combination_rules   TEXT COMMENT '因子组合规则描述',
+    success_rate        DECIMAL(4, 3) NOT NULL DEFAULT 0.0 COMMENT '历史爆款成功率，0-1之间',
+    tags                JSON COMMENT '标签列表',
+    usage_count         INT NOT NULL DEFAULT 0 COMMENT '使用次数统计',
+    is_deleted          TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+    UNIQUE KEY uk_strategy_id (strategy_id, is_deleted),
+    INDEX idx_success_rate (success_rate),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='创作策略表';
+
+
+DROP TABLE IF EXISTS inspiration_templates;
+CREATE TABLE IF NOT EXISTS inspiration_templates (
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    template_id         VARCHAR(32) NOT NULL COMMENT '全局唯一模板ID',
+    strategy_id         VARCHAR(32) NOT NULL COMMENT '关联的策略ID',
+    name                VARCHAR(100) NOT NULL COMMENT '模板名称',
+    description         TEXT COMMENT '模板描述',
+    combination_example JSON COMMENT '完整组合示例',
+    version             VARCHAR(20) NOT NULL DEFAULT 'v1.0' COMMENT '版本号',
+    success_rate        DECIMAL(4, 3) NOT NULL DEFAULT 0.0 COMMENT '模板成功率，0-1之间',
+    usage_count         INT NOT NULL DEFAULT 0 COMMENT '使用次数统计',
+    is_deleted          TINYINT NOT NULL DEFAULT 0 COMMENT '是否删除：0-未删除，1-已删除',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+
+    UNIQUE KEY uk_template_id (template_id, is_deleted),
+    INDEX idx_strategy_id (strategy_id),
+    INDEX idx_version (version),
+    INDEX idx_success_rate (success_rate),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='灵感模板表';
+
+
+DROP TABLE IF EXISTS template_factor_relations;
+CREATE TABLE IF NOT EXISTS template_factor_relations (
+    id                  BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    template_id         VARCHAR(32) NOT NULL COMMENT '模板ID',
+    factor_id           VARCHAR(32) NOT NULL COMMENT '因子ID',
+    factor_usage_type   TINYINT NOT NULL COMMENT '因子使用类型：1-必填，2-可选',
+    sort_order          INT NOT NULL DEFAULT 0 COMMENT '排序权重',
+    created_at          TIMESTAMP DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+
+    UNIQUE KEY uk_template_factor (template_id, factor_id),
+    INDEX idx_template_id (template_id),
+    INDEX idx_factor_id (factor_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模板-因子关联表';
+
+-- ----------------------------
+-- 全链路追踪系统相关表
+-- ----------------------------
+
+-- traces表：请求链路主表
+CREATE TABLE IF NOT EXISTS `traces` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `trace_id` varchar(32) NOT NULL COMMENT '链路唯一标识',
+    `method` varchar(10) NOT NULL COMMENT 'HTTP方法',
+    `path` varchar(500) NOT NULL COMMENT '请求路径',
+    `status_code` int NOT NULL COMMENT '响应状态码',
+    `duration_ms` decimal(10,2) NOT NULL COMMENT '总耗时(毫秒)',
+    `client_ip` varchar(64) DEFAULT NULL COMMENT '客户端IP',
+    `user_agent` text DEFAULT NULL COMMENT '用户代理',
+    `request_headers` json DEFAULT NULL COMMENT '请求头',
+    `response_headers` json DEFAULT NULL COMMENT '响应头',
+    `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_trace_id` (`trace_id`),
+    KEY `idx_trace_created_at` (`created_at`),
+    KEY `idx_trace_path` (`path`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='请求链路主表';
+
+-- spans表：函数调用Span表
+CREATE TABLE IF NOT EXISTS `spans` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `trace_id` varchar(32) NOT NULL COMMENT '所属链路ID',
+    `span_id` varchar(16) NOT NULL COMMENT 'Span唯一标识',
+    `parent_span_id` varchar(16) DEFAULT NULL COMMENT '父Span ID',
+    `name` varchar(255) NOT NULL COMMENT '函数名/操作名',
+    `class_name` varchar(255) DEFAULT NULL COMMENT '类名',
+    `module_name` varchar(255) NOT NULL COMMENT '模块名',
+    `start_time` decimal(16,6) NOT NULL COMMENT '开始时间戳(秒)',
+    `end_time` decimal(16,6) NOT NULL COMMENT '结束时间戳(秒)',
+    `duration_ms` decimal(10,2) NOT NULL COMMENT '耗时(毫秒)',
+    `args` json DEFAULT NULL COMMENT '位置参数',
+    `kwargs` json DEFAULT NULL COMMENT '关键字参数',
+    `return_value` json DEFAULT NULL COMMENT '返回值',
+    `exception` text DEFAULT NULL COMMENT '异常信息',
+    `stack_trace` text DEFAULT NULL COMMENT '调用堆栈',
+    `meta_data` json DEFAULT NULL COMMENT '扩展元数据',
+    `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    PRIMARY KEY (`id`),
+    KEY `idx_span_trace_id` (`trace_id`),
+    KEY `idx_span_parent_id` (`parent_span_id`),
+    KEY `idx_span_name` (`name`),
+    KEY `idx_span_created_at` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='函数调用Span表';
