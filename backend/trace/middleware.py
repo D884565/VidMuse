@@ -92,21 +92,19 @@ class TraceMiddleware(BaseHTTPMiddleware):
             # 获取所有spans
             spans = get_all_spans()
 
-            # 异步保存所有数据（不阻塞响应）
-            if response is not None:
-                # 创建后台任务保存数据
-                asyncio.create_task(self._save_trace_async(
-                    trace_id=trace_id,
-                    method=request.method,
-                    path=str(request.url.path),
-                    status_code=status_code,
-                    duration_ms=duration_ms,
-                    client_ip=client_ip,
-                    user_agent=request.headers.get("user-agent"),
-                    request_headers=request_headers,
-                    response_headers=response_headers,
-                    spans=spans,
-                ))
+            # 无论是否有response都保存数据（包括异常情况）
+            asyncio.create_task(self._save_trace_async(
+                trace_id=trace_id,
+                method=request.method,
+                path=str(request.url.path),
+                status_code=status_code,
+                duration_ms=duration_ms,
+                client_ip=client_ip,
+                user_agent=request.headers.get("user-agent"),
+                request_headers=request_headers,
+                response_headers=response_headers,
+                spans=spans,
+            ))
 
             # 清理上下文
             trace_id_var.reset(token_trace)

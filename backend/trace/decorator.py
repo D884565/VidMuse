@@ -1,12 +1,36 @@
 """Trace装饰器实现"""
 import inspect
 import functools
+import asyncio
+import threading
 from typing import Any, Callable, Optional, TypeVar
 from .context import start_span, end_span
 from .dao import add_to_batch
 
 
 T = TypeVar("T", bound=Callable[..., Any])
+
+# 后台事件循环用于同步函数中的异步操作
+_background_loop: asyncio.AbstractEventLoop | None = None
+_loop_thread: threading.Thread | None = None
+
+
+def _get_background_loop() -> asyncio.AbstractEventLoop:
+    """获取或创建后台事件循环"""
+    global _background_loop, _loop_thread
+
+    if _background_loop is None:
+        _background_loop = asyncio.new_event_loop()
+        _loop_thread = threading.Thread(target=_background_loop.run_forever, daemon=True)
+        _loop_thread.start()
+
+    return _background_loop
+
+
+def _run_async(coro):
+    """在后台事件循环中运行协程"""
+    loop = _get_background_loop()
+    asyncio.run_coroutine_threadsafe(coro, loop)
 
 
 def trace(*args: Any, name: Optional[str] = None, meta_data: Optional[dict] = None) -> Callable[[T], T]:
@@ -73,9 +97,8 @@ def trace(*args: Any, name: Optional[str] = None, meta_data: Optional[dict] = No
             finally:
                 # 结束span并保存
                 end_span(span)
-                # 异步添加到批量队列
-                import asyncio
-                asyncio.create_task(add_to_batch(span))
+                # 在后台事件循环中异步添加到批量队列
+                _run_async(add_to_batch(span))
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
