@@ -51,7 +51,6 @@ from .config import (
     SUPPORTED_SOURCES,
     SUPPORTED_RETRIEVAL_TYPES
 )
-from .agent_config import AGENT_CONFIG
 from .tools import (
     BaseSearchTool,
     SemanticSearchTool,
@@ -65,20 +64,8 @@ from .tools import (
 # 初始化组件注册中心，自动发现所有组件（必须在创建Agent之前调用）
 component_registry.auto_discover()
 
-# 导入依赖组件的模块
-from .agent import agent, session_manager, system_prompt, TraceStorage, trace_storage
-from .agent.service.agent_service import AgentService, agent_service
-from .agent.dto.response import Message, ChatResponse
-from .agent.context import SessionContext, SessionManager
-from .rag_trace.service import AgentTraceService, agent_trace_service
-from .rag_trace.dao import AgentTraceDAO, agent_trace_dao
-from .rag_trace.dto import (
-    AgentTraceBase,
-    AgentTraceDetail,
-    AgentTraceListResponse,
-    TraceQueryRequest,
-    TraceStatResponse
-)
+from backend.v1.app.rag_trace.dao import AgentTraceDAO, agent_trace_dao
+
 
 __version__ = "1.0.0"
 
@@ -129,20 +116,6 @@ __all__ = [
     "Reranker",
 
 
-    # Agent
-    "agent",
-    "agent_service",
-    "AgentService",
-    "session_manager",
-    "SessionContext",
-    "SessionManager",
-    "Message",
-    "ChatResponse",
-    "AGENT_CONFIG",
-    "system_prompt",
-    "TraceStorage",
-    "trace_storage",
-
     # Tools
     "BaseSearchTool",
     "SemanticSearchTool",
@@ -160,16 +133,6 @@ __all__ = [
     "SUPPORTED_SOURCES",
     "SUPPORTED_RETRIEVAL_TYPES",
 
-    # 观测系统
-    "AgentTraceService",
-    "agent_trace_service",
-    "AgentTraceDAO",
-    "agent_trace_dao",
-    "AgentTraceBase",
-    "AgentTraceDetail",
-    "AgentTraceListResponse",
-    "TraceQueryRequest",
-    "TraceStatResponse",
 
     # 组件注册中心
     "ComponentRegistry",

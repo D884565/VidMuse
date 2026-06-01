@@ -14,7 +14,7 @@ TEMPLATE_TYPE_MAP = {
 # 模板文件根目录（相对于当前文件的路径）
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 # 向上导航到项目根目录，然后定位到模板目录
-PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "../../../../../../../"))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "../../../../../"))
 VALID_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve", "valid_template")
 TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve")
 PROMPT_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve", "prompts")

@@ -1,28 +1,12 @@
 """通用搜索Agent实现"""
 from typing import Optional, Dict, Any, List
 from .react_agent import ReActAgent
-from .tool_system import ToolSystem
 from ..config import AGENT_CONFIG
-
-# 导入现有搜索工具
-try:
-    from backend.v1.app.search.tools import (
-        BaseSearchTool,
-        SemanticSearchTool,
-        KeywordSearchTool,
-        SQLQueryTool,
-        HybridSearchTool,
-        GeneralSearchTool,
-        ALL_TOOLS
-    )
-    HAS_SEARCH_TOOLS = True
-except ImportError:
-    HAS_SEARCH_TOOLS = False
 
 
 class SearchAgent(ReActAgent):
     """
-    通用搜索Agent，集成所有搜索工具
+    通用搜索Agent
     基于ReAct范式，支持多轮搜索和推理
     """
 
@@ -33,8 +17,7 @@ class SearchAgent(ReActAgent):
         description: str = "擅长信息检索和问题解答的智能助手，可以调用多种搜索工具获取信息。",
         config: Optional[Dict[str, Any]] = None,
         model: Optional[str] = None,
-        max_iterations: Optional[int] = None,
-        enable_tools: Optional[List[str]] = None
+        max_iterations: Optional[int] = None
     ):
         """
         初始化搜索Agent
@@ -44,7 +27,6 @@ class SearchAgent(ReActAgent):
         :param config: 自定义配置
         :param model: 使用的模型
         :param max_iterations: 最大迭代次数
-        :param enable_tools: 启用的工具列表，默认启用所有搜索工具
         """
         super().__init__(
             agent_id=agent_id,
@@ -54,27 +36,6 @@ class SearchAgent(ReActAgent):
             model=model,
             max_iterations=max_iterations
         )
-
-        # 注册搜索工具
-        if HAS_SEARCH_TOOLS:
-            self._register_search_tools(enable_tools)
-
-    def _register_search_tools(self, enable_tools: Optional[List[str]] = None) -> None:
-        """注册搜索工具"""
-        enabled_tools = enable_tools or []
-
-        for tool_class in ALL_TOOLS:
-            # 如果指定了启用列表，只注册列表中的工具
-            if enabled_tools and tool_class.name not in enabled_tools:
-                continue
-
-            try:
-                tool_instance = tool_class()
-                self.tool_system.register_tool(tool_instance)
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"注册工具 {tool_class.name} 失败: {str(e)}")
 
     def chat(
         self,

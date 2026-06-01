@@ -11,8 +11,8 @@ from datetime import datetime
 from backend.framework.web.response import Response
 from backend.framework.web.auth import admin_required
 from backend.store.database.sync_database import get_db
-from backend.v1.app.search import AgentTraceListResponse, agent_trace_service, AgentTraceDetail, TraceStatResponse, \
-    TraceQueryRequest
+from backend.v1.app.rag_trace.dto import AgentTraceListResponse, AgentTraceDetail, TraceStatResponse, TraceQueryRequest
+from backend.v1.app.rag_trace.service import agent_trace_service
 
 router = APIRouter(
     prefix="/agent/traces",

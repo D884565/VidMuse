@@ -62,3 +62,14 @@ PRODUCT_VALIDATION_SUMMARY = "product_validation_summary"
 # 向量化处理器输出
 VECTORIZATION_RESULT = "vectorization_result"
 META_DATA = "meta_data"
+
+# 灵感模板提炼流水线相关键
+HOT_REPORT_LIST = "hot_report_list"
+REPORT_EMBEDDINGS = "report_embeddings"
+CLUSTER_RESULT = "cluster_result"
+CLUSTER_CENTERS = "cluster_centers"
+FACTOR_LIBRARY = "factor_library"
+FACTOR_INDEX = "factor_index"
+STRATEGY_LIBRARY = "strategy_library"
+STRATEGY_FACTOR_MAPPING = "strategy_factor_mapping"
+INSPIRATION_TEMPLATES = "inspiration_templates"
