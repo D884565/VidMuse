@@ -134,8 +134,9 @@ class TraceMiddleware(BaseHTTPMiddleware):
     ) -> None:
         """异步保存链路数据"""
         try:
-            # 先刷新批量队列中的span
-            await flush_batch()
+            # 根据配置决定是否刷新批量队列中的span（确保同步函数数据及时落库）
+            if trace_config.TRACE_FLUSH_ON_REQUEST_END:
+                await flush_batch()
 
             # 保存完整链路数据
             await save_trace_data(
