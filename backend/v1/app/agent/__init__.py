@@ -12,6 +12,7 @@ from .core.context import BaseContextBuilder
 
 # 导出具体实现
 from .implementations.react_agent import ReActAgent
+from .implementations.search_agent import SearchAgent, search_agent
 from .implementations.short_term_memory import ShortTermMemory
 from .implementations.long_term_memory import LongTermMemory
 from .implementations.tool_system import ToolSystem
@@ -22,6 +23,17 @@ from .implementations.prompt_builder import PromptBuilder
 from .utils.tool_registry import ToolRegistry, register_tool
 from .utils.asset_serializer import AssetSerializer, SerializerType
 from .utils.prompt_template import PromptTemplate
+
+# 导出兼容层接口
+from .compatibility import (
+    SessionContext,
+    SessionManager,
+    session_manager,
+    Agent,
+    agent,
+    Message,
+    ChatResponse
+)
 
 __version__ = "1.0.0"
 __all__ = [
@@ -34,6 +46,8 @@ __all__ = [
     "BaseAssetStore",
     "BaseContextBuilder",
     "ReActAgent",
+    "SearchAgent",
+    "search_agent",
     "ShortTermMemory",
     "LongTermMemory",
     "ToolSystem",
@@ -43,5 +57,13 @@ __all__ = [
     "register_tool",
     "AssetSerializer",
     "SerializerType",
-    "PromptTemplate"
+    "PromptTemplate",
+    # 兼容层接口
+    "SessionContext",
+    "SessionManager",
+    "session_manager",
+    "Agent",
+    "agent",
+    "Message",
+    "ChatResponse"
 ]
