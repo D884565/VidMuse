@@ -35,6 +35,10 @@ def upgrade():
         sa.UniqueConstraint('trace_id', name='uq_traces_trace_id')
     )
 
+    # Add indexes for traces
+    op.create_index('idx_trace_created_at', 'traces', ['created_at'], unique=False)
+    op.create_index('idx_trace_path', 'traces', ['path'], unique=False)
+
     # Create spans table
     op.create_table(
         'spans',
@@ -59,17 +63,21 @@ def upgrade():
     )
 
     # Create indexes for spans
-    op.create_index('idx_spans_trace_id', 'spans', ['trace_id'], unique=False)
-    op.create_index('idx_spans_parent_span_id', 'spans', ['parent_span_id'], unique=False)
-    op.create_index('idx_spans_name', 'spans', ['name'], unique=False)
+    op.create_index('idx_span_trace_id', 'spans', ['trace_id'], unique=False)
+    op.create_index('idx_span_parent_id', 'spans', ['parent_span_id'], unique=False)
+    op.create_index('idx_span_name', 'spans', ['name'], unique=False)
+    op.create_index('idx_span_created_at', 'spans', ['created_at'], unique=False)
 
 
 def downgrade():
     # Drop spans table and indexes first
-    op.drop_index('idx_spans_name', table_name='spans')
-    op.drop_index('idx_spans_parent_span_id', table_name='spans')
-    op.drop_index('idx_spans_trace_id', table_name='spans')
+    op.drop_index('idx_span_name', table_name='spans')
+    op.drop_index('idx_span_parent_id', table_name='spans')
+    op.drop_index('idx_span_trace_id', table_name='spans')
+    op.drop_index('idx_span_created_at', table_name='spans')
     op.drop_table('spans')
 
-    # Drop traces table
+    # Drop traces indexes and table
+    op.drop_index('idx_trace_path', table_name='traces')
+    op.drop_index('idx_trace_created_at', table_name='traces')
     op.drop_table('traces')
