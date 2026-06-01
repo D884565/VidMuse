@@ -23,6 +23,9 @@ class TraceConfig(BaseSettings):
     # 批量写入大小
     TRACE_BATCH_SIZE: int = 100
 
+    # 是否在每个请求结束时自动刷新批量队列（确保同步函数数据及时落库）
+    TRACE_FLUSH_ON_REQUEST_END: bool = True
+
     class Config:
         env_file = ".env"
         case_sensitive = True

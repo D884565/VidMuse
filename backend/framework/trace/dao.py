@@ -4,6 +4,7 @@
 import asyncio
 import json
 import logging
+import threading
 from typing import Any, List, Optional
 
 from backend.store.database.async_database import SessionLocal
@@ -13,9 +14,9 @@ from .config import trace_config
 
 logger = logging.getLogger("trace.dao")
 
-# 批量队列和锁
+# 批量队列和线程锁（支持跨线程安全访问）
 _batch_queue: List[Span] = []
-_batch_lock = asyncio.Lock()
+_batch_lock = threading.Lock()
 
 
 def _serialize_value(value: Any, max_length: int) -> Any:
@@ -181,12 +182,16 @@ async def add_to_batch(span: Span, trace_id: Optional[str] = None) -> None:
     if trace_id:
         span.trace_id = trace_id
 
-    async with _batch_lock:
+    with _batch_lock:
         _batch_queue.append(span)
 
         # 达到批量大小则触发写入
         if len(_batch_queue) >= trace_config.TRACE_BATCH_SIZE:
-            await _flush_batch_internal()
+            # 拷贝队列数据，避免长时间持有锁
+            queue_copy = _batch_queue.copy()
+            _batch_queue.clear()
+            # 释放锁后再执行IO操作
+            await _flush_spans(queue_copy)
 
 
 async def flush_batch() -> None:
@@ -196,13 +201,47 @@ async def flush_batch() -> None:
     if not trace_config.TRACE_ENABLED:
         return
 
-    async with _batch_lock:
-        await _flush_batch_internal()
+    with _batch_lock:
+        if not _batch_queue:
+            return
+        # 拷贝队列数据
+        queue_copy = _batch_queue.copy()
+        _batch_queue.clear()
+
+    # 释放锁后执行IO操作
+    await _flush_spans(queue_copy)
+
+
+async def _flush_spans(spans: List[Span]) -> None:
+    """
+    刷新指定的spans列表到数据库
+    """
+    if not spans:
+        return
+
+    try:
+        # 按trace_id分组spans
+        spans_by_trace = {}
+        for span in spans:
+            current_trace_id = span.trace_id
+            if current_trace_id:
+                if current_trace_id not in spans_by_trace:
+                    spans_by_trace[current_trace_id] = []
+                spans_by_trace[current_trace_id].append(span)
+
+        # 批量保存每个trace的spans
+        for trace_id, trace_spans in spans_by_trace.items():
+            await batch_save_spans(trace_spans, trace_id)
+
+        logger.debug(f"Flushed batch of {len(spans)} spans")
+
+    except Exception as e:
+        logger.error(f"Failed to flush span batch: {str(e)}", exc_info=True)
 
 
 async def _flush_batch_internal() -> None:
     """
-    内部批量写入实现，调用前必须已经获取_batch_lock
+    内部批量写入实现（保留用于兼容）
     """
     global _batch_queue
 
