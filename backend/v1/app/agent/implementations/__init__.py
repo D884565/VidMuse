@@ -5,7 +5,6 @@ from .search_agent import SearchAgent, search_agent
 from .short_term_memory import ShortTermMemory
 from .long_term_memory import LongTermMemory
 from .tool_system import ToolSystem
-from .local_asset_store import LocalAssetStore
 from .prompt_builder import PromptBuilder
 
 __all__ = [
@@ -15,6 +14,5 @@ __all__ = [
     "ShortTermMemory",
     "LongTermMemory",
     "ToolSystem",
-    "LocalAssetStore",
     "PromptBuilder"
 ]

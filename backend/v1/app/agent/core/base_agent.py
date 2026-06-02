@@ -23,7 +23,6 @@ class BaseAgent(ABC):
         # 核心组件（由子类初始化）
         self.memory = None       # 记忆系统
         self.tool_system = None  # 工具系统
-        self.asset_store = None  # 私有资产存储
         self.context_builder = None  # 上下文构建器
 
     @abstractmethod
@@ -81,6 +80,5 @@ class BaseAgent(ABC):
             "description": self.description,
             "has_memory": self.memory is not None,
             "has_tool_system": self.tool_system is not None,
-            "has_asset_store": self.asset_store is not None,
             "has_context_builder": self.context_builder is not None
         }
