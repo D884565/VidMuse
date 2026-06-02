@@ -21,17 +21,6 @@ from .implementations.prompt_builder import PromptBuilder
 from .utils.tool_registry import ToolRegistry, register_tool
 from .utils.prompt_template import PromptTemplate
 
-# 导出兼容层接口
-from .compatibility import (
-    SessionContext,
-    SessionManager,
-    session_manager,
-    Agent,
-    agent,
-    Message,
-    ChatResponse
-)
-
 __version__ = "1.0.0"
 __all__ = [
     "BaseAgent",
@@ -50,13 +39,5 @@ __all__ = [
     "PromptBuilder",
     "ToolRegistry",
     "register_tool",
-    "PromptTemplate",
-    # 兼容层接口
-    "SessionContext",
-    "SessionManager",
-    "session_manager",
-    "Agent",
-    "agent",
-    "Message",
-    "ChatResponse"
+    "PromptTemplate"
 ]
