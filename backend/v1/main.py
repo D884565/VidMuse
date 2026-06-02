@@ -19,29 +19,9 @@ from backend.v1.app.rag_trace.controller.trace_controller import router as trace
 logger = logging.getLogger(__name__)
 
 
-def _run_alembic_upgrade():
-    """启动时自动执行 alembic upgrade head，将数据库表结构升到最新"""
-    try:
-        project_root = Path(__file__).resolve().parent.parent.parent
-        result = subprocess.run(
-            ["alembic", "upgrade", "head"],
-            cwd=project_root,
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-        if result.returncode == 0:
-            logger.info(f"[DB] alembic upgrade head 成功: {result.stdout.strip()}")
-        else:
-            logger.error(f"[DB] alembic upgrade head 失败: {result.stderr.strip()}")
-    except Exception as e:
-        logger.error(f"[DB] alembic upgrade head 异常: {e}")
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """应用生命周期：启动时自动迁移数据库"""
-    _run_alembic_upgrade()
+    """应用生命周期"""
     yield
 
 

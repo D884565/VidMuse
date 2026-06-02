@@ -99,6 +99,7 @@ async def save_trace_data(
     status_code: int,
     duration_ms: float,
     client_ip: Optional[str] = None,
+    user_id: Optional[int] = None,
     user_agent: Optional[str] = None,
     request_headers: Optional[dict] = None,
     response_headers: Optional[dict] = None,
@@ -121,6 +122,7 @@ async def save_trace_data(
                 status_code=status_code,
                 duration_ms=round(duration_ms, 2),
                 client_ip=client_ip,
+                user_id=user_id,
                 user_agent=user_agent,
                 request_headers=request_headers,
                 response_headers=response_headers

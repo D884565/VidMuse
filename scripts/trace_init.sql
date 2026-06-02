@@ -13,6 +13,7 @@ CREATE TABLE `traces` (
     `status_code` int NOT NULL COMMENT '响应状态码',
     `duration_ms` decimal(10,2) NOT NULL COMMENT '总耗时(毫秒)',
     `client_ip` varchar(64) DEFAULT NULL COMMENT '客户端IP',
+    `user_id` int DEFAULT NULL COMMENT '用户ID',
     `user_agent` text DEFAULT NULL COMMENT '用户代理',
     `request_headers` json DEFAULT NULL COMMENT '请求头',
     `response_headers` json DEFAULT NULL COMMENT '响应头',
@@ -20,7 +21,8 @@ CREATE TABLE `traces` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_trace_id` (`trace_id`),
     KEY `idx_trace_created_at` (`created_at`),
-    KEY `idx_trace_path` (`path`)
+    KEY `idx_trace_path` (`path`),
+    KEY `idx_trace_user_id` (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='请求链路主表';
 
 -- 创建spans表：函数调用Span表

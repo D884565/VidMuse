@@ -1,0 +1,147 @@
+import asyncio
+import json
+from concurrent.futures import ThreadPoolExecutor
+from typing import Dict, List
+
+from fsspec.asyn import loop
+
+from backend.framework.trace import trace
+from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext, constants
+from backend.providers import VolcanoLLM, VideoUnderstandingResponse
+from backend.providers.dto.schema import VideoUnderstandingRequest
+from backend.v1.app.pipeline.utils import prompt_manager, JsonFlattener
+
+
+class VideoUnderstandingProcessor(BaseProcessor):
+    """
+    视频理解处理器
+    调用大模型接口分析每个视频片段的内容
+    """
+
+    def __init__(self, llm_client=None):
+        """
+        初始化视频理解处理器
+
+        :param llm_client: 大模型客户端，默认使用VolcanoLLM
+        """
+        self.llm_client = llm_client or VolcanoLLM(key=None, model_name=None)
+        self.prompt_template = prompt_manager.get_slice_understanding_prompt()
+
+    def run_async(self ,coro):
+        """万能异步运行器，兼容所有环境"""
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                # 已有循环在跑，用线程池避免冲突
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    return executor.submit(
+                        lambda: asyncio.run(coro)
+                    ).result()
+        except RuntimeError:
+            pass
+
+        # 没有运行中的循环，直接 run
+        return asyncio.run(coro)
+
+    @trace
+    def process(self, context: PipelineContext) -> PipelineContext:
+        """
+        执行视频理解逻辑
+
+        输入（从上下文获取）：
+        - slices_url: List[str] 视频分片URL列表（VideoSplitProcessor输出）
+        - images_url: List[str] 视频分片封面图URL列表（VideoSplitProcessor输出）
+        - slices_object_name: List[str] 视频分片对象存储名称列表（VideoSplitProcessor输出）
+        - images_object_name: List[str] 视频分片封面图对象存储名称列表（VideoSplitProcessor输出）
+        - count: int 分片总数量（VideoSplitProcessor输出）
+        - video_id: str 视频ID（初始输入）
+
+        输出（写入上下文）：
+        - understood_slices: List[Dict] 理解后的分片结构化数据，包含所有基础信息和理解结果
+        - embed_slices: List[Dict] 扁平化后的分片数据，用于向量化
+
+        :param context: 流水线上下文
+        :return: 修改后的上下文，包含大模型理解结果
+        """
+        # 从上下文获取分片数据
+        slices_url = context.get(constants.SLICES_URL, [])
+        images_url = context.get(constants.IMAGES_URL, [])
+        slices_object_name = context.get(constants.SLICES_OBJECT_NAME, [])
+        images_object_name = context.get(constants.IMAGES_OBJECT_NAME, [])
+        slice_count = context.get(constants.SLICE_COUNT, 0)
+        video_id = context.get(constants.VIDEO_ID)
+
+        if not slices_url or slice_count == 0:
+            raise ValueError("No slices found in context, please ensure VideoSplitProcessor executed successfully")
+        if len(slices_url) != slice_count:
+            raise ValueError(f"Slice count mismatch: count={slice_count}, slices_url length={len(slices_url)}")
+
+        # 使用预定义的分片理解提示词（已包含完整的输出结构要求）
+        prompt_template = self.prompt_template
+
+        understood_slices = []
+        embed_slices = []
+
+        for i in range(slice_count):
+            # 构建大模型请求
+            try:
+                # 尝试异步调用（如果方法是异步的） # 同步调用
+                response = self.run_async(self.llm_client.video_understanding(VideoUnderstandingRequest(
+                    video_url=slices_url[i],
+                    prompt=prompt_template,
+                    max_tokens=2048,
+                    temperature=0.7,
+                    top_p=0.9
+                )))
+            except Exception as e:
+                context.add_error(ValueError(f"Slice {i} understanding failed: {str(e)}"))
+                continue
+
+            # 解析大模型返回的JSON结果
+            try :
+                understanding_result = json.loads(response.content)
+            except json.JSONDecodeError as e:
+                context.add_error(ValueError(f"Slice {i} understanding result parse failed: {str(e)}"))
+                continue
+
+            # 构建完整的分片数据，合并基础信息和理解结果
+            slice_data = {
+                "slice_id": f"{video_id}_slice_{i}",
+                "video_id": video_id,
+                "slice_index": i,
+                "slice_url": slices_url[i],
+                "cover_url": images_url[i] if i < len(images_url) else "",
+                "slice_object_name": slices_object_name[i],
+                "cover_object_name": images_object_name[i] if i < len(images_object_name) else "",
+                "understanding": understanding_result
+            }
+
+            understood_slices.append(slice_data)
+            # 准备向量化数据：包含原始内容和元数据
+            # 先添加slice_id和video_id到理解结果中，再扁平化
+            understanding_with_id = understanding_result.copy()
+            understanding_with_id["slice_id"] = slice_data["slice_id"]
+            understanding_with_id["video_id"] = video_id
+            flattened = JsonFlattener.flatten(understanding_with_id)
+
+            # 从理解结果中获取时间信息，或通过切片索引计算（每个切片默认10秒）
+            understanding = slice_data.get("understanding", {})
+            start_time = understanding.get(prompt_manager.FIELD_CREATIVE_ELEMENTS, {}).get("start_time", i * 10.0)
+            end_time = understanding.get(prompt_manager.FIELD_CREATIVE_ELEMENTS, {}).get("end_time", (i + 1) * 10.0)
+
+            # VectorizationProcessor需要dict格式，包含content和元数据字段
+            embed_data = {
+                "slice_id": slice_data["slice_id"],
+                "content": flattened,
+                "start_time": float(start_time),
+                "end_time": float(end_time)
+            }
+            embed_slices.append(embed_data)
+
+        # 存储结果到上下文
+        context.set(constants.UNDERSTOOD_SLICES, understood_slices)
+        context.set(constants.EMBED_SLICES, embed_slices)
+        # 将视频封面图列表存入上下文，供后续图像向量化使用
+        context.set(constants.SLICE_COVER_URLS, images_url)
+
+        return context

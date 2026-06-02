@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "VideoTemplateSchema",
   "type": "object",
-  "required": ["基本信息", "片段索引列表", "片段间关系"],
+  "required": ["基本信息", "片段索引列表"],
   "properties": {
     "基本信息": {
       "type": "object",
@@ -42,7 +42,7 @@
 
     "片段间关系": {
       "type": "object",
-      "required": ["转场序列", "情绪曲线", "视觉节奏", "BGM节奏匹配"],
+      "required": ["转场序列", "情绪曲线"],
       "properties": {
         "转场序列": { "type": "array", "items": { "type": "string" } },
         "情绪曲线": { "type": "array", "items": { "type": "string" } },

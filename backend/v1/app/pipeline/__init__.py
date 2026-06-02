@@ -2,21 +2,6 @@
 from .base import PipelineContext, BaseProcessor, BasePipeline
 
 # 导出处理器
-from .processors import (
-    VideoSplitProcessor,
-    VideoUnderstandingProcessor,
-    SchemaValidationProcessor,
-    ProductUnderstandingProcessor,
-    ProductGenerateProcessor,
-    VectorizationProcessor,
-    VideoOverallUnderstandingProcessor,
-    VideoGenerateProcessor,
-    VideoAggregationProcessor,
-    AudioInfoExtractProcessor,
-    AudioASRProcessor,
-    AudioClassificationProcessor,
-    AudioResultAggregator
-)
 
 # 导出流水线
 from .pipelines import (
@@ -36,21 +21,6 @@ __all__ = [
     "BaseProcessor",
     "BasePipeline",
 
-    # 处理器
-    "VideoSplitProcessor",
-    "VideoUnderstandingProcessor",
-    "SchemaValidationProcessor",
-    "ProductUnderstandingProcessor",
-    "ProductGenerateProcessor",
-    "VectorizationProcessor",
-    "VideoOverallUnderstandingProcessor",
-    "VideoGenerateProcessor",
-    "VideoAggregationProcessor",
-    "AudioInfoExtractProcessor",
-    "AudioASRProcessor",
-    "AudioClassificationProcessor",
-    "AudioResultAggregator",
-
     # 流水线
     "VideoParsingPipeline",
     "ProductParsingPipeline",
@@ -62,3 +32,5 @@ __all__ = [
     "PipelineExecution",
     "PipelineExecutionStatus"
 ]
+
+

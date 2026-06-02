@@ -1,10 +1,12 @@
 from typing import List, Optional
+
+
 from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor
 from backend.v1.app.pipeline.processors import (
-    ProductUnderstandingProcessor,
-    ProductGenerateProcessor,
+
     SchemaValidationProcessor
 )
+from backend.v1.app.pipeline.processors.img import ProductUnderstandingProcessor, ProductGenerateProcessor
 
 
 class ProductParsingPipeline(BasePipeline):
