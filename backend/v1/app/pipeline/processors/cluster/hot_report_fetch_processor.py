@@ -3,9 +3,10 @@ from backend.v1.app.pipeline.base.processor import BaseProcessor
 from backend.v1.app.pipeline.base.context import PipelineContext
 from backend.v1.app.pipeline.base.constants import HOT_REPORT_LIST, REPORT_EMBEDDINGS
 from backend.store.collection.video_knowledge_dao import VideoKnowledgeDAO
-from backend.v1.app.dao.video_report_dao import VideoReportDAO
 from backend.store.database.sync_database import get_db
 import logging
+
+from backend.v1.app.pipeline.dao.video_report_dao import VideoReportDAO
 
 logger = logging.getLogger(__name__)
 
