@@ -3,7 +3,6 @@
 from .base_agent import BaseAgent
 from .memory import BaseMemory, BaseShortTermMemory, BaseLongTermMemory
 from .tool import BaseTool, BaseToolSystem
-from .asset import BaseAssetStore
 from .context import BaseContextBuilder
 
 __all__ = [
@@ -13,6 +12,5 @@ __all__ = [
     "BaseLongTermMemory",
     "BaseTool",
     "BaseToolSystem",
-    "BaseAssetStore",
     "BaseContextBuilder"
 ]

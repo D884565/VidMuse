@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 from ..core.base_agent import BaseAgent
 from .short_term_memory import ShortTermMemory
 from .tool_system import ToolSystem
-from .local_asset_store import LocalAssetStore
 from .prompt_builder import PromptBuilder
 from ..config import AGENT_CONFIG
 
@@ -51,7 +50,6 @@ class ReActAgent(BaseAgent):
         # 初始化核心组件
         self.memory = ShortTermMemory()
         self.tool_system = ToolSystem()
-        self.asset_store = LocalAssetStore(agent_id)
         self.context_builder = PromptBuilder()
 
         # 初始化大模型客户端

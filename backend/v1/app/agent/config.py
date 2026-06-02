@@ -26,11 +26,6 @@ AGENT_CONFIG = {
         "long_term_embedding_model": os.getenv("EMBEDDING_MODEL", "bge-large-zh"),
     },
 
-    # 私有资产配置
-    "asset": {
-        "base_storage_path": str(DATA_DIR / "assets"),  # 资产存储根路径
-        "default_serializer": "json",  # 默认序列化方式
-    },
 
     # 上下文构建配置
     "context": {
@@ -47,5 +42,4 @@ AGENT_CONFIG = {
 }
 
 # 确保数据目录存在
-os.makedirs(AGENT_CONFIG["asset"]["base_storage_path"], exist_ok=True)
 os.makedirs(AGENT_CONFIG["context"]["template_dir"], exist_ok=True)
