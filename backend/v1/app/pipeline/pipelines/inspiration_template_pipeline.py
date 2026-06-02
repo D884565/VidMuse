@@ -1,11 +1,6 @@
 from backend.v1.app.pipeline.base.pipeline import BasePipeline
-from backend.v1.app.pipeline.processors import (
-    HotReportFetchProcessor,
-    EmbeddingClusteringProcessor,
-    CommonFactorExtractor,
-    StrategyGenerator,
-    TemplateAssembler
-)
+from backend.v1.app.pipeline.processors.cluster import HotReportFetchProcessor, EmbeddingClusteringProcessor, \
+    CommonFactorExtractor, StrategyGenerator, TemplateAssembler
 
 
 class InspirationTemplatePipeline(BasePipeline):

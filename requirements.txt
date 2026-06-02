@@ -35,8 +35,7 @@ tiktoken==0.9.0                # Token 计算
 sqlalchemy==2.0.41
 aiomysql==0.2.0                # 异步 MySQL
 databases[aiomysql]==0.9.0     # 异步数据库抽象
-alembic==1.15.2                # 数据库迁移
-PyMySQL==1.1.1                 # 同步 MySQL (Alembic 使用)
+PyMySQL==1.1.1                 # 同步 MySQL
 
 # MinIO (对象存储)
 minio==7.2.15

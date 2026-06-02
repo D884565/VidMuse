@@ -4,7 +4,7 @@ import functools
 import asyncio
 import threading
 from typing import Any, Callable, Optional, TypeVar
-from .context import start_span, end_span
+from .context import start_span, end_span, get_trace_id
 from .dao import add_to_batch
 
 
@@ -95,10 +95,13 @@ def trace(*args: Any, name: Optional[str] = None, meta_data: Optional[dict] = No
                 raise
 
             finally:
-                # 结束span并保存
+                # 结束span
                 end_span(span)
-                # 在后台事件循环中异步添加到批量队列
-                _run_async(add_to_batch(span))
+                # 只有当没有trace上下文时（说明在独立线程中运行），才添加到批量队列
+                # 有上下文的span会在中间件中统一保存
+                if not get_trace_id():
+                    # 在后台事件循环中异步添加到批量队列
+                    _run_async(add_to_batch(span))
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -133,9 +136,8 @@ def trace(*args: Any, name: Optional[str] = None, meta_data: Optional[dict] = No
                 raise
 
             finally:
-                # 结束span并保存
+                # 结束span（异步函数的span会在中间件中统一保存，不需要单独添加到批量队列）
                 end_span(span)
-                await add_to_batch(span)
 
         # 判断是同步还是异步函数
         if inspect.iscoroutinefunction(func):

@@ -1,12 +1,8 @@
 from typing import List, Optional
 
 from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor
-from backend.v1.app.pipeline.processors import (
-    AudioInfoExtractProcessor,
-    AudioASRProcessor,
-    AudioClassificationProcessor,
-    AudioResultAggregator,
-)
+from backend.v1.app.pipeline.processors.audio import AudioInfoExtractProcessor, AudioASRProcessor, \
+    AudioClassificationProcessor, AudioResultAggregator
 
 
 class AudioParsingPipeline(BasePipeline):

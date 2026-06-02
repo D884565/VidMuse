@@ -16,6 +16,7 @@ class Trace(Base):
     status_code: Mapped[int] = mapped_column(Integer, nullable=False, comment="响应状态码")
     duration_ms: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, comment="总耗时(毫秒)")
     client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="客户端IP")
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True, comment="用户ID")
     user_agent: Mapped[str | None] = mapped_column(Text, nullable=True, comment="用户代理")
     request_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="请求头")
     response_headers: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="响应头")

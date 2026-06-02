@@ -8,9 +8,10 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 
-from .context import trace_id_var, span_stack_var, get_all_spans, clear_context, start_span, end_span
+from .context import trace_id_var, span_stack_var, get_all_spans, clear_context, start_span, end_span, set_user_id, get_user_id
 from .dao import save_trace_data, flush_batch
 from .config import trace_config
+from backend.framework.web.auth import get_current_user_id
 
 
 logger = logging.getLogger("trace.middleware")
@@ -38,6 +39,15 @@ class TraceMiddleware(BaseHTTPMiddleware):
         # 设置上下文
         token_trace = trace_id_var.set(trace_id)
         token_stack = span_stack_var.set([])
+
+        # 尝试获取并设置用户ID（公共接口可能没有token，忽略异常）
+        try:
+            user_id = get_current_user_id(request.headers.get("Authorization"))
+            if user_id:
+                set_user_id(user_id)
+        except Exception:
+            # 未登录或token无效，不需要设置用户ID
+            pass
 
         # 创建根span，代表整个请求
         root_span = start_span(
@@ -77,6 +87,9 @@ class TraceMiddleware(BaseHTTPMiddleware):
             raise
 
         finally:
+            # 获取所有spans（必须在end_span之前获取，否则根span会被弹出栈）
+            spans = get_all_spans()
+
             # 结束根span
             end_span(root_span)
             duration_ms = root_span.duration_ms
@@ -89,12 +102,13 @@ class TraceMiddleware(BaseHTTPMiddleware):
             request_headers = dict(request.headers)
             response_headers = dict(response.headers) if response else {}
 
-            # 获取所有spans
-            spans = get_all_spans()
+            # 获取用户ID
+            user_id = get_user_id()
 
             # 无论是否有response都保存数据（包括异常情况）
             asyncio.create_task(self._save_trace_async(
                 trace_id=trace_id,
+                user_id=user_id,
                 method=request.method,
                 path=str(request.url.path),
                 status_code=status_code,
@@ -122,6 +136,7 @@ class TraceMiddleware(BaseHTTPMiddleware):
     async def _save_trace_async(
         self,
         trace_id: str,
+        user_id: Optional[int],
         method: str,
         path: str,
         status_code: int,

@@ -12,6 +12,10 @@ trace_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
     default=""
 )
 span_stack_var: contextvars.ContextVar[List["Span"]] = contextvars.ContextVar("span_stack")
+user_id_var: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar(
+    "user_id",
+    default=None
+)
 
 
 @dataclass
@@ -73,6 +77,16 @@ def get_trace_id() -> str:
     return trace_id_var.get()
 
 
+def get_user_id() -> Optional[int]:
+    """获取当前用户ID"""
+    return user_id_var.get()
+
+
+def set_user_id(user_id: int) -> None:
+    """设置当前用户ID到上下文"""
+    user_id_var.set(user_id)
+
+
 def start_span(
     name: str,
     module_name: str,
@@ -132,3 +146,4 @@ def clear_context() -> None:
     """清空上下文"""
     trace_id_var.set("")
     span_stack_var.set([])
+    user_id_var.set(None)

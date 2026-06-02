@@ -6,7 +6,7 @@
   "properties": {
     "片段模板": {
       "type": "object",
-      "required": ["模板名称", "模板类型", "创作要素", "关键帧时间戳"],
+      "required": ["模板名称", "模板类型", "机制","总结"],
       "properties": {
         "模板名称": { "type": "string" },
         "模板类型": {
@@ -18,7 +18,7 @@
 
         "创作要素": {
           "type": "object",
-          "required": ["画面", "动作", "台词", "运镜", "时长"],
+          "required": ["画面", "动作", "台词", "运镜", "时长","视觉标签"],
           "properties": {
             "画面": { "type": "string" },
             "动作": { "type": "string" },

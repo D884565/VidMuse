@@ -355,6 +355,7 @@ CREATE TABLE IF NOT EXISTS template_factor_relations (
 CREATE TABLE IF NOT EXISTS `traces` (
     `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
     `trace_id` varchar(32) NOT NULL COMMENT '链路唯一标识',
+    `user_id` int DEFAULT NULL COMMENT '用户ID',
     `method` varchar(10) NOT NULL COMMENT 'HTTP方法',
     `path` varchar(500) NOT NULL COMMENT '请求路径',
     `status_code` int NOT NULL COMMENT '响应状态码',
