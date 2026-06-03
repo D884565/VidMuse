@@ -9,6 +9,8 @@ import {
   Plus,
   Sparkles,
   User,
+  BarChart3,
+  ListTodo,
 } from 'lucide-react'
 import ProjectList from '../Project/ProjectList.jsx'
 import CreateProjectModal from '../Project/CreateProjectModal.jsx'
@@ -21,6 +23,7 @@ export default function Sidebar() {
   const setActiveView = useAppStore((state) => state.setActiveView)
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
+  const isAdmin = useAppStore(state => state.isAdmin())
 
   const storeLogout = useAppStore((state) => state.logout)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -114,6 +117,47 @@ export default function Sidebar() {
           <User size={18} />
           <span className="max-[1024px]:hidden">个人信息</span>
         </button>
+
+        {/* 管理员菜单 - 仅管理员可见 */}
+        {isAdmin && (
+          <>
+            <div className="my-4 h-px bg-[var(--border-soft)]" />
+
+            <p className={`px-3 text-xs text-[var(--text-muted)] mb-2 ${collapsed ? 'hidden' : 'block'} max-[1024px]:hidden`}>
+              管理后台
+            </p>
+
+            <button
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
+                activeView === 'admin-dashboard'
+                  ? 'bg-[var(--brand-soft)] text-white'
+                  : 'text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white'
+              }`}
+              type="button"
+              onClick={() => setActiveView('admin-dashboard')}
+            >
+              <BarChart3 size={18} />
+              <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
+                统计概览
+              </span>
+            </button>
+
+            <button
+              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
+                activeView === 'admin-trace-list'
+                  ? 'bg-[var(--brand-soft)] text-white'
+                  : 'text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white'
+              }`}
+              type="button"
+              onClick={() => setActiveView('admin-trace-list')}
+            >
+              <ListTodo size={18} />
+              <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
+                推理轨迹
+              </span>
+            </button>
+          </>
+        )}
 
         <div className="my-4 h-px bg-[var(--border-soft)]" />
 

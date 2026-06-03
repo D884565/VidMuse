@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export const useAppStore = create((set) => ({
+export const useAppStore = create((set, get) => ({
   activeView: 'chat',
   sidebarCollapsed: false,
   activeProjectId: null,
@@ -9,6 +9,8 @@ export const useAppStore = create((set) => ({
   authLoading: !!localStorage.getItem('token'),
   // 用户信息（会话内有效，可通过 /users/me 刷新）
   user: null,
+  // 新增：判断当前用户是否为管理员
+  isAdmin: () => get().user?.role === 'admin',
   // refresh_token 存 localStorage 实现跨会话持久化
   parameters: {
     style: 'cinematic',
