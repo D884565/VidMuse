@@ -1,7 +1,7 @@
 """内部视频素材库模型"""
 import datetime
-from sqlalchemy import String, BigInteger, Integer, DateTime, Text, JSON, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, BigInteger, Integer, DateTime, Text, JSON, func, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from backend.store.database.async_database import Base
 
 
@@ -32,6 +32,9 @@ class VideoLibrary(Base):
         String(64), nullable=True, comment="流水线执行ID，用于断点续跑"
     )
     parsing_error: Mapped[str | None] = mapped_column(Text, nullable=True, comment="解析错误信息")
+    asset_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("assets.id", ondelete="SET NULL"), nullable=True, comment="关联的内部资产ID"
+    )
     created_by: Mapped[int] = mapped_column(BigInteger, nullable=False, comment="创建人ID(管理员ID)")
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now()
@@ -39,6 +42,9 @@ class VideoLibrary(Base):
     updated_at: Mapped[datetime.datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+    # 关系：关联到内部资产
+    asset = relationship("Asset")
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -59,6 +65,7 @@ class VideoLibrary(Base):
             "parsing_status": self.parsing_status,
             "execution_id": self.execution_id,
             "parsing_error": self.parsing_error,
+            "asset_id": self.asset_id,
             "created_by": self.created_by,
             "created_at": self.created_at.isoformat() + "Z" if self.created_at else None,
             "updated_at": self.updated_at.isoformat() + "Z" if self.updated_at else None,
