@@ -155,13 +155,24 @@ async def delete_video(
 @router.post("/{video_id}/parse", summary="手动触发视频解析")
 async def trigger_parsing(
     video_id: int,
+    force: bool = Query(False, description="是否强制重新解析，即使已经解析过"),
     db: AsyncSession = Depends(get_db),
     current_user_id: int = Depends(admin_required),
 ):
-    success = await video_service.trigger_parsing(db, video_id)
+    success = await video_service.trigger_parsing(db, video_id, force=force)
     if not success:
-        return Response.error(message="视频不存在")
+        return Response.error(message="视频不存在或未关联资产")
     return Response.success(message="解析任务已触发")
+
+
+@router.get("/{video_id}/slices", summary="获取视频对应的切片列表")
+async def get_video_slices(
+    video_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: int = Depends(admin_required),
+):
+    slices = await video_service.get_video_slices(db, video_id)
+    return Response.success(data=slices)
 
 
 @router.post("/batch-import-hot", summary="批量导入爆款视频")
