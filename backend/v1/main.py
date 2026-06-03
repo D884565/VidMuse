@@ -15,7 +15,6 @@ from backend.v1.app.slice.controller.slice_controller import router as slice_rou
 from backend.v1.app.video.controller.video import router as video_router
 from backend.v1.app.merge.controller.merge import router as merge_router
 from backend.v1.app.rag_trace.controller.trace_controller import router as trace_router
-from backend.v1.app.video_library.controller.video_library_controller import router as video_library_router
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,6 @@ app.include_router(slice_router, prefix="/v1")
 app.include_router(trace_router, prefix="/v1")  # 后台观测系统接口
 app.include_router(video_router, prefix="/v1")
 app.include_router(merge_router, prefix="/v1")
-app.include_router(video_library_router, prefix="/v1")
 
 
 @app.get("/", response_model=Response)
