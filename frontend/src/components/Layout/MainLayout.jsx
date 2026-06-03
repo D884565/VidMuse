@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense } from 'react'
 import ChatContainer from '../Chat/ChatContainer.jsx'
 import FrameGrid from '../Keyframes/FrameGrid.jsx'
 import MediaGrid from '../Media/MediaGrid.jsx'
@@ -8,6 +8,11 @@ import { useAppStore } from '../../store/appStore.js'
 import { getUserInfo } from '../../services/user.js'
 import Login from '../../pages/Login.jsx'
 
+// 后台管理页面 - 懒加载
+const AdminDashboard = lazy(() => import('../../pages/admin/Dashboard.jsx'))
+const AdminTraceList = lazy(() => import('../../pages/admin/TraceList.jsx'))
+const AdminTraceDetail = lazy(() => import('../../pages/admin/TraceDetail.jsx'))
+
 export default function MainLayout() {
   const activeView = useAppStore((state) => state.activeView)
   const isLoggedIn = useAppStore((state) => state.isLoggedIn)
@@ -15,6 +20,7 @@ export default function MainLayout() {
   const user = useAppStore((state) => state.user)
   const setUser = useAppStore((state) => state.setUser)
   const setAuthLoading = useAppStore((state) => state.setAuthLoading)
+  const isAdmin = useAppStore(state => state.isAdmin())
 
   // 页面刷新后恢复用户信息
   useEffect(() => {
@@ -46,6 +52,29 @@ export default function MainLayout() {
   }
 
   const renderView = () => {
+    // 管理员页面权限校验
+    if (activeView.startsWith('admin-') && !isAdmin) {
+      return (
+        <div className="grid min-h-[60vh] place-items-center">
+          <div className="text-center">
+            <h3 className="text-lg font-medium mb-2">权限不足</h3>
+            <p className="text-[var(--text-muted)] text-sm">您没有访问管理后台的权限</p>
+          </div>
+        </div>
+      )
+    }
+
+    // 懒加载组件加载时的fallback
+    const SuspenseWrapper = ({ children }) => (
+      <Suspense fallback={
+        <div className="grid min-h-[60vh] place-items-center">
+          <div className="text-[var(--text-muted)]">加载中...</div>
+        </div>
+      }>
+        {children}
+      </Suspense>
+    )
+
     switch (activeView) {
       case 'keyframes':
         return <FrameGrid />
@@ -53,6 +82,12 @@ export default function MainLayout() {
         return <MediaGrid />
       case 'profile':
         return <UserProfile />
+      case 'admin-dashboard':
+        return <SuspenseWrapper><AdminDashboard /></SuspenseWrapper>
+      case 'admin-trace-list':
+        return <SuspenseWrapper><AdminTraceList /></SuspenseWrapper>
+      case 'admin-trace-detail':
+        return <SuspenseWrapper><AdminTraceDetail /></SuspenseWrapper>
       default:
         return <ChatContainer />
     }
