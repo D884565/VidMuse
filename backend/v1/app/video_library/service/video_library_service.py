@@ -2,11 +2,17 @@
 from typing import List, Dict, Any, Optional, Tuple
 from fastapi import UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
+
+from backend.framework.exceptions import BusinessException
 from backend.v1.app.video_library.dao.video_library_dao import VideoLibraryDAO
 from backend.v1.app.pipeline.processors.cluster.hot_report_fetch_processor import HotReportFetchProcessor
 from backend.v1.app.pipeline.base.context import PipelineContext
 from backend.store.obj.factory import get_storage_client
 from backend.framework.exceptions.error_codes import SYSTEM_ERROR, PARAM_ERROR
+from backend.v1.app.assets.service.asset_service import AssetService
+from backend.v1.app.slice.dao.slice_dao import SliceDAO
+from backend.store.database.sync_database import get_db as get_sync_db
 import logging
 import uuid
 import os
@@ -54,42 +60,50 @@ class VideoLibraryService:
         tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """上传视频文件"""
-        # 生成文件名
-        ext = os.path.splitext(file.filename)[1].lower()
-        file_name = f"video-library/{uuid.uuid4().hex}{ext}"
-
         try:
-            # 上传到对象存储
-            content = await file.read()
-            url = await self.obj_store.put_object(file_name, content, file.content_type)
+            # 获取同步数据库会话用于调用AssetService
+            sync_db = next(get_sync_db())
 
-            # 创建视频记录
+            # 调用内部资产上传接口，直接复用现有逻辑
+            asset_dict = await AssetService.upload_internal_asset(
+                db=sync_db,
+                file=file,
+                type=2,  # 视频类型
+                title=title or file.filename,
+                source_type=0,  # 内部上传
+                skip_ai_analysis=False  # 不跳过AI分析，自动触发解析
+            )
+
+            # 创建视频库记录，关联资产ID
             video = await VideoLibraryDAO.create(
                 db,
-                title=title or file.filename,
+                title=asset_dict["title"],
                 description=description,
-                url=url,
-                file_size=len(content),
-                format=ext.lstrip("."),
+                url=asset_dict["url"],
+                cover_url=asset_dict.get("cover_url"),
+                file_size=asset_dict["file_size"],
+                duration=asset_dict.get("duration"),
+                format=asset_dict["format"],
                 source_type=0,  # 内部上传
                 category=category,
                 tags=tags,
                 created_by=created_by,
-                parsing_status="pending"
+                asset_id=asset_dict["id"],
+                parsing_status=asset_dict["parsing_status"],
+                execution_id=asset_dict.get("execution_id")
             )
 
-            # TODO: 触发解析流水线（复用现有assets模块的解析逻辑）
-            # execution_id = await self._trigger_parsing_pipeline(video)
-            # await VideoLibraryDAO.update(db, video.id, execution_id=execution_id)
+            # 更新asset的parsing_status到video_library
+            if asset_dict.get("parsing_status") == "completed":
+                # 如果已经解析完成，获取解析数据
+                # TODO: 可以选择将解析数据同步到parsed_data字段
+                pass
 
             return video.to_dict()
 
         except Exception as e:
             logger.error(f"上传视频失败: {str(e)}", exc_info=True)
-            raise HTTPException(
-                status_code=SYSTEM_ERROR[0],
-                detail=f"上传视频失败: {str(e)}"
-            )
+            raise BusinessException(SYSTEM_ERROR, f"上传视频失败: {str(e)}")
 
     @staticmethod
     async def create_video(
@@ -201,6 +215,13 @@ class VideoLibraryService:
                     "parsing_status": "completed"  # 已有解析数据
                 }
 
+                # 创建对应的内部资产（如果需要关联slice的话）
+                # TODO: 这里可以选择是否为导入的爆款视频创建asset记录
+                # 如果需要slice关联，可以调用AssetService创建资产并解析
+                # sync_db = next(get_sync_db())
+                # asset_dict = await AssetService.create_external_asset(...)
+                # video_data["asset_id"] = asset_dict["id"]
+
                 await VideoLibraryDAO.create(db, **video_data)
                 success_count += 1
 
@@ -216,17 +237,55 @@ class VideoLibraryService:
         }
 
     @staticmethod
-    async def trigger_parsing(db: AsyncSession, video_id: int) -> bool:
+    async def get_video_slices(db: AsyncSession, video_id: int) -> List[Dict[str, Any]]:
+        """获取视频对应的切片列表"""
+        video = await VideoLibraryDAO.get_by_id(db, video_id)
+        if not video or not video.asset_id:
+            return []
+
+        try:
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
+
+            # 查询该资产对应的所有切片
+            slices = SliceDAO.get_slices_by_asset_id(sync_db, video.asset_id)
+
+            # 转换为字典格式
+            return [s.to_dict() for s in slices]
+
+        except Exception as e:
+            logger.error(f"查询视频切片失败: {str(e)}", exc_info=True)
+            return []
+
+    @staticmethod
+    async def trigger_parsing(db: AsyncSession, video_id: int, force: bool = False) -> bool:
         """手动触发视频解析"""
         video = await VideoLibraryDAO.get_by_id(db, video_id)
-        if not video:
+        if not video or not video.asset_id:
             return False
 
-        # 更新状态为pending
-        await VideoLibraryDAO.update_parsing_status(db, video_id, "pending")
+        try:
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
 
-        # TODO: 触发解析流水线
-        # execution_id = await self._trigger_parsing_pipeline(video)
-        # await VideoLibraryDAO.update(db, video_id, execution_id=execution_id)
+            # 调用AssetService的触发解析接口
+            result = await AssetService.trigger_parsing(
+                db=sync_db,
+                asset_id=video.asset_id,
+                force=force
+            )
 
-        return True
+            # 更新video_library的解析状态和execution_id
+            update_data = {
+                "parsing_status": result.get("parsing_status", "pending")
+            }
+            if result.get("execution_id"):
+                update_data["execution_id"] = result["execution_id"]
+
+            await VideoLibraryDAO.update(db, video_id, **update_data)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"触发视频解析失败: {str(e)}", exc_info=True)
+            return False
