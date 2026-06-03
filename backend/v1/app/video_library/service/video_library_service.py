@@ -8,9 +8,10 @@ from backend.framework.exceptions import BusinessException
 from backend.v1.app.video_library.dao.video_library_dao import VideoLibraryDAO
 from backend.v1.app.pipeline.processors.cluster.hot_report_fetch_processor import HotReportFetchProcessor
 from backend.v1.app.pipeline.base.context import PipelineContext
+from backend.v1.app.pipeline.pipelines.video_parsing_pipeline import VideoParsingPipeline
 from backend.store.obj.factory import get_storage_client
 from backend.framework.exceptions.error_codes import SYSTEM_ERROR, PARAM_ERROR
-from backend.v1.app.assets.service.asset_service import AssetService
+from backend.v1.app.assets.dao.asset_dao import AssetDAO
 from backend.v1.app.slice.dao.slice_dao import SliceDAO
 from backend.store.database.sync_database import get_db as get_sync_db
 import logging
@@ -60,44 +61,78 @@ class VideoLibraryService:
         tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """上传视频文件"""
+        # 生成文件名
+        ext = os.path.splitext(file.filename)[1].lower()
+        file_name = f"internal/video-library/{uuid.uuid4().hex}{ext}"
+
         try:
-            # 获取同步数据库会话用于调用AssetService
+            # 1. 上传到对象存储
+            content = await file.read()
+            url = await self.obj_store.put_object(file_name, content, file.content_type)
+            file_size = len(content)
+
+            # 获取同步数据库会话
             sync_db = next(get_sync_db())
 
-            # 调用内部资产上传接口，直接复用现有逻辑
-            asset_dict = await AssetService.upload_internal_asset(
-                db=sync_db,
-                file=file,
-                type=2,  # 视频类型
-                title=title or file.filename,
-                source_type=0,  # 内部上传
-                skip_ai_analysis=False  # 不跳过AI分析，自动触发解析
-            )
+            # 2. 创建内部资产记录（user_id为Null表示系统内部资产，不属于任何用户）
+            asset_data = {
+                "title": title or file.filename,
+                "type": 2,  # 视频类型
+                "url": url,
+                "file_size": file_size,
+                "format": ext.lstrip("."),
+                "source_type": 0,  # 内部上传
+                "user_id": None,  # 系统内部资产
+                "parsing_status": "pending"
+            }
+            asset = AssetDAO.create_asset(sync_db, asset_data)
+            asset_dict = asset.to_dict()
 
-            # 创建视频库记录，关联资产ID
+            # 3. 创建视频库记录，关联资产ID
             video = await VideoLibraryDAO.create(
                 db,
                 title=asset_dict["title"],
                 description=description,
                 url=asset_dict["url"],
-                cover_url=asset_dict.get("cover_url"),
                 file_size=asset_dict["file_size"],
-                duration=asset_dict.get("duration"),
                 format=asset_dict["format"],
                 source_type=0,  # 内部上传
                 category=category,
                 tags=tags,
                 created_by=created_by,
                 asset_id=asset_dict["id"],
-                parsing_status=asset_dict["parsing_status"],
-                execution_id=asset_dict.get("execution_id")
+                parsing_status="pending"
             )
 
-            # 更新asset的parsing_status到video_library
-            if asset_dict.get("parsing_status") == "completed":
-                # 如果已经解析完成，获取解析数据
-                # TODO: 可以选择将解析数据同步到parsed_data字段
-                pass
+            # 4. 直接调用视频解析流水线
+            pipeline = VideoParsingPipeline(enable_persistence=True)
+            pipeline_result = pipeline.run_with_persistence({
+                "video_id": asset_dict["id"],
+                "video_url": asset_dict["url"],
+                "object_name": file_name
+            })
+
+            # 5. 更新执行ID和状态
+            execution_id = pipeline_result.get("execution_id")
+            update_data = {}
+            if execution_id:
+                update_data["execution_id"] = execution_id
+
+            if pipeline_result.get("success"):
+                update_data["parsing_status"] = "running"
+            else:
+                update_data["parsing_status"] = "failed"
+                update_data["parsing_error"] = str(pipeline_result.get("errors", []))
+
+            await VideoLibraryDAO.update(db, video.id, **update_data)
+
+            # 同时更新asset表的状态
+            if execution_id:
+                AssetDAO.update_asset(sync_db, asset_dict["id"], {
+                    "execution_id": execution_id,
+                    "parsing_status": update_data["parsing_status"],
+                    "parsing_error": update_data.get("parsing_error")
+                })
 
             return video.to_dict()
 
@@ -217,10 +252,11 @@ class VideoLibraryService:
 
                 # 创建对应的内部资产（如果需要关联slice的话）
                 # TODO: 这里可以选择是否为导入的爆款视频创建asset记录
-                # 如果需要slice关联，可以调用AssetService创建资产并解析
+                # 如果需要slice关联，可以直接调用AssetDAO创建资产并触发pipeline解析
                 # sync_db = next(get_sync_db())
-                # asset_dict = await AssetService.create_external_asset(...)
-                # video_data["asset_id"] = asset_dict["id"]
+                # asset = AssetDAO.create_asset(sync_db, asset_data)
+                # video_data["asset_id"] = asset.id
+                # 然后触发VideoParsingPipeline进行解析
 
                 await VideoLibraryDAO.create(db, **video_data)
                 success_count += 1
@@ -268,21 +304,71 @@ class VideoLibraryService:
             # 获取同步数据库会话
             sync_db = next(get_sync_db())
 
-            # 调用AssetService的触发解析接口
-            result = await AssetService.trigger_parsing(
-                db=sync_db,
-                asset_id=video.asset_id,
-                force=force
-            )
+            # 获取资产信息
+            asset = AssetDAO.get_asset_by_id(sync_db, video.asset_id)
+            if not asset:
+                return False
 
-            # 更新video_library的解析状态和execution_id
-            update_data = {
-                "parsing_status": result.get("parsing_status", "pending")
-            }
-            if result.get("execution_id"):
-                update_data["execution_id"] = result["execution_id"]
+            # 检查是否已经解析过
+            if asset.parsing_status == "completed" and not force:
+                logger.warning(f"资产 {video.asset_id} 已经解析过，跳过")
+                return False
+
+            # 如果有正在运行的解析任务，直接返回
+            if asset.parsing_status == "running" and not force:
+                return True
+
+            # 更新状态为待执行
+            await VideoLibraryDAO.update(db, video_id, {
+                "parsing_status": "pending",
+                "parsing_error": None
+            })
+            AssetDAO.update_asset(sync_db, video.asset_id, {
+                "parsing_status": "pending",
+                "parsing_error": None
+            })
+
+            # 尝试断点恢复（如果有execution_id）
+            execution_id = video.execution_id or asset.execution_id
+            pipeline_result = None
+
+            if execution_id and not force:
+                try:
+                    pipeline = VideoParsingPipeline(enable_persistence=True)
+                    pipeline_result = pipeline.resume_execution(execution_id)
+                except Exception as e:
+                    logger.warning(f"断点恢复失败，将重新执行: {str(e)}")
+                    execution_id = None
+
+            # 重新执行完整解析
+            if not execution_id or force or not pipeline_result:
+                pipeline = VideoParsingPipeline(enable_persistence=True)
+                pipeline_result = pipeline.run_with_persistence({
+                    "video_id": video.asset_id,
+                    "video_url": video.url,
+                    "object_name": video.url.split("/")[-1]  # 从URL中提取object_name
+                })
+
+            # 更新执行ID和状态
+            new_execution_id = pipeline_result.get("execution_id")
+            update_data = {}
+
+            if new_execution_id:
+                update_data["execution_id"] = new_execution_id
+
+            if pipeline_result.get("success"):
+                update_data["parsing_status"] = "running"
+            else:
+                update_data["parsing_status"] = "failed"
+                update_data["parsing_error"] = str(pipeline_result.get("errors", []))
 
             await VideoLibraryDAO.update(db, video_id, **update_data)
+
+            # 同时更新asset表
+            asset_update_data = update_data.copy()
+            if "id" in asset_update_data:
+                del asset_update_data["id"]
+            AssetDAO.update_asset(sync_db, video.asset_id, asset_update_data)
 
             return True
 
