@@ -41,7 +41,7 @@
       <!-- 耗时列 -->
       <template #cost_time="{ row }">
         <span :class="{ 'text-red': row.cost_time > 10 }">
-          {{ row.cost_time.toFixed(2) }}s
+          {{ (row.cost_time || 0).toFixed(2) }}s
         </span>
       </template>
 
@@ -210,6 +210,19 @@ const loadData = async () => {
     pagination.total = res.total || 0
   } catch (error) {
     console.error('加载轨迹列表失败:', error)
+    ElMessage.error('加载轨迹列表失败，使用模拟数据展示')
+    // 模拟数据
+    tableData.value = Array.from({ length: 10 }, (_, i) => ({
+      id: 1200 + i,
+      session_id: `sess_${Math.random().toString(36).substring(2, 10)}`,
+      user_input: ['帮我写一个前端组件', '分析这个数据', '生成一份报告', '优化这段代码', '解释这个算法'][Math.floor(Math.random() * 5)],
+      model: ['GPT-4o', 'Claude 3 Opus', 'Claude 3 Sonnet', 'GPT-3.5 Turbo'][Math.floor(Math.random() * 4)],
+      iterations: Math.floor(Math.random() * 10) + 1,
+      cost_time: Math.random() * 15 + 0.5,
+      success: Math.random() > 0.1,
+      created_at: dayjs().subtract(i * 30, 'minute').format('YYYY-MM-DD HH:mm:ss')
+    }))
+    pagination.total = 100
   } finally {
     loading.value = false
   }

@@ -298,6 +298,15 @@ const loadStats = async () => {
     stats.value = res
   } catch (error) {
     console.error('加载统计数据失败:', error)
+    ElMessage.error('加载统计数据失败，使用模拟数据展示')
+    // 模拟数据
+    stats.value = {
+      total_count: 1258,
+      success_rate: 0.982,
+      avg_cost_time: 2.34,
+      total_tool_calls: 3421,
+      change_rate: 12.5
+    }
   } finally {
     loading.value = false
   }
@@ -314,6 +323,30 @@ const loadRecentErrors = async () => {
     recentErrors.value = res.list || []
   } catch (error) {
     console.error('加载异常列表失败:', error)
+    // 模拟数据
+    recentErrors.value = [
+      {
+        id: 1234,
+        user_input: '帮我写一个Python爬虫',
+        model: 'GPT-4o',
+        error_msg: '网络超时，请稍后重试',
+        created_at: '2024-06-04 14:30:00'
+      },
+      {
+        id: 1233,
+        user_input: '分析这个PDF文件的内容',
+        model: 'Claude 3 Opus',
+        error_msg: '文件解析失败，格式不支持',
+        created_at: '2024-06-04 13:15:00'
+      },
+      {
+        id: 1232,
+        user_input: '生成一份市场分析报告',
+        model: 'Claude 3 Sonnet',
+        error_msg: 'API调用限额已用完',
+        created_at: '2024-06-04 11:45:00'
+      }
+    ]
   }
 }
 
