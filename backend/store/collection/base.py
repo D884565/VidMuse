@@ -13,6 +13,7 @@ class CollectionDAO(ABC):
     # 子类需要配置对应向量数据库的集合名称
     chroma_collection_name: str = None  # ChromaDB集合名
     milvus_collection_name: str = None  # Milvus集合名
+    qdrant_collection_name: str = None  # Qdrant集合名
 
     _vector_client: VectorDatabase = None
 
@@ -26,6 +27,10 @@ class CollectionDAO(ABC):
             if not self.milvus_collection_name:
                 raise ValueError(f"{self.__class__.__name__} 必须配置milvus_collection_name")
             self.collection_name = self.milvus_collection_name
+        elif settings.VECTOR_DB_TYPE == VectorDBType.QDRANT:
+            if not self.qdrant_collection_name:
+                raise ValueError(f"{self.__class__.__name__} 必须配置qdrant_collection_name")
+            self.collection_name = self.qdrant_collection_name
         else:
             raise ValueError(f"不支持的向量数据库类型: {settings.VECTOR_DB_TYPE}")
 

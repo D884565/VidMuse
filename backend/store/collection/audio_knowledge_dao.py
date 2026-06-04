@@ -10,6 +10,7 @@ class AudioKnowledgeDAO(CollectionDAO):
     """
     chroma_collection_name = settings.CHROMADB_AUDIO_COLLECTION
     milvus_collection_name = settings.MILVUS_AUDIO_COLLECTION
+    qdrant_collection_name = settings.QDRANT_AUDIO_COLLECTION
 
     def query_by_audio_id(self, audio_id: str, query_embeddings: List[List[float]],
                          n_results: int = 10) -> Dict:

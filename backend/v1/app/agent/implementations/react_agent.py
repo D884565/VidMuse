@@ -14,7 +14,7 @@ from ..config import AGENT_CONFIG
 
 # 导入TraceStorage
 try:
-    from backend.v1.app.search.agent.trace_storage import trace_storage
+    from backend.v1.app.agent.trace.trace_storage import trace_storage
     HAS_TRACE_STORAGE = True
 except ImportError:
     HAS_TRACE_STORAGE = False
