@@ -2,7 +2,10 @@
 from typing import Optional, Dict, Any, List
 from .react_agent import ReActAgent
 from ..config import AGENT_CONFIG
+from backend.v1.app.search import SearchEngine, SearchQuery
+import logging
 
+logger = logging.getLogger(__name__)
 
 class SearchAgent(ReActAgent):
     """
@@ -17,7 +20,8 @@ class SearchAgent(ReActAgent):
         description: str = "擅长信息检索和问题解答的智能助手，可以调用多种搜索工具获取信息。",
         config: Optional[Dict[str, Any]] = None,
         model: Optional[str] = None,
-        max_iterations: Optional[int] = None
+        max_iterations: Optional[int] = None,
+        search_config: Optional[Dict[str, Any]] = None
     ):
         """
         初始化搜索Agent
@@ -27,6 +31,7 @@ class SearchAgent(ReActAgent):
         :param config: 自定义配置
         :param model: 使用的模型
         :param max_iterations: 最大迭代次数
+        :param search_config: 检索引擎配置
         """
         super().__init__(
             agent_id=agent_id,
@@ -36,6 +41,52 @@ class SearchAgent(ReActAgent):
             model=model,
             max_iterations=max_iterations
         )
+
+        # 初始化检索引擎
+        try:
+            self.search_engine = SearchEngine(search_config)
+            logger.info("SearchAgent初始化检索引擎成功")
+        except Exception as e:
+            logger.error(f"SearchAgent初始化检索引擎失败: {str(e)}", exc_info=True)
+            self.search_engine = None
+
+    def _search_tool(self, query: str, **kwargs) -> List[Dict]:
+        """
+        检索工具，供Agent调用
+        :param query: 查询文本
+        :param kwargs: 额外参数（user_id, project_id, session_id等）
+        :return: 检索结果列表
+        """
+        if not self.search_engine:
+            logger.warning("检索引擎未初始化，无法执行检索")
+            return []
+
+        try:
+            # 构建检索查询
+            search_query = SearchQuery(
+                query_text=query,
+                top_k=10,
+                metadata=kwargs
+            )
+
+            # 执行检索
+            results = self.search_engine.search(search_query)
+
+            # 转换为字典格式返回给Agent
+            return [
+                {
+                    "id": result.result_id,
+                    "content": result.content,
+                    "score": result.score,
+                    "source": result.source,
+                    "source_type": result.source_type,
+                    "metadata": result.metadata
+                }
+                for result in results
+            ]
+        except Exception as e:
+            logger.error(f"检索工具执行失败: {str(e)}", exc_info=True)
+            return []
 
     def chat(
         self,
