@@ -10,6 +10,7 @@ class VideoKnowledgeDAO(CollectionDAO):
     """
     chroma_collection_name = settings.CHROMADB_VIDEO_COLLECTION
     milvus_collection_name = settings.MILVUS_VIDEO_COLLECTION
+    qdrant_collection_name = settings.QDRANT_VIDEO_COLLECTION
 
     def query_by_video_id(self, video_id: str, query_embeddings: List[List[float]],
                          n_results: int = 10) -> Dict:

@@ -10,6 +10,7 @@ class SliceKnowledgeDAO(CollectionDAO):
     """
     chroma_collection_name = settings.CHROMADB_SLICE_COLLECTION
     milvus_collection_name = settings.MILVUS_SLICE_COLLECTION
+    qdrant_collection_name = settings.QDRANT_SLICE_COLLECTION
 
     def query_by_source_id(self, source_id: str, query_embeddings: List[List[float]],
                           n_results: int = 10, content_type: str = None) -> Dict:

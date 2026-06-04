@@ -10,6 +10,7 @@ class ImageKnowledgeDAO(CollectionDAO):
     """
     chroma_collection_name = settings.CHROMADB_IMAGE_COLLECTION
     milvus_collection_name = settings.MILVUS_IMG_COLLECTION
+    qdrant_collection_name = settings.QDRANT_IMAGE_COLLECTION
 
     def query_by_image_set_id(self, image_set_id: str, query_embeddings: List[List[float]],
                              n_results: int = 10) -> Dict:

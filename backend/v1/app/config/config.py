@@ -92,6 +92,20 @@ class Settings(BaseSettings):
     MILVUS_AUDIO_COLLECTION: str = "audio_knowledge"
     MILVUS_VECTOR_DIMENSION: int = 1536  # 默认OpenAI embedding维度
 
+    # Qdrant配置
+    QDRANT_HOST: str = "localhost"
+    QDRANT_PORT: int = 6333  # HTTP端口
+    QDRANT_GRPC_PORT: int = 6334  # gRPC端口
+    QDRANT_API_KEY: str = ""
+    QDRANT_PREFER_GRPC: bool = True
+    QDRANT_COLLECTION: str = "default_collection"
+    QDRANT_PRODUCT_COLLECTION: str = "product_knowledge"
+    QDRANT_SLICE_COLLECTION: str = "slice_knowledge"
+    QDRANT_VIDEO_COLLECTION: str = "video_knowledge"
+    QDRANT_IMAGE_COLLECTION: str = "img_knowledge"
+    QDRANT_AUDIO_COLLECTION: str = "audio_knowledge"
+    QDRANT_VECTOR_DIMENSION: int = 1536  # 默认OpenAI embedding维度
+
     # OpenAI
     OPENAI_API_KEY: str = ""
 
