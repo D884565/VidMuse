@@ -32,20 +32,15 @@ export function useProjectPolling(projectId) {
 
   useEffect(() => {
     if (!projectId) {
-      setProject(null)
-      setFrames([])
-      setVideoUrl(null)
-      setAudioUrl(null)
-      setAssets([])
-      setLoading(false)
-      setError(null)
       return
     }
 
     let cancelled = false
-    setLoading(true)
 
     async function fetchProject() {
+      if (cancelled) return
+
+      setLoading(true)
       try {
         const data = await getProjectDetail(projectId)
         if (cancelled) return
@@ -79,6 +74,20 @@ export function useProjectPolling(projectId) {
       clearInterval(intervalRef.current)
     }
   }, [projectId, refreshToken])
+
+  // When no projectId, return default empty state
+  if (!projectId) {
+    return {
+      project: null,
+      frames: [],
+      videoUrl: null,
+      audioUrl: null,
+      assets: [],
+      loading: false,
+      error: null,
+      refetch: () => {},
+    }
+  }
 
   return {
     project,
