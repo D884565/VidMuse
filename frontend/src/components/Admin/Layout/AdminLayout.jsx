@@ -1,11 +1,16 @@
 import { Outlet } from 'react-router-dom'
+import AdminSidebar from './AdminSidebar'
+import AdminHeader from './AdminHeader'
 
 export default function AdminLayout() {
   return (
     <div className="min-h-screen bg-gray-50">
-      <div className="p-8">
-        <h1 className="text-2xl font-bold mb-4">管理员后台（开发中）</h1>
-        <Outlet />
+      <AdminSidebar />
+      <div className="ml-64">
+        <AdminHeader />
+        <main className="min-h-[calc(100vh-4rem)]">
+          <Outlet />
+        </main>
       </div>
     </div>
   )
