@@ -1,0 +1,59 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #F5F7FA;
+    color: #1D2129;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white rounded-lg shadow-sm border border-gray-100;
+  }
+
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+
+  .btn-primary {
+    @apply btn bg-primary text-white hover:bg-primary/90 focus:ring-primary/50;
+  }
+
+  .btn-secondary {
+    @apply btn bg-white text-gray-500 border border-gray-100 hover:bg-gray-50 focus:ring-gray-200;
+  }
+
+  .btn-danger {
+    @apply btn bg-danger text-white hover:bg-danger/90 focus:ring-danger/50;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 border border-gray-100 rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary;
+  }
+
+  .table {
+    @apply w-full border-collapse;
+  }
+
+  .table th {
+    @apply px-4 py-3 text-left text-sm font-medium text-gray-400 bg-gray-50 border-b border-gray-100;
+  }
+
+  .table td {
+    @apply px-4 py-3 text-sm text-gray-500 border-b border-gray-100;
+  }
+
+  .table tr:hover {
+    @apply bg-gray-50;
+  }
+}
