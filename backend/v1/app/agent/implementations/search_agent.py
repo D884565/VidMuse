@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 from .react_agent import ReActAgent
 from ..config import AGENT_CONFIG
 from backend.v1.app.search import SearchEngine, SearchQuery
+from ..core.tool import BaseTool
 import logging
 
 logger = logging.getLogger(__name__)
@@ -49,6 +50,27 @@ class SearchAgent(ReActAgent):
         except Exception as e:
             logger.error(f"SearchAgent初始化检索引擎失败: {str(e)}", exc_info=True)
             self.search_engine = None
+
+        # 注册搜索工具
+        class SearchTool(BaseTool):
+            name = "search_tool"
+            description = "搜索相关信息，回答用户问题，支持检索知识库、数据库等多种数据源"
+            parameters_schema = {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "需要搜索的查询文本"
+                    }
+                },
+                "required": ["query"]
+            }
+
+            def execute(tool_self, parameters: Dict[str, Any]) -> str:
+                results = self._search_tool(parameters["query"], **(parameters.get("context", {})))
+                return str(results)
+
+        self.tool_system.register_tool(SearchTool())
 
     def _search_tool(self, query: str, **kwargs) -> List[Dict]:
         """
