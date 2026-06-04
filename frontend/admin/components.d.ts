@@ -8,8 +8,10 @@ export {}
 declare module 'vue' {
   export interface GlobalComponents {
     CommonTable: typeof import('./src/components/CommonTable/index.vue')['default']
+    JsonViewer: typeof import('./src/components/JsonViewer/index.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     SearchForm: typeof import('./src/components/SearchForm/index.vue')['default']
+    TraceTimeline: typeof import('./src/components/TraceTimeline/index.vue')['default']
   }
 }
