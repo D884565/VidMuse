@@ -48,4 +48,20 @@ export const useAppStore = create((set, get) => ({
     const user = get().user
     return user?.role === 'admin'
   },
+
+  // 管理员相关状态
+  adminStats: null,
+  setAdminStats: (stats) => set({ adminStats: stats }),
+
+  userList: [],
+  setUserList: (users) => set({ userList: users }),
+
+  contentList: [],
+  setContentList: (content) => set({ contentList: content }),
+
+  systemStats: null,
+  setSystemStats: (stats) => set({ systemStats: stats }),
+
+  templateList: [],
+  setTemplateList: (templates) => set({ templateList: templates }),
 }))
