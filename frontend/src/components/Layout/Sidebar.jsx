@@ -9,7 +9,9 @@ import {
   Plus,
   Sparkles,
   User,
+  Settings,
 } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import ProjectList from '../Project/ProjectList.jsx'
 import CreateProjectModal from '../Project/CreateProjectModal.jsx'
 import UserProfileMini from './UserProfile.jsx'
@@ -21,6 +23,7 @@ export default function Sidebar() {
   const setActiveView = useAppStore((state) => state.setActiveView)
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
+  const isAdmin = useAppStore((state) => state.isAdmin())
 
   const storeLogout = useAppStore((state) => state.logout)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -114,6 +117,17 @@ export default function Sidebar() {
           <User size={18} />
           <span className="max-[1024px]:hidden">个人信息</span>
         </button>
+
+        {isAdmin && (
+          <Link
+            to="/admin/dashboard"
+            target="_blank"
+            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white`}
+          >
+            <Settings size={18} />
+            <span className="max-[1024px]:hidden">管理后台</span>
+          </Link>
+        )}
 
         <div className="my-4 h-px bg-[var(--border-soft)]" />
 
