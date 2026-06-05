@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 class BaseQueryProcessor(QueryEnhancementProcessor):
     """查询增强处理器基类，提供通用功能"""
 
+    @property
+    def processor_name(self) -> str:
+        pass
+
     def process(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> SearchQuery:
         """
         同步处理查询，子类重写_process方法实现具体逻辑

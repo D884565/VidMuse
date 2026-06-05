@@ -173,15 +173,21 @@ class ProductService:
         })
 
         # 构造流水线输入
+        # TODO: 需要关联商品对应的asset_id，这里暂时使用product_id作为asset_id（需要根据实际业务调整）
+        # 或者先创建对应的asset记录
         input_data = {
             "images": images,
             "description": description,
             "product_id": product_id,
+            "asset_id": product_id,  # 临时使用product_id作为asset_id，后续根据实际关联调整
             "user_id": user_id
         }
 
-        # 执行解析流水线
-        pipeline = ProductParsingPipeline()
+        # 执行解析流水线（新流水线自动落库到asset表）
+        pipeline = ProductParsingPipeline(
+            persist_to_asset=True,  # 自动落库到asset表
+            enable_persistence=True
+        )
         result = pipeline.run_with_persistence(input_data)
 
         if not result["success"]:
@@ -196,22 +202,9 @@ class ProductService:
 
         # 保存execution_id到商品表
         ProductDAO.update_product(db, product_id, {
-            "execution_id": execution_id
+            "execution_id": execution_id,
+            "parsing_status": "completed"  # 流水线执行完成直接标记为成功
         })
-
-        # TODO: 异步执行解析，现在是同步的，后续可以放到后台任务
-        # 临时同步执行并更新状态
-        if result["success"]:
-            # 保存解析结果
-            if "data" in result and "product_understanding" in result["data"]:
-                ProductDAO.update_product(db, product_id, {
-                    "ai_features": result["data"]["product_understanding"],
-                    "parsing_status": "completed"
-                })
-            else:
-                ProductDAO.update_product(db, product_id, {
-                    "parsing_status": "completed"
-                })
 
         return execution_id
 
@@ -291,16 +284,10 @@ class ProductService:
                 result = pipeline.resume_execution(product.execution_id)
 
                 if result["success"]:
-                    # 解析成功，更新结果
-                    if "data" in result and "product_understanding" in result["data"]:
-                        ProductDAO.update_product(db, product_id, {
-                            "ai_features": result["data"]["product_understanding"],
-                            "parsing_status": "completed"
-                        })
-                    else:
-                        ProductDAO.update_product(db, product_id, {
-                            "parsing_status": "completed"
-                        })
+                    # 新流水线自动落库到asset表，直接更新状态为完成
+                    ProductDAO.update_product(db, product_id, {
+                        "parsing_status": "completed"
+                    })
                     return product.execution_id  # type: ignore
                 else:
                     # 重试失败

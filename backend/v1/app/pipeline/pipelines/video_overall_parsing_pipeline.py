@@ -5,7 +5,7 @@ from backend.v1.app.pipeline.processors import (
     SchemaValidationProcessor,
 )
 from backend.v1.app.pipeline.processors.video import VideoAggregationProcessor, VideoOverallUnderstandingProcessor, \
-    VideoGenerateProcessor
+    VideoGenerateProcessor, VectorizationProcessor
 
 
 class VideoOverallParsingPipeline(BasePipeline):

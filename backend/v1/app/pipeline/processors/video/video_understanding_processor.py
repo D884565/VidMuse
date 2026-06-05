@@ -65,11 +65,12 @@ class VideoUnderstandingProcessor(BaseProcessor):
         """
         # 从上下文获取分片数据
         slices_url = context.get(constants.SLICES_URL, [])
-        images_url = context.get(constants.IMAGES_URL, [])
         slices_object_name = context.get(constants.SLICES_OBJECT_NAME, [])
-        images_object_name = context.get(constants.IMAGES_OBJECT_NAME, [])
         slice_count = context.get(constants.SLICE_COUNT, 0)
         video_id = context.get(constants.VIDEO_ID)
+        # 首帧提取已禁用，相关字段保留为空以保持兼容性
+        images_url = []
+        images_object_name = []
 
         if not slices_url or slice_count == 0:
             raise ValueError("No slices found in context, please ensure VideoSplitProcessor executed successfully")
@@ -89,7 +90,7 @@ class VideoUnderstandingProcessor(BaseProcessor):
                 response = self.run_async(self.llm_client.video_understanding(VideoUnderstandingRequest(
                     video_url=slices_url[i],
                     prompt=prompt_template,
-                    max_tokens=2048,
+                    max_tokens=8192,  # 增大token限制，避免JSON被截断
                     temperature=0.7,
                     top_p=0.9
                 )))
@@ -99,8 +100,23 @@ class VideoUnderstandingProcessor(BaseProcessor):
 
             # 解析大模型返回的JSON结果
             try :
-                understanding_result = json.loads(response.content)
+                # 先清理响应内容，移除可能的markdown标记和多余文本
+                content = response.content.strip()
+                # 移除可能的```json和```包裹
+                if content.startswith("```json"):
+                    content = content[7:]
+                if content.endswith("```"):
+                    content = content[:-3]
+                # 寻找JSON边界
+                start_idx = content.find("{")
+                end_idx = content.rfind("}")
+                if start_idx >= 0 and end_idx >= 0 and end_idx > start_idx:
+                    content = content[start_idx:end_idx+1]
+
+                understanding_result = json.loads(content)
             except json.JSONDecodeError as e:
+                # 记录原始响应内容方便调试
+                logger.error(f"Slice {i} JSON parse failed. Raw content: {response.content[:1000]}...")
                 context.add_error(ValueError(f"Slice {i} understanding result parse failed: {str(e)}"))
                 continue
 
@@ -141,7 +157,7 @@ class VideoUnderstandingProcessor(BaseProcessor):
         # 存储结果到上下文
         context.set(constants.UNDERSTOOD_SLICES, understood_slices)
         context.set(constants.EMBED_SLICES, embed_slices)
-        # 将视频封面图列表存入上下文，供后续图像向量化使用
+        # 首帧提取已禁用，图像向量化已关闭，此字段保留为空以保持兼容性
         context.set(constants.SLICE_COVER_URLS, images_url)
 
         return context

@@ -15,9 +15,6 @@ from backend.providers.dto.schema import (
 from backend.store.collection import (
     SliceKnowledgeDAO,
     VideoKnowledgeDAO,
-    ImageKnowledgeDAO,
-    ProductKnowledgeDAO,
-    AudioKnowledgeDAO
 )
 
 
@@ -31,9 +28,6 @@ class VectorizationProcessor(BaseProcessor):
     STORE_TYPE_MAPPING = {
         "slice": SliceKnowledgeDAO,
         "video": VideoKnowledgeDAO,
-        "image": ImageKnowledgeDAO,
-        "product": ProductKnowledgeDAO,
-        "audio": AudioKnowledgeDAO
     }
 
     def __init__(self,
@@ -356,103 +350,7 @@ class VectorizationProcessor(BaseProcessor):
         return {"count": len(embeddings), "ids": ids}
 
     def _process_image_data(self, context: PipelineContext, source_id: str, base_meta: Dict) -> Dict:
-        """处理图像数据的向量化和存储"""
-        image_data = context.get(self.image_key, [])
-
-        # 统一转换为列表格式
-        if isinstance(image_data, (str, dict)):
-            image_data = [image_data]
-        if not image_data:
-            return {"count": 0, "ids": []}
-
-        # 准备图像内容
-        images = []
-        descriptions = []
-        image_urls = []
-        ids = []
-        for i, data in enumerate(image_data):
-            if isinstance(data, str):
-                # 纯URL
-                images.append(ImageUrlContent(image_url={"url": data}))
-                descriptions.append(f"图片_{i}")
-                image_urls.append(data)
-                ids.append(f"{source_id}_img_{i}")
-            elif isinstance(data, dict) and "image_url" in data:
-                # 结构化图像内容
-                images.append(ImageUrlContent(**data))
-                description = data.get("description") or data.get("alt") or f"图片_{i}"
-                descriptions.append(description)
-                image_urls.append(data["image_url"]["url"])
-                # 确保ID是字符串类型
-                data_id = data.get(self.id_key, f"{source_id}_img_{i}")
-                ids.append(str(data_id))
-            elif isinstance(data, dict) and "url" in data:
-                # 简化的URL格式
-                url = data["url"]
-                images.append(ImageUrlContent(image_url={"url": url}))
-                description = data.get("description") or data.get("alt") or f"图片_{i}"
-                descriptions.append(description)
-                image_urls.append(url)
-                # 确保ID是字符串类型
-                data_id = data.get(self.id_key, f"{source_id}_img_{i}")
-                ids.append(str(data_id))
-            else:
-                context.add_error(ValueError(f"Unsupported image data format: {type(data)}"))
-                continue
-
-        if not images:
-            return {"count": 0, "ids": []}
-
-        # 调用嵌入接口
-        if inspect.iscoroutinefunction(self.llm_client.embedding):
-            # 异步调用
-            coro = self.llm_client.embedding(EmbeddingRequest(
-                texts=images,
-                model=self.embedding_model
-            ))
-            response = self._run_async(coro)
-        else:
-            # 同步调用
-            response = self.llm_client.embedding(EmbeddingRequest(
-                texts=images,
-                model=self.embedding_model
-            ))
-
-        embeddings = response.embeddings
-
-        # 处理API不支持批量嵌入的情况，回退到单个请求
-        if len(embeddings) != len(images):
-            if len(embeddings) == 1 and len(images) > 1:
-                # API只支持单个输入，逐个请求
-                embeddings = []
-                for image in images:
-                    if inspect.iscoroutinefunction(self.llm_client.embedding):
-                        coro = self.llm_client.embedding(EmbeddingRequest(
-                            texts=[image],
-                            model=self.embedding_model
-                        ))
-                        single_response = self._run_async(coro)
-                    else:
-                        single_response = self.llm_client.embedding(EmbeddingRequest(
-                            texts=[image],
-                            model=self.embedding_model
-                        ))
-                    if single_response.embeddings:
-                        embeddings.append(single_response.embeddings[0])
-                    else:
-                        raise ValueError(f"Failed to get embedding for image: {image}")
-            else:
-                raise ValueError(f"Image embedding count mismatch: expected {len(images)}, got {len(embeddings)}")
-
-        # 图像统一存入ImageKnowledgeDAO
-        image_dao = ImageKnowledgeDAO()
-        image_dao.add_image_knowledge(
-            image_ids=ids,
-            image_set_id=source_id,
-            embeddings=embeddings,
-            descriptions=descriptions,
-            image_urls=image_urls
-        )
-
-        return {"count": len(embeddings), "ids": ids}
+        """处理图像数据的向量化和存储（已禁用，仅保留空实现保持接口兼容性）"""
+        logger.warning("图像向量化功能已禁用，_process_image_data不会执行任何操作")
+        return {"count": 0, "ids": []}
 

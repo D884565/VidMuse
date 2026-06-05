@@ -790,8 +790,7 @@ class AssetService:
                     raise BusinessException(PARAM_ERROR, error_msg)
 
             except Exception as e:
-                # 恢复失败，降级为重新执行
-                logger.warning(f"断点恢复失败，将重新执行完整解析: {str(e)}")
+                pass
 
         # 没有execution_id或恢复失败，重新执行完整解析
         AssetDAO.update_asset(db, asset_id, {

@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 class BasePostProcessor(PostProcessingProcessor):
     """结果后处理器基类，提供通用功能"""
 
+    @property
+    def processor_name(self) -> str:
+        pass
+
     def process(self, results: List[SearchResult], context: Optional[Dict[str, Any]] = None) -> List[SearchResult]:
         """
         同步处理结果，子类重写_process方法实现具体逻辑

@@ -48,27 +48,24 @@ export default function TemplateManagement() {
   const templateList = useAppStore((state) => state.templateList)
   const setTemplateList = useAppStore((state) => state.setTemplateList)
 
-  useEffect(() => {
-    fetchTemplates()
-  }, [filter])
-
   const fetchTemplates = async () => {
     try {
       setLoading(true)
-      // 实际调用API
-      // const data = await getTemplateList({ status: filter })
-      // 模拟数据
-      let filtered = mockTemplates
-      if (filter !== 'all') {
-        filtered = mockTemplates.filter(item => item.status === filter)
-      }
-      setTemplateList(filtered)
+      const params = filter !== 'all' ? { status: filter } : {}
+      const data = await getTemplateList(params)
+      // 兼容列表和分页结构
+      setTemplateList(Array.isArray(data) ? data : data?.list || [])
     } catch (error) {
       console.error('获取模板列表失败:', error)
+      setTemplateList([])
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    fetchTemplates()
+  }, [filter])
 
   const toggleStatus = async (template) => {
     const newStatus = template.status === 'active' ? 'inactive' : 'active'

@@ -41,7 +41,9 @@ class QdrantClient(VectorDatabase):
                     port=settings.QDRANT_PORT,
                     grpc_port=settings.QDRANT_GRPC_PORT,
                     prefer_grpc=settings.QDRANT_PREFER_GRPC,
-                    api_key=settings.QDRANT_API_KEY
+                    api_key=settings.QDRANT_API_KEY,
+                    https=False,
+                    check_compatibility=False,
                 )
             except Exception as e:
                 raise RuntimeError(f"连接Qdrant失败: {str(e)}")
@@ -50,7 +52,7 @@ class QdrantClient(VectorDatabase):
         self.vector_dimension = settings.QDRANT_VECTOR_DIMENSION
 
         # 确保集合存在
-        self._ensure_collection_exists()
+        # self._ensure_collection_exists()
 
         self._initialized = True
 
