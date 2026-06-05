@@ -45,9 +45,9 @@
       }
     },
 
-    "价格与服务": {
+    "服务": {
       "type": "object",
-      "required": ["原价", "现价", "促销策略", "价格锚点", "服务保障"],
+      "required": [ "服务保障"],
       "properties": {
         "原价": { "type": "number" },
         "现价": { "type": "number" },

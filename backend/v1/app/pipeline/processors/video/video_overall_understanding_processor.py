@@ -115,13 +115,31 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         # 构建大模型请求
         response = self.llm_client.text_understanding(TextUnderstandingRequest(
             prompt=prompt,
-            text=full_input
+            text=full_input,
+            max_tokens=16384,  # 整体理解内容较多，设置更大的token限制
+            temperature=0.1,  # 整体理解需要更稳定的输出
+            top_p=0.9
         ))
 
         # 解析返回结果
         try:
-            resolve = json.loads(response.content)
+            # 先清理响应内容，移除可能的markdown标记和多余文本
+            content = response.content.strip()
+            # 移除可能的```json和```包裹
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.endswith("```"):
+                content = content[:-3]
+            # 寻找JSON边界
+            start_idx = content.find("{")
+            end_idx = content.rfind("}")
+            if start_idx >= 0 and end_idx >= 0 and end_idx > start_idx:
+                content = content[start_idx:end_idx+1]
+
+            resolve = json.loads(content)
         except json.JSONDecodeError as e:
+            # 记录原始响应内容方便调试
+            logger.error(f"Video overall JSON parse failed. Raw content: {response.content[:1000]}...")
             raise ValueError(f"Video overall understanding result parse failed: {str(e)}")
 
         # 补充视频基础信息

@@ -1,4 +1,4 @@
-import { Bell, User, Settings } from 'lucide-react'
+import { Bell, Settings } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 
 export default function AdminHeader() {

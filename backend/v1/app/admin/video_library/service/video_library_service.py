@@ -1,0 +1,455 @@
+"""视频素材库业务逻辑层"""
+from typing import List, Dict, Any, Optional, Tuple
+from fastapi import UploadFile, HTTPException
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from backend.framework.exceptions import BusinessException
+from backend.v1.app.admin.video_library.dao.video_library_dao import VideoLibraryDAO
+from backend.v1.app.product.dao.product_category_dao import ProductCategoryDAO
+from backend.v1.app.pipeline.processors.cluster.hot_report_fetch_processor import HotReportFetchProcessor
+from backend.v1.app.pipeline.base.context import PipelineContext
+from backend.v1.app.pipeline.pipelines.video_parsing_pipeline import VideoParsingPipeline
+from backend.store.obj.factory import get_storage_client
+from backend.framework.exceptions.error_codes import SYSTEM_ERROR, PARAM_ERROR
+from backend.v1.app.assets.dao.asset_dao import AssetDAO
+from backend.v1.app.slice.dao.slice_dao import SliceDAO
+from backend.store.database.sync_database import get_db as get_sync_db
+import logging
+import uuid
+import os
+
+logger = logging.getLogger(__name__)
+
+
+class VideoLibraryService:
+    """视频素材库业务逻辑类"""
+
+    def __init__(self):
+        self.obj_store = get_storage_client()
+        self.hot_report_fetcher = HotReportFetchProcessor()
+
+    @staticmethod
+    async def get_video_list(
+        db: AsyncSession,
+        page: int = 1,
+        page_size: int = 10,
+        category: Optional[str] = None,
+        category_id: Optional[int] = None,
+        min_hot_score: Optional[int] = None,
+        source_type: Optional[int] = None,
+        keyword: Optional[str] = None,
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """获取视频列表"""
+        videos, total = await VideoLibraryDAO.list(
+            db, page, page_size, category, category_id, min_hot_score, source_type, keyword
+        )
+        return [video.to_dict() for video in videos], total
+
+    @staticmethod
+    async def get_video_detail(db: AsyncSession, video_id: int) -> Optional[Dict[str, Any]]:
+        """获取视频详情"""
+        video = await VideoLibraryDAO.get_by_id(db, video_id)
+        return video.to_dict() if video else None
+
+    async def upload_video(
+        self,
+        db: AsyncSession,
+        file: UploadFile,
+        created_by: int,
+        title: Optional[str] = None,
+        description: Optional[str] = None,
+        category: Optional[str] = None,
+        category_id: Optional[int] = None,
+        tags: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """上传视频文件"""
+        # 生成文件名
+        ext = os.path.splitext(file.filename)[1].lower()
+        file_name = f"internal/video-library/{uuid.uuid4().hex}{ext}"
+
+        try:
+            # 1. 上传到对象存储
+            content = await file.read()
+            url = await self.obj_store.put_object(file_name, content, file.content_type)
+            file_size = len(content)
+
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
+
+            # 2. 创建内部资产记录（user_id为Null表示系统内部资产，不属于任何用户）
+            asset_data = {
+                "title": title or file.filename,
+                "type": 2,  # 视频类型
+                "url": url,
+                "file_size": file_size,
+                "format": ext.lstrip("."),
+                "source_type": 0,  # 内部上传
+                "user_id": None,  # 系统内部资产
+                "parsing_status": "pending"
+            }
+            asset = AssetDAO.create_asset(sync_db, asset_data)
+            asset_dict = asset.to_dict()
+
+            # 处理分类关联
+            video_data = {
+                "title": asset_dict["title"],
+                "description": description,
+                "url": asset_dict["url"],
+                "file_size": asset_dict["file_size"],
+                "format": asset_dict["format"],
+                "source_type": 0,  # 内部上传
+                "category": category,
+                "tags": tags,
+                "created_by": created_by,
+                "asset_id": asset_dict["id"],
+                "parsing_status": "pending"
+            }
+
+            if category_id is not None:
+                # 获取同步数据库会话
+                sync_db = next(get_sync_db())
+                category_obj = ProductCategoryDAO.get_category_by_id(sync_db, category_id)
+                if not category_obj:
+                    raise BusinessException(PARAM_ERROR, f"分类ID {category_id} 不存在")
+                if category_obj.level != 3:
+                    raise BusinessException(PARAM_ERROR, "只能选择三级分类关联视频")
+                # 自动填充分类信息
+                video_data["category_id"] = category_id
+                video_data["category"] = category_obj.name
+                video_data["category_path"] = category_obj.path
+
+            # 3. 创建视频库记录，关联资产ID
+            video = await VideoLibraryDAO.create(
+                db,
+                **video_data
+            )
+
+            # 4. 直接调用视频解析流水线
+            pipeline = VideoParsingPipeline(enable_persistence=True)
+            pipeline_result = pipeline.run_with_persistence({
+                "video_id": asset_dict["id"],
+                "video_url": asset_dict["url"],
+                "object_name": file_name
+            })
+
+            # 5. 更新执行ID和状态
+            execution_id = pipeline_result.get("execution_id")
+            update_data = {}
+            if execution_id:
+                update_data["execution_id"] = execution_id
+
+            if pipeline_result.get("success"):
+                update_data["parsing_status"] = "running"
+            else:
+                update_data["parsing_status"] = "failed"
+                update_data["parsing_error"] = str(pipeline_result.get("errors", []))
+
+            await VideoLibraryDAO.update(db, video.id, **update_data)
+
+            # 同时更新asset表的状态
+            if execution_id:
+                AssetDAO.update_asset(sync_db, asset_dict["id"], {
+                    "execution_id": execution_id,
+                    "parsing_status": update_data["parsing_status"],
+                    "parsing_error": update_data.get("parsing_error")
+                })
+
+            return video.to_dict()
+
+        except Exception as e:
+            logger.error(f"上传视频失败: {str(e)}", exc_info=True)
+            raise BusinessException(SYSTEM_ERROR, f"上传视频失败: {str(e)}")
+
+    @staticmethod
+    async def create_video(
+        db: AsyncSession,
+        created_by: int,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """手动创建视频记录"""
+        # 检查URL是否已存在
+        if "url" in kwargs:
+            existing = await VideoLibraryDAO.get_by_url(db, kwargs["url"])
+            if existing:
+                raise HTTPException(
+                    status_code=PARAM_ERROR[0],
+                    detail="该视频URL已存在"
+                )
+
+        # 处理分类关联
+        create_data = kwargs.copy()
+        category_id = create_data.pop("category_id", None)
+        if category_id is not None:
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
+            category_obj = ProductCategoryDAO.get_category_by_id(sync_db, category_id)
+            if not category_obj:
+                raise BusinessException(PARAM_ERROR, f"分类ID {category_id} 不存在")
+            if category_obj.level != 3:
+                raise BusinessException(PARAM_ERROR, "只能选择三级分类关联视频")
+            # 自动填充分类信息
+            create_data["category_id"] = category_id
+            create_data["category"] = category_obj.name
+            create_data["category_path"] = category_obj.path
+
+        video = await VideoLibraryDAO.create(
+            db,
+            created_by=created_by,
+            source_type=2,  # 人工录入
+            **create_data
+        )
+        return video.to_dict()
+
+    @staticmethod
+    async def update_video(
+        db: AsyncSession,
+        video_id: int,
+        **kwargs
+    ) -> Optional[Dict[str, Any]]:
+        """更新视频信息"""
+        update_data = kwargs.copy()
+        category_id = update_data.pop("category_id", None)
+
+        # 处理分类关联
+        if category_id is not None:
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
+            category_obj = ProductCategoryDAO.get_category_by_id(sync_db, category_id)
+            if not category_obj:
+                raise BusinessException(PARAM_ERROR, f"分类ID {category_id} 不存在")
+            if category_obj.level != 3:
+                raise BusinessException(PARAM_ERROR, "只能选择三级分类关联视频")
+            # 自动填充分类信息
+            update_data["category_id"] = category_id
+            update_data["category"] = category_obj.name
+            update_data["category_path"] = category_obj.path
+        elif "category_id" in kwargs and category_id is None:
+            # 清空分类关联
+            update_data["category_id"] = None
+            update_data["category"] = None
+            update_data["category_path"] = None
+
+        video = await VideoLibraryDAO.update(db, video_id, **update_data)
+        return video.to_dict() if video else None
+
+    @staticmethod
+    async def delete_video(db: AsyncSession, video_id: int) -> bool:
+        """删除视频"""
+        return await VideoLibraryDAO.delete(db, video_id)
+
+    async def batch_import_hot_reports(
+        self,
+        db: AsyncSession,
+        created_by: int,
+        category: Optional[str] = None,
+        category_id: Optional[int] = None,
+        min_hot_score: int = 80,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        limit: Optional[int] = None,
+    ) -> Dict[str, int]:
+        """批量导入爆款视频"""
+        # 处理分类关联
+        category_obj = None
+        if category_id is not None:
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
+            category_obj = ProductCategoryDAO.get_category_by_id(sync_db, category_id)
+            if not category_obj:
+                raise BusinessException(PARAM_ERROR, f"分类ID {category_id} 不存在")
+            if category_obj.level != 3:
+                raise BusinessException(PARAM_ERROR, "只能选择三级分类关联视频")
+
+        # 构建上下文参数
+        context_data = {
+            "min_hot_score": min_hot_score
+        }
+        if category:
+            context_data["category"] = category
+        elif category_obj:
+            context_data["category"] = category_obj.name
+        if start_time:
+            context_data["start_time"] = start_time
+        if end_time:
+            context_data["end_time"] = end_time
+        if limit:
+            context_data["limit"] = limit
+
+        context = PipelineContext(data=context_data)
+
+        # 调用HotReportFetchProcessor拉取数据
+        try:
+            context = self.hot_report_fetcher.process(context)
+            reports = context.get("HOT_REPORT_LIST", [])
+            embeddings = context.get("REPORT_EMBEDDINGS", [])
+
+            if not reports:
+                return {"success": 0, "duplicate": 0, "failed": 0}
+
+        except Exception as e:
+            logger.error(f"拉取爆款报告失败: {str(e)}", exc_info=True)
+            raise HTTPException(
+                status_code=SYSTEM_ERROR[0],
+                detail=f"拉取爆款报告失败: {str(e)}"
+            )
+
+        # 处理导入
+        success_count = 0
+        duplicate_count = 0
+        failed_count = 0
+
+        for report in reports:
+            try:
+                # 检查是否已存在
+                existing = await VideoLibraryDAO.get_by_url(db, report["video_url"])
+                if existing:
+                    duplicate_count += 1
+                    continue
+
+                # 构建数据
+                video_data = {
+                    "title": report.get("title"),
+                    "description": report.get("description"),
+                    "url": report["video_url"],
+                    "cover_url": report.get("cover_url"),
+                    "duration": report.get("duration"),
+                    "hot_score": report.get("hot_score"),
+                    "category": report.get("category") or category,
+                    "tags": report.get("tags"),
+                    "parsed_data": report,
+                    "source_type": 1,  # 爆款抓取
+                    "created_by": created_by,
+                    "parsing_status": "completed"  # 已有解析数据
+                }
+
+                # 如果指定了分类ID，统一使用关联的分类信息
+                if category_obj:
+                    video_data["category_id"] = category_id
+                    video_data["category"] = category_obj.name
+                    video_data["category_path"] = category_obj.path
+
+                # 创建对应的内部资产（如果需要关联slice的话）
+                # TODO: 这里可以选择是否为导入的爆款视频创建asset记录
+                # 如果需要slice关联，可以直接调用AssetDAO创建资产并触发pipeline解析
+                # sync_db = next(get_sync_db())
+                # asset = AssetDAO.create_asset(sync_db, asset_data)
+                # video_data["asset_id"] = asset.id
+                # 然后触发VideoParsingPipeline进行解析
+
+                await VideoLibraryDAO.create(db, **video_data)
+                success_count += 1
+
+            except Exception as e:
+                logger.error(f"导入视频失败: {str(e)}, 报告数据: {report}")
+                failed_count += 1
+                continue
+
+        return {
+            "success": success_count,
+            "duplicate": duplicate_count,
+            "failed": failed_count
+        }
+
+    @staticmethod
+    async def get_video_slices(db: AsyncSession, video_id: int) -> List[Dict[str, Any]]:
+        """获取视频对应的切片列表"""
+        video = await VideoLibraryDAO.get_by_id(db, video_id)
+        if not video or not video.asset_id:
+            return []
+
+        try:
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
+
+            # 查询该资产对应的所有切片
+            slices = SliceDAO.get_slices_by_asset_id(sync_db, video.asset_id)
+
+            # 转换为字典格式
+            return [s.to_dict() for s in slices]
+
+        except Exception as e:
+            logger.error(f"查询视频切片失败: {str(e)}", exc_info=True)
+            return []
+
+    @staticmethod
+    async def trigger_parsing(db: AsyncSession, video_id: int, force: bool = False) -> bool:
+        """手动触发视频解析"""
+        video = await VideoLibraryDAO.get_by_id(db, video_id)
+        if not video or not video.asset_id:
+            return False
+
+        try:
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
+
+            # 获取资产信息
+            asset = AssetDAO.get_asset_by_id(sync_db, video.asset_id)
+            if not asset:
+                return False
+
+            # 检查是否已经解析过
+            if asset.parsing_status == "completed" and not force:
+                logger.warning(f"资产 {video.asset_id} 已经解析过，跳过")
+                return False
+
+            # 如果有正在运行的解析任务，直接返回
+            if asset.parsing_status == "running" and not force:
+                return True
+
+            # 更新状态为待执行
+            await VideoLibraryDAO.update(db, video_id, {
+                "parsing_status": "pending",
+                "parsing_error": None
+            })
+            AssetDAO.update_asset(sync_db, video.asset_id, {
+                "parsing_status": "pending",
+                "parsing_error": None
+            })
+
+            # 尝试断点恢复（如果有execution_id）
+            execution_id = video.execution_id or asset.execution_id
+            pipeline_result = None
+
+            if execution_id and not force:
+                try:
+                    pipeline = VideoParsingPipeline(enable_persistence=True)
+                    pipeline_result = pipeline.resume_execution(execution_id)
+                except Exception as e:
+                    logger.warning(f"断点恢复失败，将重新执行: {str(e)}")
+                    execution_id = None
+
+            # 重新执行完整解析
+            if not execution_id or force or not pipeline_result:
+                pipeline = VideoParsingPipeline(enable_persistence=True)
+                pipeline_result = pipeline.run_with_persistence({
+                    "video_id": video.asset_id,
+                    "video_url": video.url,
+                    "object_name": video.url.split("/")[-1]  # 从URL中提取object_name
+                })
+
+            # 更新执行ID和状态
+            new_execution_id = pipeline_result.get("execution_id")
+            update_data = {}
+
+            if new_execution_id:
+                update_data["execution_id"] = new_execution_id
+
+            if pipeline_result.get("success"):
+                update_data["parsing_status"] = "running"
+            else:
+                update_data["parsing_status"] = "failed"
+                update_data["parsing_error"] = str(pipeline_result.get("errors", []))
+
+            await VideoLibraryDAO.update(db, video_id, **update_data)
+
+            # 同时更新asset表
+            asset_update_data = update_data.copy()
+            if "id" in asset_update_data:
+                del asset_update_data["id"]
+            AssetDAO.update_asset(sync_db, video.asset_id, asset_update_data)
+
+            return True
+
+        except Exception as e:
+            logger.error(f"触发视频解析失败: {str(e)}", exc_info=True)
+            return False

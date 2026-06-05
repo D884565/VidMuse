@@ -53,27 +53,24 @@ export default function ContentManagement() {
   const contentList = useAppStore((state) => state.contentList)
   const setContentList = useAppStore((state) => state.setContentList)
 
-  useEffect(() => {
-    fetchContent()
-  }, [filter])
-
   const fetchContent = async () => {
     try {
       setLoading(true)
-      // 实际调用API，传入filter参数
-      // const data = await getContentList({ status: filter })
-      // 模拟数据
-      let filtered = mockContent
-      if (filter !== 'all') {
-        filtered = mockContent.filter(item => item.status === filter)
-      }
-      setContentList(filtered)
+      const params = filter !== 'all' ? { status: filter } : {}
+      const data = await getContentList(params)
+      // 兼容列表和分页结构
+      setContentList(Array.isArray(data) ? data : data?.list || [])
     } catch (error) {
       console.error('获取内容列表失败:', error)
+      setContentList([])
     } finally {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    fetchContent()
+  }, [filter])
 
   const handleApprove = async (id) => {
     try {

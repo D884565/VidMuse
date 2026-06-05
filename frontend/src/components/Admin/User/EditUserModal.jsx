@@ -1,24 +1,26 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
-import { updateUser } from '../../../services/admin'
+import { updateUser } from '../../../services/admin.js'
 
 export default function EditUserModal({ isOpen, onClose, user, onSuccess }) {
   const [formData, setFormData] = useState({
-    username: '',
-    email: '',
-    role: 'user',
+    username: user?.username || '',
+    email: user?.email || '',
+    role: user?.role || 'user',
     password: '',
   })
   const [loading, setLoading] = useState(false)
 
+  // 当user变化时更新表单数据
   useEffect(() => {
     if (user) {
-      setFormData({
+      setFormData(prev => ({
+        ...prev,
         username: user.username || '',
         email: user.email || '',
         role: user.role || 'user',
         password: '',
-      })
+      }))
     }
   }, [user])
 

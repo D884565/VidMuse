@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
-import { createUser } from '../../../services/admin'
+import { createUser } from '../../../services/admin.js'
 
 export default function CreateUserModal({ isOpen, onClose, onSuccess }) {
   const [formData, setFormData] = useState({

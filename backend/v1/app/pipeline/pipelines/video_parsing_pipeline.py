@@ -86,10 +86,10 @@ class VideoParsingPipeline(BasePipeline):
             # 第五阶段：分片向量化（可选）
             if enable_vectorization:
                 processors.extend([
-                    # 分片向量化：文本存入slice知识库，图片自动存入image知识库
+                    # 分片向量化：仅对文本内容进行向量化，存入slice知识库
                     VectorizationProcessor(
                         data_key=constants.EMBED_SLICES,
-                        image_key=constants.SLICE_COVER_URLS,  # 同时处理分片封面图
+                        image_key=None,  # 不需要处理图片
                         store_type="slice",  # 分片类型，存入slice_knowledge集合
                         id_key=constants.SLICE_ID
                     ),

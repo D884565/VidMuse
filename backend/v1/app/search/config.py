@@ -17,12 +17,6 @@ class SearchConfig:
 
     # 各渠道配置
     CHANNEL_CONFIG: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
-        "vector_db": {
-            "enabled": True,
-            "timeout": 10,
-            "collection": settings.CHROMADB_PRODUCT_COLLECTION,
-            "weight": 1.0
-        },
         "mysql": {
             "enabled": True,
             "timeout": 5,

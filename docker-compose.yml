@@ -36,7 +36,7 @@ services:
       - CHROMADB_COLLECTION=video_knowledge
 
       # Milvus 配置
-      - VECTOR_DB_TYPE=chromadb  # 默认使用ChromaDB，如需切换到Milvus改为milvus
+      - VECTOR_DB_TYPE=chromadb  # 默认使用ChromaDB，如需切换到Milvus改为milvus或qdrant
       - MILVUS_HOST=milvus
       - MILVUS_PORT=19530
       - MILVUS_USERNAME=
@@ -47,6 +47,19 @@ services:
       - MILVUS_IMG_COLLECTION=img_knowledge
       - MILVUS_AUDIO_COLLECTION=audio_knowledge
       - MILVUS_VECTOR_DIMENSION=1536
+
+      # Qdrant 配置
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_GRPC_PORT=6334
+      - QDRANT_API_KEY=123456
+      - QDRANT_PREFER_GRPC=true
+      - QDRANT_PRODUCT_COLLECTION=product_knowledge
+      - QDRANT_SLICE_COLLECTION=slice_knowledge
+      - QDRANT_VIDEO_COLLECTION=video_knowledge
+      - QDRANT_IMAGE_COLLECTION=img_knowledge
+      - QDRANT_AUDIO_COLLECTION=audio_knowledge
+      - QDRANT_VECTOR_DIMENSION=1536
 
       # LLM API Keys (从 .env 文件加载或手动设置)
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -168,6 +181,28 @@ services:
       retries: 3
       start_period: 90s  # Milvus 启动较慢，给予足够的启动时间
 
+  # ==================== Qdrant (向量数据库) ====================
+  qdrant:
+    image: qdrant/qdrant:v1.10.1
+    container_name: aigc_qdrant
+    ports:
+      - "6333:6333"  # HTTP 端口
+      - "6334:6334"  # gRPC 端口
+    environment:
+      - QDRANT__SERVICE__API_KEY=123456 # 可选API密钥，从.env加载
+      - QDRANT__LOG_LEVEL=INFO
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - aigc_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
   # ==================== Redis ====================
   redis:
     image: redis:7.4.3-alpine
@@ -259,6 +294,7 @@ volumes:
   redis_data:
   video_temp:
   milvus_data:
+  qdrant_data:
 
 networks:
   aigc_network:

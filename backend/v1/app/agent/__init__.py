@@ -21,6 +21,9 @@ from .implementations.prompt_builder import PromptBuilder
 from .utils.tool_registry import ToolRegistry, register_tool
 from .utils.prompt_template import PromptTemplate
 
+# 导入所有工具，确保它们被注册
+from .tools.video_library_tool import VideoLibraryQueryTool
+
 __version__ = "1.0.0"
 __all__ = [
     "BaseAgent",
