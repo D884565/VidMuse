@@ -33,6 +33,7 @@ def test_celery_worker_registers_all_generation_tasks():
     expected = {
         "generate_image_task",
         "generate_video_task",
+        "generate_project_tts_task",
         "generate_frame_image_task",
         "generate_frame_video_task",
     }

@@ -155,5 +155,23 @@ class ProjectInitialMessageBuilder:
                 images.append(value)
         return images
 
+    def build_system_intro(self) -> dict[str, Any]:
+        """构建系统介绍消息，在项目创建时作为第一条助手消息存储。"""
+        return {
+            "role": "assistant",
+            "content": "欢迎使用带货视频生成系统！我将帮助您一步步创建带货短视频：\n\n"
+                       "1. 剧本创作 - 根据您的产品和需求生成分镜脚本\n"
+                       "2. 分镜配图 - 为每个分镜生成精美的画面\n"
+                       "3. 视频成片 - 将所有分镜合成为最终视频\n\n"
+                       "请描述您想要推广的产品，我会为您开始创作。",
+            "message_type": "system_intro",
+            "stage": "project_start",
+            "blocks": [],
+            "metadata": {
+                "source": "system",
+                "is_intro": True,
+            },
+        }
+
 
 project_initial_message_builder = ProjectInitialMessageBuilder()

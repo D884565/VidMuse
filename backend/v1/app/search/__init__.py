@@ -79,6 +79,7 @@ from .rag_trace.dto import (
     TraceQueryRequest,
     TraceStatResponse
 )
+from .rag_service_adapter import RAGServiceAdapter
 
 __version__ = "1.0.0"
 
@@ -174,4 +175,7 @@ __all__ = [
     # 组件注册中心
     "ComponentRegistry",
     "component_registry",
+
+    # RAG 适配器
+    "RAGServiceAdapter",
 ]

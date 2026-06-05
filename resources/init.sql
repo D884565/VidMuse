@@ -1,5 +1,9 @@
 DROP TABLE IF EXISTS agent_traces;
+
+DROP TABLE IF EXISTS trace_log;
 DROP TABLE IF EXISTS conversations;
+DROP TABLE IF EXISTS generation_tasks;
+DROP TABLE IF EXISTS scripts;
 DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS merge_tasks;
 DROP TABLE IF EXISTS slices;
@@ -62,6 +66,14 @@ CREATE TABLE IF NOT EXISTS projects (
     rag_weight      DECIMAL(3,2) NOT NULL DEFAULT 0.30 COMMENT 'RAG权重',
     target_duration INT NOT NULL DEFAULT 30 COMMENT '目标视频时长(秒)',
     voice_type      VARCHAR(50) NOT NULL DEFAULT 'zh_female_cancan_mars_bigtts' COMMENT '语音类型',
+    summary         VARCHAR(200) COMMENT '对话摘要，用于侧边栏展示',
+    workflow_stage  VARCHAR(30) NOT NULL DEFAULT 'created' COMMENT '工作流阶段: created/script/images/video/completed',
+    stage_status    VARCHAR(30) NOT NULL DEFAULT 'idle' COMMENT '阶段状态: idle/running/done/failed',
+    last_task_id    BIGINT COMMENT '最近一次异步任务ID',
+    dirty_stage     VARCHAR(30) COMMENT '脏数据阶段标记',
+    script_confirmed_at DATETIME COMMENT '剧本确认时间',
+    images_confirmed_at DATETIME COMMENT '图片确认时间',
+    video_confirmed_at  DATETIME COMMENT '视频确认时间',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -113,16 +125,26 @@ CREATE TABLE IF NOT EXISTS slices (
 CREATE TABLE IF NOT EXISTS frames (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '帧id',
     project_id      BIGINT NOT NULL COMMENT '项目id',
+    script_id       BIGINT COMMENT '关联的剧本ID',
     sequence        INT NOT NULL COMMENT '帧序号(第几帧)',
     scene_type      TINYINT COMMENT '场景类型: 0-开场, 1-商品展示, 2-口播, 3-转场, 4-结尾',
     description     TEXT COMMENT '帧描述/画面描述',
+    narration       TEXT COMMENT '旁白/口播文案',
     prompt          TEXT COMMENT '生成该帧的AI提示词',
+    image_prompt    TEXT COMMENT '图片生成提示词',
+    video_prompt    TEXT COMMENT '视频生成提示词',
     image_url       VARCHAR(500) COMMENT '帧图片URL',
     audio_url       VARCHAR(500) COMMENT '帧配音/音效URL',
+    video_url       VARCHAR(500) COMMENT '帧视频URL',
     text_overlay    VARCHAR(500) COMMENT '叠加文字内容',
+    subtitle_text   VARCHAR(500) COMMENT '字幕文本',
+    subtitle_position VARCHAR(30) COMMENT '字幕位置: top/center/bottom',
     duration        DECIMAL(6, 3) DEFAULT 3.000 COMMENT '该帧持续时间(秒)',
     transition_type TINYINT DEFAULT 0 COMMENT '转场类型: 0-无, 1-淡入, 2-滑动, 3-缩放',
     status          TINYINT DEFAULT 0 COMMENT '状态: 0-待生成, 1-生成中, 2-已完成, 3-失败',
+    error_message   TEXT COMMENT '生成失败的错误信息',
+    dirty           INT NOT NULL DEFAULT 0 COMMENT '脏数据标记: 0-干净, 1-已修改',
+    last_edited_at  DATETIME COMMENT '最后编辑时间',
     ai_params       JSON COMMENT 'AI生成参数',
     metadata        JSON COMMENT '额外元数据',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -193,14 +215,65 @@ CREATE TABLE IF NOT EXISTS merge_tasks (
 CREATE TABLE IF NOT EXISTS conversations (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     project_id      BIGINT NOT NULL COMMENT '项目id',
-    role            VARCHAR(20) NOT NULL COMMENT 'user/assistant',
+    role            VARCHAR(20) NOT NULL COMMENT 'user/assistant/system',
     content         TEXT NOT NULL COMMENT '消息内容',
+    message_type    VARCHAR(50) COMMENT '消息类型: text/script/image/video/action',
+    stage           VARCHAR(50) COMMENT '所属工作流阶段: script/images/video',
+    blocks          JSON COMMENT '结构化内容块',
+    action_type     VARCHAR(50) COMMENT '动作类型: confirm/regenerate/edit',
+    task_id         BIGINT COMMENT '关联的异步任务ID',
+    metadata        JSON COMMENT '扩展元数据',
     frame_id        BIGINT COMMENT '关联帧ID',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (frame_id) REFERENCES frames(id) ON DELETE SET NULL,
     INDEX idx_conversations_project (project_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='对话记录表';
+
+
+CREATE TABLE IF NOT EXISTS scripts (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '剧本ID',
+    project_id      BIGINT NOT NULL COMMENT '所属项目ID',
+    version         INT NOT NULL DEFAULT 1 COMMENT '版本号',
+    status          VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active/archived',
+    generation_mode VARCHAR(20) COMMENT '生成模式: rag/manual/hybrid',
+    prompt_snapshot JSON COMMENT '生成时的提示词快照',
+    rag_snapshot    JSON COMMENT 'RAG检索结果快照',
+    content         JSON COMMENT '剧本内容（帧列表JSON）',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    INDEX idx_project_id (project_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='剧本版本表';
+
+
+CREATE TABLE IF NOT EXISTS generation_tasks (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '任务ID',
+    project_id      BIGINT NOT NULL COMMENT '所属项目ID',
+    task_type       VARCHAR(50) NOT NULL COMMENT '任务类型: script/image/video/tts',
+    status          VARCHAR(20) NOT NULL DEFAULT 'queued' COMMENT '状态: queued/running/completed/failed/cancelled',
+    celery_task_id  VARCHAR(200) COMMENT 'Celery异步任务ID',
+    error_message   TEXT COMMENT '失败原因',
+    result_data     JSON COMMENT '任务结果数据',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    INDEX idx_project_id (project_id),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步生成任务表';
+
+
+CREATE TABLE IF NOT EXISTS trace_log (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '日志ID',
+    request_id      VARCHAR(50) COMMENT '请求ID',
+    method          VARCHAR(10) COMMENT 'HTTP方法',
+    path            VARCHAR(500) COMMENT '请求路径',
+    status_code     INT COMMENT '响应状态码',
+    duration_ms     FLOAT COMMENT '请求耗时(毫秒)',
+    span_tree       JSON COMMENT '调用链路树',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_request_id (request_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='请求链路追踪日志';
 
 
 CREATE TABLE IF NOT EXISTS agent_traces (

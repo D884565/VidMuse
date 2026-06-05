@@ -15,9 +15,13 @@ from backend.v1.app.generate.service.generateUtils.external_call_policy import A
 from backend.v1.app.generate.service.stages.image_service import image_generation_service
 from backend.v1.app.generate.service.generateUtils.reference_image_utils import extract_reference_images
 from backend.v1.app.generate.service.stages.video_composer import video_composer
+from backend.v1.app.generate.service.workflow.media_resolvers import resolve_tts_text
 from backend.ffmpeg import ffmpeg_tool
 from backend.v1.app.generate.service.stages.music_service import music_generation_service
+from backend.v1.app.generate.service.stages.bgm_selector import bgm_selector_service
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
+from backend.v1.app.models.script import Script
+from backend.v1.app.assets.dao.asset_dao import AssetDAO
 from backend.v1.app.generate.service.workflow.blocks import build_video_stage_blocks
 from backend.v1.app.generate.service.stages.image_workflow import build_image_stage_message
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
@@ -63,8 +67,7 @@ def _persist_frame_video_segment(project_id: int, frame: Frame, local_path: str)
 
 
 def _resolve_frame_narration_text(frame: Frame) -> str:
-    ai_params = frame.ai_params or {}
-    return (getattr(frame, "narration", None) or ai_params.get("text") or frame.description or "").strip()
+    return resolve_tts_text(frame)
 
 
 def _resolve_frame_voice_type(project: Project, frame: Frame) -> str:
@@ -409,27 +412,47 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
             logger.warning("[audio] no TTS audio file, skip merging")
             generation_task_service.finish_step_sync(db, step, status="skipped", progress=85, error_message="no audio file") if task_id else None
 
-        # ---- Step 5.6: 生成 BGM 并混入视频（暂时禁用，接口保留） ----
-        # bgm_desc = (frames[0].ai_params or {}).get("bgm", "")
-        # if bgm_desc:
-        #     bgm_path = music_generation_service.generate_bgm(bgm_desc)
-        #     if bgm_path and os.path.exists(bgm_path):
-        #         try:
-        #             bgm_output = os.path.join(output_dir, "bgm_output.mp4")
-        #             ffmpeg_tool.add_bgm(video_path, bgm_path, bgm_output, bgm_volume=0.3, original_volume=1.0)
-        #             video_path = bgm_output
-        #             logger.info("[BGM] 背景音乐已混入视频")
-        #         except Exception as e:
-        #             logger.warning(f"[BGM] 混音失败，降级上传无 BGM 视频: {e}")
-        #         finally:
-        #             try:
-        #                 os.remove(bgm_path)
-        #             except OSError:
-        #                 pass
-        #     else:
-        #         logger.warning("[BGM] BGM 鐢熸垚澶辫触锛岃烦杩囨贩闊?)
-        # else:
-        #     logger.info("[BGM] 鏃?BGM 鎻忚堪锛岃烦杩囩敓鎴?)
+        # ---- Step 5.6: BGM 选曲并混入视频 ----
+        step = generation_task_service.start_step_sync(db, task_id, "BGM_MIXING", progress=86) if task_id else None
+        try:
+            # 读取最新剧本内容
+            script_result = db.execute(
+                select(Script).where(Script.project_id == project_id).order_by(Script.version.desc()).limit(1)
+            )
+            script = script_result.scalar_one_or_none()
+            script_content = script.content if script and script.content else {}
+
+            bgm_id = bgm_selector_service.select_bgm(db, script_content)
+            if bgm_id:
+                bgm_asset = AssetDAO.get_asset_by_id(db, bgm_id)
+                if bgm_asset and bgm_asset.url:
+                    # 下载 BGM 到本地临时文件
+                    import urllib.request
+                    bgm_local = os.path.join(temp_dir, "bgm.mp3")
+                    urllib.request.urlretrieve(bgm_asset.url, bgm_local)
+                    if os.path.exists(bgm_local):
+                        bgm_output = os.path.join(output_dir, "bgm_output.mp4")
+                        ffmpeg_tool.add_bgm(video_path, bgm_local, bgm_output, bgm_volume=0.3, original_volume=1.0)
+                        video_path = bgm_output
+                        logger.info("[BGM] 背景音乐已混入视频: %s", bgm_asset.title)
+                        generation_task_service.finish_step_sync(
+                            db, step, progress=88,
+                            output_snapshot={"bgm_id": bgm_id, "bgm_title": bgm_asset.title}
+                        ) if task_id else None
+                    else:
+                        logger.warning("[BGM] BGM 文件下载失败，跳过混音")
+                        generation_task_service.finish_step_sync(db, step, status="skipped", progress=88) if task_id else None
+                else:
+                    logger.warning("[BGM] BGM 资产不存在或无 URL，跳过混音")
+                    generation_task_service.finish_step_sync(db, step, status="skipped", progress=88) if task_id else None
+            else:
+                logger.info("[BGM] 无合适 BGM，跳过混音")
+                generation_task_service.finish_step_sync(db, step, status="skipped", progress=88) if task_id else None
+        except Exception as e:
+            logger.warning("[BGM] 选曲/混音失败，降级上传无 BGM 视频: %s", e)
+            generation_task_service.finish_step_sync(
+                db, step, status="failed", progress=88, error_message=str(e)
+            ) if task_id else None
 
         # 上传成品视频到 TOS
         step = generation_task_service.start_step_sync(db, task_id, "OUTPUT_UPLOADING", progress=88) if task_id else None
@@ -512,6 +535,121 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         # 清理临时目录
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@celery_app.task(bind=True, max_retries=3, soft_time_limit=900, time_limit=1200, name="generate_project_tts_task")
+def generate_project_tts_task(self, project_id: int, task_id: int | None = None):
+    """Regenerate project-level TTS audio without rendering images or video."""
+    logger.info("[TTS task] start project_id=%s", project_id)
+    db = None
+    audio_path = None
+
+    try:
+        db = _get_sync_db()
+        generation_task_service.start_task_sync(db, task_id, "TTS_GENERATING") if task_id else None
+        ensure_task_not_cancelled(db, task_id)
+
+        step = generation_task_service.start_step_sync(
+            db,
+            task_id,
+            "TTS_GENERATING",
+            progress=10,
+            input_snapshot={"trigger_source": "chat_tts_regeneration"},
+        ) if task_id else None
+
+        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
+        if not project:
+            raise ValueError(f"project not found: {project_id}")
+        frames = list(db.execute(
+            select(Frame)
+            .where(Frame.project_id == project_id)
+            .order_by(Frame.sequence)
+        ).scalars())
+        if not frames:
+            raise ValueError(f"project {project_id} has no frames for TTS regeneration")
+
+        project_workflow_state.mark_project_stage_running(project, "video", task_id)
+        db.commit()
+
+        tts_result = _build_project_audio_track(project, frames)
+        audio_path = tts_result.path
+        if tts_result.fallback_used and not ALLOW_DEGRADED_AUDIO:
+            raise GenerationStageError(
+                stage="video",
+                current_step="TTS_GENERATION_FAILED",
+                error_code="TTS_GENERATION_FAILED",
+                message=f"tts fallback used: {tts_result.warning}",
+            )
+
+        audio_object = f"projects/{project_id}/audio.mp3"
+        audio_url = get_storage_client().upload_file(audio_path, audio_object)
+        project.audio_url = audio_url
+        project.dirty_stage = "video"
+        project_workflow_state.mark_project_stage_review(project, "video", task_id)
+        db.commit()
+
+        generation_task_service.finish_step_sync(
+            db,
+            step,
+            progress=95,
+            output_snapshot={
+                "audio_url": audio_url,
+                "provider": tts_result.provider,
+                "fallback_used": tts_result.fallback_used,
+                "warning": tts_result.warning,
+            },
+        ) if task_id else None
+        generation_task_service.update_task_sync(db, task_id, status="succeeded", progress=100, current_step="COMPLETED") if task_id else None
+        logger.info("[TTS task] completed project_id=%s audio=%s", project_id, audio_object)
+
+    except SoftTimeLimitExceeded as exc:
+        logger.error("[TTS task] timeout project_id=%s", project_id, exc_info=True)
+        will_retry = self.request.retries < self.max_retries
+        if db:
+            db.rollback()
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage="video",
+                current_step="TTS_GENERATION_TIMEOUT",
+                error_code="TTS_GENERATION_TIMEOUT",
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update TTS timeout state", exc_info=True)
+        if will_retry:
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        raise
+    except Exception as exc:
+        logger.error("[TTS task] failed project_id=%s error=%s", project_id, exc, exc_info=True)
+        will_retry = self.request.retries < self.max_retries
+        if db:
+            db.rollback()
+        try:
+            _update_task_failure_state(
+                task_id=task_id,
+                project_id=project_id,
+                stage=getattr(exc, "stage", "video"),
+                current_step=getattr(exc, "current_step", "TTS_GENERATION_FAILED"),
+                error_code=getattr(exc, "error_code", "TTS_GENERATION_FAILED"),
+                error_message=str(exc),
+                will_retry=will_retry,
+            )
+        except Exception:
+            logger.warning("[failure handler] failed to update TTS task state", exc_info=True)
+        if will_retry:
+            raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
+        raise exc
+    finally:
+        if audio_path and os.path.exists(audio_path):
+            try:
+                os.remove(audio_path)
+            except OSError:
+                pass
+        if db:
+            db.close()
 
 
 @celery_app.task(bind=True, max_retries=3, soft_time_limit=180, time_limit=300, name="generate_frame_image_task")

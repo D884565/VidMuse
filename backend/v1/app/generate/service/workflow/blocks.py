@@ -105,6 +105,64 @@ def build_video_stage_blocks(project, *, video_url: str | None = None, task_id: 
     ]
 
 
+def build_frame_editor_block(frame) -> dict:
+    """构建分镜编辑 block，用于在对话中 inline 编辑分镜字段。"""
+    return {
+        "type": "frame_editor",
+        "frame_id": getattr(frame, "id", None),
+        "sequence": getattr(frame, "sequence", None),
+        "fields": {
+            "description": {
+                "value": getattr(frame, "description", None) or "",
+                "editable": True,
+            },
+            "narration": {
+                "value": getattr(frame, "narration", None) or "",
+                "editable": True,
+            },
+            "image_prompt": {
+                "value": getattr(frame, "image_prompt", None) or "",
+                "editable": True,
+            },
+            "video_prompt": {
+                "value": getattr(frame, "video_prompt", None) or getattr(frame, "prompt", None) or "",
+                "editable": True,
+            },
+            "duration": {
+                "value": _duration_value(getattr(frame, "duration", 0)),
+                "editable": True,
+            },
+        },
+        "actions": [
+            {"label": "保存修改", "action": "save"},
+            {"label": "重新生成图片", "action": "regenerate_image"},
+            {"label": "重新生成视频", "action": "regenerate_video"},
+        ],
+    }
+
+
+def build_confirmation_preview_block(
+    action: str,
+    message: str,
+    target_frames: list[int] | None = None,
+    modifications: dict | None = None,
+    pending_action_id: str | None = None,
+) -> dict:
+    """构建确认预览 block，用于 needs_confirmation=true 时展示待执行操作。"""
+    return {
+        "type": "confirmation_preview",
+        "pending_action_id": pending_action_id,
+        "pending_action": action,
+        "message": message,
+        "target_frames": target_frames or [],
+        "modifications": modifications or {},
+        "actions": [
+            {"label": "确认执行", "action": "confirm_pending"},
+            {"label": "取消", "action": "cancel_pending"},
+        ],
+    }
+
+
 def build_progress_block(stage: str, status: str, task_id: int | None = None, message: str | None = None) -> dict:
     """构建进度卡片 block，用于显示当前任务的阶段、状态和提示信息。"""
     return {

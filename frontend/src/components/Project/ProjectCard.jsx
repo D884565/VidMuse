@@ -31,7 +31,7 @@ export default function ProjectCard({ project }) {
       type="button"
       onClick={() => {
         setActiveProjectId(project.id)
-        setActiveView('keyframes')
+        setActiveView('chat')
       }}
     >
       <div className="flex items-center justify-between gap-2">
@@ -40,8 +40,8 @@ export default function ProjectCard({ project }) {
           {project.status_name || status.text}
         </span>
       </div>
-      <p className="mt-1 text-xs text-[var(--text-muted)]">
-        {createdDate} · {frameCount} 个帧
+      <p className="mt-1 text-xs text-[var(--text-muted)] line-clamp-1">
+        {project.summary || `${createdDate} · ${frameCount} 个帧`}
       </p>
     </button>
   )

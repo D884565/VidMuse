@@ -7,6 +7,27 @@ import StageProgress from '../Workflow/StageProgress.jsx'
 import MessageBubble from './MessageBubble.jsx'
 import TypingIndicator from './TypingIndicator.jsx'
 
+const WELCOME_MESSAGE = {
+  id: 'welcome',
+  role: 'assistant',
+  content: `欢迎使用带货视频生成系统！我将帮助您一步步创建带货短视频：
+
+1. 剧本创作 - 根据您的产品和需求生成分镜脚本
+2. 分镜配图 - 为每个分镜生成精美的画面
+3. 视频成片 - 将所有分镜合成为最终视频
+
+请描述您想要推广的产品，或直接粘贴产品链接，我会为您开始创作。`,
+  blocks: [
+    {
+      type: 'quick_actions',
+      actions: [
+        { label: '发个产品链接开始', hint: '粘贴淘宝/京东/抖音链接' },
+        { label: '用文字描述产品', hint: '告诉我你想推什么' },
+      ],
+    },
+  ],
+}
+
 export default function ChatContainer() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const { messages, isTyping, sendMessage, reload } = useChat()
@@ -17,9 +38,11 @@ export default function ChatContainer() {
     refetch()
   }
 
+  const displayMessages = activeProjectId ? messages : [WELCOME_MESSAGE, ...messages]
+
   return (
     <section className="relative flex min-h-screen flex-col overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:radial-gradient(circle_at_12%_18%,rgba(56,189,248,0.16),transparent_26%),radial-gradient(circle_at_78%_4%,rgba(16,185,129,0.13),transparent_28%),linear-gradient(135deg,rgba(15,23,42,0.4),transparent)]" />
+      <div className="pointer-events-none absolute inset-0 opacity-70 [background-image:radial-gradient(circle_at_12%_18%,rgba(56,189,248,0.16),transparent 26%),radial-gradient(circle_at_78%_4%,rgba(16,185,129,0.13),transparent 28%),linear-gradient(135deg,rgba(15,23,42,0.4),transparent)]" />
 
       <header className="relative z-10 border-b border-[var(--border-soft)] px-8 py-5">
         <div className="mb-4 flex items-center justify-between">
@@ -34,17 +57,12 @@ export default function ChatContainer() {
             工作流助手在线
           </div>
         </div>
-        <StageProgress project={project} />
+        {activeProjectId && <StageProgress project={project} />}
       </header>
 
       <div className="relative z-10 flex-1 overflow-y-auto px-8 pb-44 pt-8">
         <div className="mx-auto max-w-5xl space-y-4">
-          {!activeProjectId && (
-            <div className="rounded-2xl border border-dashed border-white/15 bg-white/[0.03] p-8 text-center text-sm text-[var(--text-muted)]">
-              先在左侧创建或选择一个项目，系统会把你的初始需求和素材渲染成第一条对话。
-            </div>
-          )}
-          {messages.map((message, index) => (
+          {displayMessages.map((message, index) => (
             <MessageBubble
               key={message.id}
               message={message}

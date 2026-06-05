@@ -51,6 +51,8 @@ class AssetDAO:
             source_type: Optional[int] = None,
             keyword: Optional[str] = None,
             format: Optional[str] = None,
+            scope: Optional[str] = None,
+            tags: Optional[dict] = None,
             page: int = 1,
             page_size: int = 20
     ) -> tuple[int, list[Asset]]:
@@ -73,10 +75,24 @@ class AssetDAO:
         if format:
             query = query.filter(Asset.format == format.lower())
 
+        # scope 筛选
+        if scope:
+            query = query.filter(Asset.scope == scope)
+
         # 关键词搜索
         if keyword:
             title_match = Asset.title.like(f"%{keyword}%")
             query = query.filter(title_match)
+
+        # 标签过滤（JSON LIKE 匹配，兼容 MySQL）
+        if tags:
+            for dimension, values in tags.items():
+                if not values:
+                    continue
+                for value in values:
+                    query = query.filter(
+                        Asset.tags[dimension].as_string().like(f'%"{value}"%')
+                    )
 
         total = query.count()
 

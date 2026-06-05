@@ -6,7 +6,6 @@
 import jwt
 import datetime
 from typing import Optional
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 
 from backend.v1.app.config.config import settings
@@ -23,9 +22,6 @@ from backend.framework.exceptions.error_codes import (
     UNAUTHORIZED,
 )
 
-# 密码哈希上下文，使用 bcrypt 算法
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
 # 角色ID -> 角色名称映射
 ROLE_NAME_MAP = {0: "超级管理员", 1: "普通用户", 2: "VIP用户"}
 
@@ -37,13 +33,13 @@ class UserService:
 
     @staticmethod
     def _hash_password(password: str) -> str:
-        """将明文密码哈希为 bcrypt 摘要"""
-        return pwd_context.hash(password)
+        """明文存储密码"""
+        return password
 
     @staticmethod
     def _verify_password(plain: str, hashed: str) -> bool:
-        """验证明文密码是否匹配哈希值"""
-        return pwd_context.verify(plain, hashed)
+        """明文比对密码"""
+        return plain == hashed
 
     # ==================== JWT 令牌方法 ====================
 

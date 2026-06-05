@@ -1,6 +1,7 @@
-import { Play, RefreshCw } from 'lucide-react'
+import { Play, RefreshCw, Save, Image, Video } from 'lucide-react'
 import { useState } from 'react'
 import { advanceWorkflowStage, confirmWorkflowStage } from '../../services/project.js'
+import { regenerateFrameImage, regenerateFrameVideo, updateFrame } from '../../services/frame.js'
 import { useAppStore } from '../../store/appStore.js'
 
 /**
@@ -55,6 +56,9 @@ export default function MessageBlocks({ blocks = [], onActionComplete }) {
           )
         }
         if (block.type === 'asset_grid') return <AssetGrid key={index} block={block} />
+        if (block.type === 'quick_actions') return <QuickActions key={index} block={block} />
+        if (block.type === 'frame_editor') return <FrameEditor key={index} block={block} onActionComplete={onActionComplete} />
+        if (block.type === 'confirmation_preview') return <ConfirmationPreview key={index} block={block} onActionComplete={onActionComplete} />
         return null
       })}
     </div>
@@ -186,6 +190,211 @@ function AssetGrid({ block }) {
           {asset.url || asset.title || '素材'}
         </div>
       ))}
+    </div>
+  )
+}
+
+/** 快捷操作按钮：欢迎消息附带的引导按钮 */
+function QuickActions({ block }) {
+  const store = useAppStore()
+  const setInputValue = store.setSmartInputValue || (() => {})
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {(block.actions || []).map((action, index) => (
+        <button
+          key={index}
+          type="button"
+          onClick={() => {
+            // 将 hint 文本填入输入框
+            const input = document.querySelector('[data-smart-input] textarea, [data-smart-input] input')
+            if (input) {
+              input.value = action.hint || action.label
+              input.dispatchEvent(new Event('input', { bubbles: true }))
+              input.focus()
+            }
+          }}
+          className="rounded-full border border-[#38bdf8]/30 bg-[#38bdf8]/10 px-4 py-2 text-sm text-[#7dd3fc] hover:bg-[#38bdf8]/20 hover:border-[#38bdf8]/50 transition-colors"
+        >
+          {action.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** 分镜编辑器：在对话中 inline 编辑分镜字段 */
+function FrameEditor({ block, onActionComplete }) {
+  const activeProjectId = useAppStore((state) => state.activeProjectId)
+  const [fields, setFields] = useState(block.fields || {})
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  function updateField(name, value) {
+    setFields((prev) => ({
+      ...prev,
+      [name]: { ...prev[name], value },
+    }))
+  }
+
+  async function handleSave() {
+    if (!activeProjectId || !block.frame_id) return
+    setSaving(true)
+    setError('')
+    try {
+      const patch = {}
+      for (const [key, field] of Object.entries(fields)) {
+        if (field.editable) patch[key] = field.value
+      }
+      await updateFrame(activeProjectId, block.frame_id, patch)
+      onActionComplete?.()
+    } catch (err) {
+      setError(err.message || '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleRegenerate(type) {
+    if (!activeProjectId || !block.frame_id) return
+    setSaving(true)
+    setError('')
+    try {
+      if (type === 'image') {
+        await regenerateFrameImage(activeProjectId, block.frame_id, '')
+      } else if (type === 'video') {
+        await regenerateFrameVideo(activeProjectId, block.frame_id, '')
+      }
+      onActionComplete?.()
+    } catch (err) {
+      setError(err.message || '操作失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const fieldLabels = {
+    description: '画面描述',
+    narration: '旁白',
+    image_prompt: '图片提示词',
+    video_prompt: '视频提示词',
+    duration: '时长(秒)',
+  }
+
+  return (
+    <div className="rounded-xl border border-[#a78bfa]/25 bg-[#1a0f2e]/50 p-4">
+      <div className="mb-3 text-sm font-semibold text-[#c4b5fd]">
+        分镜 #{block.sequence} 编辑
+      </div>
+      <div className="space-y-3">
+        {Object.entries(fields).map(([key, field]) => (
+          field.editable && (
+            <div key={key}>
+              <label className="mb-1 block text-xs text-[var(--text-muted)]">
+                {fieldLabels[key] || key}
+              </label>
+              {key === 'duration' ? (
+                <input
+                  type="number"
+                  step="0.5"
+                  min="0.5"
+                  max="10"
+                  value={field.value}
+                  onChange={(e) => updateField(key, e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white outline-none focus:border-[#a78bfa]/50"
+                />
+              ) : key === 'description' || key === 'narration' ? (
+                <textarea
+                  value={field.value}
+                  onChange={(e) => updateField(key, e.target.value)}
+                  rows={2}
+                  className="w-full resize-none rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white outline-none focus:border-[#a78bfa]/50"
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={field.value}
+                  onChange={(e) => updateField(key, e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white outline-none focus:border-[#a78bfa]/50"
+                />
+              )}
+            </div>
+          )
+        ))}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={saving}
+          onClick={handleSave}
+          className="flex items-center gap-1.5 rounded-lg bg-[#a78bfa]/20 px-3 py-1.5 text-xs text-[#c4b5fd] hover:bg-[#a78bfa]/30 disabled:opacity-50"
+        >
+          <Save size={14} />
+          {saving ? '保存中...' : '保存修改'}
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => handleRegenerate('image')}
+          className="flex items-center gap-1.5 rounded-lg bg-[#38bdf8]/15 px-3 py-1.5 text-xs text-[#7dd3fc] hover:bg-[#38bdf8]/25 disabled:opacity-50"
+        >
+          <Image size={14} />
+          重新生成图片
+        </button>
+        <button
+          type="button"
+          disabled={saving}
+          onClick={() => handleRegenerate('video')}
+          className="flex items-center gap-1.5 rounded-lg bg-[#10b981]/15 px-3 py-1.5 text-xs text-[#6ee7b7] hover:bg-[#10b981]/25 disabled:opacity-50"
+        >
+          <Video size={14} />
+          重新生成视频
+        </button>
+      </div>
+      {error && <div className="mt-2 text-xs text-red-300">{error}</div>}
+    </div>
+  )
+}
+
+/** 确认预览：needs_confirmation=true 时展示待执行操作 */
+function ConfirmationPreview({ block, onActionComplete }) {
+  const activeProjectId = useAppStore((state) => state.activeProjectId)
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+
+  async function handleConfirm() {
+    if (!activeProjectId) return
+    setPending(true)
+    setError('')
+    try {
+      // 确认后通过聊天接口发送确认消息
+      onActionComplete?.()
+    } catch (err) {
+      setError(err.message || '确认失败')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-[#f59e0b]/25 bg-[#3b2505]/35 p-4">
+      <div className="text-sm text-[#fbbf24]">{block.message}</div>
+      {block.target_frames?.length > 0 && (
+        <div className="mt-2 text-xs text-[var(--text-muted)]">
+          影响分镜: {block.target_frames.map((f) => `#${f}`).join(', ')}
+        </div>
+      )}
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={handleConfirm}
+          className="rounded-lg bg-[#f59e0b]/20 px-3 py-1.5 text-xs text-[#fbbf24] hover:bg-[#f59e0b]/30 disabled:opacity-50"
+        >
+          {pending ? '处理中...' : '确认执行'}
+        </button>
+      </div>
+      {error && <div className="mt-2 text-xs text-red-300">{error}</div>}
     </div>
   )
 }

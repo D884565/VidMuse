@@ -4,6 +4,7 @@ import {
   Images,
   KeyRound,
   LogOut,
+  MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -21,6 +22,7 @@ export default function Sidebar() {
   const setActiveView = useAppStore((state) => state.setActiveView)
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
+  const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
 
   const storeLogout = useAppStore((state) => state.logout)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -43,7 +45,7 @@ export default function Sidebar() {
         </div>
         <div className={`${collapsed ? 'hidden' : 'block'} max-[1024px]:hidden`}>
           <p className="m-0 text-base font-semibold">VidMuse</p>
-          <p className="m-0 text-xs text-[var(--text-muted)]">AI 视频创作台</p>
+          <p className="m-0 text-xs text-[var(--text-muted)]">带货视频生成系统</p>
         </div>
         <button
           aria-label="切换侧边栏"
@@ -120,11 +122,14 @@ export default function Sidebar() {
         <button
           className="flex w-full items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,#7C3AED_0%,#A855F7_100%)] px-3 py-2.5 text-sm font-medium shadow-[0_4px_24px_rgba(124,58,237,0.15)] hover:shadow-[0_4px_30px_rgba(124,58,237,0.35)]"
           type="button"
-          onClick={() => setShowCreateModal(true)}
+          onClick={() => {
+            setActiveProjectId(null)
+            setActiveView('chat')
+          }}
         >
-          <Plus size={18} />
+          <MessageSquarePlus size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            新建项目
+            新建对话
           </span>
         </button>
       </nav>

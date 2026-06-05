@@ -129,6 +129,7 @@ def _project_to_dict(project, frame_count: int | None = None) -> dict:
         "id": project.id,
         "title": project.title,
         "description": project.description,
+        "summary": getattr(project, "summary", None),
         "product_url": project.product_url,
         "video_output_url": project.video_output_url,
         "audio_url": project.audio_url,

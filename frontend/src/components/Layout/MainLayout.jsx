@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import ChatContainer from '../Chat/ChatContainer.jsx'
+import WorkbenchView from '../Workbench/WorkbenchView.jsx'
 import FrameGrid from '../Keyframes/FrameGrid.jsx'
 import MediaGrid from '../Media/MediaGrid.jsx'
 import UserProfile from '../User/UserProfile.jsx'
@@ -54,7 +54,7 @@ export default function MainLayout() {
       case 'profile':
         return <UserProfile />
       default:
-        return <ChatContainer />
+        return <WorkbenchView />
     }
   }
 
