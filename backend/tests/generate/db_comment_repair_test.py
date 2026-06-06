@@ -23,7 +23,9 @@ def test_parse_init_sql_comments_uses_readable_chinese_source_of_truth():
     assert comments["assets"]["table_comment"] == "素材库"
     assert comments["assets"]["columns"]["title"] == "资产标题"
     assert comments["project_assets"]["table_comment"] == "项目素材绑定表"
-    assert comments["generation_task_steps"]["columns"]["step_name"] == "步骤名称"
+    assert "push_messages" in comments
+    assert "task_id" in comments["push_messages"]["columns"]
+    assert "event_type" in comments["push_messages"]["columns"]
 
 
 def test_build_comment_fix_sql_generates_alter_statements_from_show_create_table():

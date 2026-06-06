@@ -20,6 +20,7 @@ from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
 from backend.v1.app.generate.service.workflow.agent import workflow_agent_service
 from backend.v1.app.generate.service.workflow.llm_agent import llm_agent_service
+from backend.v1.app.generate.service.chat.intent_service import intent_service
 from backend.v1.app.generate.service.workflow.blocks import (
     build_progress_block,
     build_script_stage_blocks,
@@ -100,15 +101,18 @@ class ChatService:
         # 获取最近对话历史作为 LLM context
         history = await self._get_recent_conversations(db, project_id)
 
-        # 优先使用 LLM Agent，失败时降级到规则引擎
-        plan = llm_agent_service.plan(
-            project, frames, content, frame_id=frame_id, conversation_history=history
-        )
-        rule_plan = workflow_agent_service.plan(project, frames, content, frame_id=frame_id)
-        if plan is None:
-            plan = rule_plan
-        else:
-            plan = self._prefer_rule_script_generation_for_created_project(project, plan, rule_plan)
+        # 统一意图识别（LLM驱动，失败时降级到规则）
+        try:
+            plan = intent_service.classify_project(
+                content=content,
+                workflow_stage=project.workflow_stage,
+                stage_status=project.stage_status,
+                frames=frames,
+                conversation_history=history,
+            )
+        except Exception as e:
+            logger.warning(f"Intent service failed, fallback to rule: {e}")
+            plan = workflow_agent_service.plan(project, frames, content, frame_id=frame_id)
 
         task_result = None
         updated_frames = []
@@ -334,15 +338,18 @@ class ChatService:
         yield sse("thinking", {"message": "正在理解你的意图..."})
         await asyncio.sleep(0)
 
-        # 3. LLM Agent 意图识别（非流式，可能耗时 1-3 秒）
-        plan = llm_agent_service.plan(
-            project, frames, content, frame_id=frame_id, conversation_history=history
-        )
-        rule_plan = workflow_agent_service.plan(project, frames, content, frame_id=frame_id)
-        if plan is None:
-            plan = rule_plan
-        else:
-            plan = self._prefer_rule_script_generation_for_created_project(project, plan, rule_plan)
+        # 3. 统一意图识别（LLM驱动，失败时降级到规则）
+        try:
+            plan = intent_service.classify_project(
+                content=content,
+                workflow_stage=project.workflow_stage,
+                stage_status=project.stage_status,
+                frames=frames,
+                conversation_history=history,
+            )
+        except Exception as e:
+            logger.warning(f"Intent service failed, fallback to rule: {e}")
+            plan = workflow_agent_service.plan(project, frames, content, frame_id=frame_id)
 
         action = plan["action"]
 
@@ -359,7 +366,14 @@ class ChatService:
                     yield sse("token", {"content": char})
                     await asyncio.sleep(0.02)
             else:
-                for chunk in llm_agent_service.stream_converse(project, frames, content, history):
+                # 使用intent_service的流式对话
+                for chunk in intent_service.stream_converse(
+                    content=content,
+                    workflow_stage=project.workflow_stage,
+                    stage_status=project.stage_status,
+                    frame_count=len(frames),
+                    conversation_history=history,
+                ):
                     full_content += chunk
                     yield sse("token", {"content": chunk})
         else:
@@ -699,7 +713,6 @@ class ChatService:
         """处理 CHANGE_BGM 动作：重新选择 BGM 并触发视频重生成。"""
         from backend.v1.app.generate.service.stages.bgm_selector import bgm_selector_service
         from backend.v1.app.models.script import Script
-        from backend.v1.app.models.generation_task import GenerationTask
 
         # 获取当前剧本内容
         script_result = await db.execute(
@@ -710,16 +723,6 @@ class ChatService:
 
         # 查找上次使用的 BGM ID，排除它确保换到不同的
         exclude_ids = []
-        last_task_result = await db.execute(
-            select(GenerationTask).where(GenerationTask.project_id == project_id)
-            .order_by(GenerationTask.id.desc()).limit(1)
-        )
-        last_task = last_task_result.scalar_one_or_none()
-        if last_task and last_task.output_snapshot:
-            last_bgm_id = last_task.output_snapshot.get("bgm_id")
-            if last_bgm_id:
-                exclude_ids.append(last_bgm_id)
-
         bgm_id = bgm_selector_service.select_bgm(db, script_content, exclude_ids=exclude_ids)
         if not bgm_id:
             return [], [{

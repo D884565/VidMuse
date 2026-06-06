@@ -68,21 +68,21 @@ async def test_submit_generation_task_allows_missing_images_for_auto_render(monk
     db = FakeDB(project, [FakeFrame()])
 
     async def fake_create_task(*args, **kwargs):
-        return SimpleNamespace(id=99)
+        return SimpleNamespace(id="gen_99")
 
     async def fake_set_celery_task_id(*args, **kwargs):
         return None
 
     monkeypatch.setattr(
-        "backend.v1.app.generate.service.video_generation.generation_task_service.create_task",
+        "backend.v1.app.generate.service.stages.video_workflow.generation_task_service.create_task",
         fake_create_task,
     )
     monkeypatch.setattr(
-        "backend.v1.app.generate.service.video_generation.generation_task_service.set_celery_task_id",
+        "backend.v1.app.generate.service.stages.video_workflow.generation_task_service.set_celery_task_id",
         fake_set_celery_task_id,
     )
     monkeypatch.setattr(
-        "backend.v1.app.generate.service.video_generation.celery_app.send_task",
+        "backend.v1.app.generate.service.stages.video_workflow.celery_app.send_task",
         lambda *args, **kwargs: SimpleNamespace(id="celery-99"),
     )
 
@@ -94,7 +94,7 @@ async def test_submit_generation_task_allows_missing_images_for_auto_render(monk
     )
 
     assert result["status"] == "render_queued"
-    assert result["task_id"] == 99
+    assert result["task_id"] == "gen_99"
     assert result["celery_task_id"] == "celery-99"
     assert project.status == "render_queued"
 

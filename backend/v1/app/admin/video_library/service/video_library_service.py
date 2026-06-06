@@ -24,8 +24,14 @@ class VideoLibraryService:
     """视频素材库业务逻辑类"""
 
     def __init__(self):
-        self.obj_store = get_storage_client()
+        self._obj_store = None
         self.hot_report_fetcher = HotReportFetchProcessor()
+
+    @property
+    def obj_store(self):
+        if self._obj_store is None:
+            self._obj_store = get_storage_client()
+        return self._obj_store
 
     @staticmethod
     async def get_video_list(

@@ -18,6 +18,15 @@ class UserMessageWithStatus:
     content: Any
     level: str
     trace_id: Optional[str]
+    business_type: Optional[str]
+    task_id: Optional[str]
+    task_domain: Optional[str]
+    task_type: Optional[str]
+    project_id: Optional[int]
+    asset_id: Optional[int]
+    event_type: Optional[str]
+    status: Optional[str]
+    progress: Optional[int]
     extra: Optional[dict]
     created_at: datetime
     is_read: bool
@@ -37,6 +46,15 @@ class MessageDAO:
             content=message_create.content,
             level=message_create.level,
             trace_id=message_create.trace_id,
+            business_type=message_create.business_type,
+            task_id=message_create.task_id,
+            task_domain=message_create.task_domain,
+            task_type=message_create.task_type,
+            project_id=message_create.project_id,
+            asset_id=message_create.asset_id,
+            event_type=message_create.event_type,
+            status=message_create.status,
+            progress=message_create.progress,
             extra=message_create.extra
         )
         db.add(db_message)
@@ -105,6 +123,15 @@ class MessageDAO:
                 content=msg.content,
                 level=msg.level,
                 trace_id=msg.trace_id,
+                business_type=msg.business_type,
+                task_id=msg.task_id,
+                task_domain=msg.task_domain,
+                task_type=msg.task_type,
+                project_id=msg.project_id,
+                asset_id=msg.asset_id,
+                event_type=msg.event_type,
+                status=msg.status,
+                progress=msg.progress,
                 extra=msg.extra,
                 created_at=msg.created_at,
                 is_read=is_read,

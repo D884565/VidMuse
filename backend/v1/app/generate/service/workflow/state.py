@@ -72,7 +72,7 @@ VALID_TRANSITIONS = {
 }
 
 
-def _set_task(project, task_id: int | None) -> None:
+def _set_task(project, task_id: str | int | None) -> None:
     if task_id is not None:
         project.last_task_id = task_id
 
@@ -89,7 +89,7 @@ def set_project_workflow_state(
     project,
     stage: str,
     status: str,
-    task_id: int | None = None,
+    task_id: str | int | None = None,
     *,
     allow_regression: bool = False,
 ) -> None:
@@ -107,24 +107,24 @@ def set_project_workflow_state(
     sync_legacy_status(project)
 
 
-def mark_project_stage_running(project, stage: str, task_id: int | None = None) -> None:
+def mark_project_stage_running(project, stage: str, task_id: str | int | None = None) -> None:
     """标记阶段运行中；dirty_stage 保留到成功产出后再清理。"""
     set_project_workflow_state(project, stage, "running", task_id)
 
 
-def mark_project_stage_review(project, stage: str, task_id: int | None = None) -> None:
+def mark_project_stage_review(project, stage: str, task_id: str | int | None = None) -> None:
     """标记阶段已有新产物待审，若正好修复 dirty_stage 则清掉脏标记。"""
     set_project_workflow_state(project, stage, "awaiting_review", task_id)
     if getattr(project, "dirty_stage", None) == stage:
         project.dirty_stage = None
 
 
-def mark_project_stage_failed(project, stage: str, task_id: int | None = None) -> None:
+def mark_project_stage_failed(project, stage: str, task_id: str | int | None = None) -> None:
     """最终失败才调用；重试中不要把项目标成 failed。"""
     set_project_workflow_state(project, stage, "failed", task_id, allow_regression=True)
 
 
-def mark_project_completed(project, task_id: int | None = None) -> None:
+def mark_project_completed(project, task_id: str | int | None = None) -> None:
     """项目完成时清理所有脏标记。"""
     set_project_workflow_state(project, "completed", "confirmed", task_id)
     project.dirty_stage = None
@@ -201,7 +201,7 @@ class GenerationWorkflowService:
     def advance_stage(self, project, from_stage: str) -> None:
         advance_project_stage(project, from_stage)
 
-    def mark_stage_running(self, project, stage: str, task_id: int | None = None) -> None:
+    def mark_stage_running(self, project, stage: str, task_id: str | int | None = None) -> None:
         mark_project_stage_running(project, stage, task_id)
 
     def advance_target_for(self, confirmed_stage: str) -> str:
@@ -210,10 +210,10 @@ class GenerationWorkflowService:
         except KeyError as exc:
             raise ValueError(f"unknown workflow stage: {confirmed_stage}") from exc
 
-    def mark_stage_review(self, project, stage: str, task_id: int | None = None) -> None:
+    def mark_stage_review(self, project, stage: str, task_id: str | int | None = None) -> None:
         mark_project_stage_review(project, stage, task_id)
 
-    def fail_stage(self, project, stage: str, task_id: int | None = None) -> None:
+    def fail_stage(self, project, stage: str, task_id: str | int | None = None) -> None:
         mark_project_stage_failed(project, stage, task_id)
 
     def invalidate_from(self, project, stage: str) -> None:

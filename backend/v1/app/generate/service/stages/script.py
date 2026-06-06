@@ -9,10 +9,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
-from backend.v1.app.models.generation_task import GenerationTask
 from backend.v1.app.models.script import Script
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
 from backend.v1.app.generate.service.workflow.limits import normalize_target_duration
+from backend.v1.app.push.model.message_model import PushMessage
 from backend.providers import VolcanoLLM, ChatRequest, ChatMessage
 
 logger = logging.getLogger(__name__)
@@ -103,11 +103,13 @@ class ScriptGenerationService:
                 return frames_list
 
             active_task_result = await db.execute(
-                select(GenerationTask)
+                select(PushMessage)
                 .where(
-                    GenerationTask.project_id == project_id,
-                    GenerationTask.task_type.in_(["render", "frame_retry", "export"]),
-                    GenerationTask.status.in_(["queued", "running"]),
+                    PushMessage.message_type == "task_event",
+                    PushMessage.project_id == project_id,
+                    PushMessage.task_domain == "generation",
+                    PushMessage.task_type.in_(["render", "frame_retry", "export"]),
+                    PushMessage.status.in_(["queued", "running"]),
                 )
                 .limit(1)
             )

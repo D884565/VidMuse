@@ -17,12 +17,14 @@ from backend.v1.app.generate.service.stages.script import script_generation_serv
 from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
 from backend.v1.app.generate.service.chat.chat_service import chat_service
 from backend.v1.app.generate.service.chat.entry_intent import classify_no_project_message
+from backend.v1.app.generate.service.chat.intent_service import intent_service
 from backend.v1.app.generate.service.chat.project_title import build_video_project_title
 from backend.v1.app.generate.service.workflow.llm_agent import llm_agent_service
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
 from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
 from backend.v1.app.generate.service.chat.initial_message import project_initial_message_builder
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
+from backend.v1.app.push.service.task_event_service import task_event_service
 from backend.v1.app.generate.service.generateUtils.storyboard import storyboard_service
 from backend.v1.app.generate.service.workflow.blocks import build_script_stage_blocks
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
@@ -446,13 +448,13 @@ async def bind_project_asset(
 
 @router.get("/tasks/{task_id}", response_model=Response)
 async def get_generation_task(
-    task_id: int = Path(..., gt=0),
+    task_id: str = Path(..., min_length=1),
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """查询生成任务状态。"""
     try:
-        result = await generation_task_service.get_task(db, task_id, current_user_id)
+        result = await task_event_service.get_task_snapshot(db, task_id)
         return Response.success(data=result)
     except PermissionError:
         raise BusinessException(UNAUTHORIZED, "无权访问该任务")
@@ -462,13 +464,13 @@ async def get_generation_task(
 
 @router.get("/tasks/{task_id}/steps", response_model=Response)
 async def get_generation_task_steps(
-    task_id: int = Path(..., gt=0),
+    task_id: str = Path(..., min_length=1),
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """查询生成任务步骤。"""
     try:
-        result = await generation_task_service.list_steps(db, task_id, current_user_id)
+        result = await task_event_service.get_task_steps(db, task_id)
         return Response.success(data=result)
     except PermissionError:
         raise BusinessException(UNAUTHORIZED, "无权访问该任务")
@@ -634,8 +636,17 @@ async def chat_entry_stream(
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     async def stream_events():
-        intent = classify_no_project_message(content)
-        yield sse("start", {"action": intent["action"], "should_create_project": intent["should_create_project"]})
+        # 使用LLM意图识别，失败时降级到硬编码规则
+        try:
+            intent = intent_service.classify_entry(content)
+            action = "CREATE_PROJECT" if intent["should_create_project"] else "CONVERSE"
+        except Exception as e:
+            logger.warning(f"LLM intent failed, fallback to rule: {e}")
+            fallback = classify_no_project_message(content)
+            intent = {"should_create_project": fallback["should_create_project"]}
+            action = fallback["action"]
+
+        yield sse("start", {"action": action, "should_create_project": intent["should_create_project"]})
         if intent["should_create_project"]:
             yield sse("done", {
                 "action": "CREATE_PROJECT",
@@ -645,7 +656,7 @@ async def chat_entry_stream(
             return
 
         try:
-            for chunk in llm_agent_service.stream_entry_converse(content):
+            for chunk in intent_service.stream_entry_converse(content):
                 yield sse("token", {"content": chunk})
         except Exception as exc:
             logger.warning("[chat_entry_stream] LLM converse fallback: %s", exc)

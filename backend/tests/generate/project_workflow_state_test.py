@@ -30,6 +30,16 @@ def test_mark_project_stage_running_syncs_legacy_status():
     assert project.last_task_id == 12
 
 
+def test_mark_project_stage_running_accepts_string_task_id():
+    project = Project()
+
+    mark_project_stage_running(project, "image", task_id="gen_abc")
+
+    assert project.workflow_stage == "image"
+    assert project.stage_status == "running"
+    assert project.last_task_id == "gen_abc"
+
+
 def test_mark_project_stage_review_syncs_legacy_status():
     project = Project()
 

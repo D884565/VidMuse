@@ -59,6 +59,10 @@ function getWorkflowStatusText(workflowStage, stageStatus) {
 }
 const TERMINAL_TASK_STATUSES = ['succeeded', 'failed', 'cancelled']
 
+function getTaskIdentifier(task) {
+  return task?.id ?? task?.task_id ?? null
+}
+
 const DEFAULT_EDIT_FORM = {
   narration: '',
   subtitle_text: '',
@@ -259,7 +263,7 @@ export default function FrameGrid() {
   }
 
   useEffect(() => {
-    const taskId = task?.id
+    const taskId = getTaskIdentifier(task)
     if (!taskId || TERMINAL_TASK_STATUSES.includes(task.status)) return undefined
 
     const timerId = setInterval(() => {
@@ -267,7 +271,7 @@ export default function FrameGrid() {
     }, 3000)
 
     return () => clearInterval(timerId)
-  }, [task?.id, task?.status])
+  }, [task?.id, task?.task_id, task?.status])
 
   const handleGenerateScript = async () => {
     setFlowLoading('script')
@@ -529,7 +533,7 @@ export default function FrameGrid() {
             <div className="mt-3 space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-white">
-                  任务 {task.id} · {task.status} · {task.current_step || '未知'}
+                  任务 {getTaskIdentifier(task)} · {task.status} · {task.current_step || '未知'}
                 </span>
                 <span className="text-[var(--text-muted)]">{task.progress || 0}%</span>
               </div>

@@ -1,4 +1,6 @@
 """持久化音视频合并服务。"""
+from __future__ import annotations
+
 import asyncio
 import json
 import logging
@@ -14,8 +16,8 @@ from backend.store.database.async_database import SessionLocal
 from backend.store.obj.factory import get_storage_client
 from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.v1.app.models.asset import Asset
-from backend.v1.app.models.merge_task import MergeTask
 from backend.ffmpeg import ffmpeg_tool
+from backend.v1.app.push.service.task_event_service import task_event_service
 
 logger = logging.getLogger(__name__)
 
@@ -30,17 +32,18 @@ class MergeService:
     """持久化合并任务编排。"""
 
     async def replace_audio(self, db: AsyncSession, video_id: int, audio_id: int) -> dict:
-        await self._get_asset(db, video_id)
+        video = await self._get_asset(db, video_id)
         await self._get_asset(db, audio_id)
-        task = await self._create_task(
+        task = self._create_task(
             db,
             task_type="audio_replace",
             video_id=video_id,
-            params={"audio_id": audio_id},
+            params={"video_id": video_id, "audio_id": audio_id},
+            user_id=getattr(video, "user_id", None),
         )
-        self._dispatch_task(task.task_id, task.task_type)
+        self._dispatch_task(task["task_id"], "audio_replace")
         return {
-            "task_id": task.task_id,
+            "task_id": task["task_id"],
             "video_id": video_id,
             "audio_id": audio_id,
             "status": "queued",
@@ -54,21 +57,23 @@ class MergeService:
         bgm_volume: float = 0.3,
         original_volume: float = 1.0,
     ) -> dict:
-        await self._get_asset(db, video_id)
+        video = await self._get_asset(db, video_id)
         await self._get_asset(db, bgm_id)
-        task = await self._create_task(
+        task = self._create_task(
             db,
             task_type="bgm",
             video_id=video_id,
             params={
+                "video_id": video_id,
                 "bgm_id": bgm_id,
                 "bgm_volume": bgm_volume,
                 "original_volume": original_volume,
             },
+            user_id=getattr(video, "user_id", None),
         )
-        self._dispatch_task(task.task_id, task.task_type)
+        self._dispatch_task(task["task_id"], "bgm")
         return {
-            "task_id": task.task_id,
+            "task_id": task["task_id"],
             "video_id": video_id,
             "bgm_id": bgm_id,
             "status": "queued",
@@ -81,60 +86,87 @@ class MergeService:
         audio_ids: list[int],
         volumes: list[float] | None = None,
     ) -> dict:
-        await self._get_asset(db, video_id)
+        video = await self._get_asset(db, video_id)
         for audio_id in audio_ids:
             await self._get_asset(db, audio_id)
-        task = await self._create_task(
+        task = self._create_task(
             db,
             task_type="mix",
             video_id=video_id,
-            params={"audio_ids": audio_ids, "volumes": volumes},
+            params={"video_id": video_id, "audio_ids": audio_ids, "volumes": volumes},
+            user_id=getattr(video, "user_id", None),
         )
-        self._dispatch_task(task.task_id, task.task_type)
+        self._dispatch_task(task["task_id"], "mix")
         return {
-            "task_id": task.task_id,
+            "task_id": task["task_id"],
             "video_id": video_id,
             "audio_ids": audio_ids,
             "status": "queued",
         }
 
     async def get_task_status(self, db: AsyncSession, task_id: str) -> dict:
-        task = await self._fetch_task(db, task_id)
-        return self._task_to_dict(task)
+        snapshot = await task_event_service.get_task_snapshot(db, task_id)
+        return {
+            "task_id": snapshot["task_id"],
+            "task_type": snapshot.get("task_type"),
+            "status": self._normalize_status(snapshot.get("status")),
+            "result": snapshot.get("result"),
+            "error_message": snapshot.get("error_message"),
+            "created_at": snapshot.get("created_at"),
+            "updated_at": snapshot.get("finished_at") or snapshot.get("created_at"),
+        }
 
     async def cancel_task(self, db: AsyncSession, task_id: str) -> dict:
-        task = await self._fetch_task(db, task_id)
-        if task.status not in ("queued", "processing"):
-            raise ValueError(f"merge task cannot be cancelled in status: {task.status}")
-        task.status = "cancelled"
+        task = await self.get_task_status(db, task_id)
+        if task["status"] not in ("queued", "processing", "running"):
+            raise ValueError(f"merge task cannot be cancelled in status: {task['status']}")
+        task_event_service.emit_event_sync(
+            db=db.sync_session,
+            task_id=task_id,
+            task_domain="merge",
+            task_type=task.get("task_type") or "unknown",
+            event_type="task_cancelled",
+            status="cancelled",
+        )
         await db.commit()
         celery_app.control.revoke(task_id, terminate=False)
         return {
-            "task_id": task.task_id,
+            "task_id": task_id,
             "status": "cancelled",
             "message": "merge task cancelled",
         }
 
     async def run_dispatched_task(self, task_id: str) -> None:
         async with SessionLocal() as session:
-            task = await self._fetch_task(session, task_id)
-            if task.status == "cancelled":
+            snapshot = await task_event_service.get_task_snapshot(session, task_id)
+            if snapshot.get("status") == "cancelled":
                 return
-            task.status = "processing"
+            task_type = snapshot.get("task_type") or "unknown"
+            params = await self._get_task_params(session, task_id)
+            task_event_service.emit_event_sync(
+                db=session.sync_session,
+                task_id=task_id,
+                task_domain="merge",
+                task_type=task_type,
+                event_type="task_started",
+                status="running",
+                progress=0,
+                asset_id=snapshot.get("asset_id"),
+                trace_id=snapshot.get("trace_id"),
+            )
             await session.commit()
 
-            video = await self._get_asset(session, task.video_id)
-            params = json.loads(task.params or "{}")
+            video = await self._get_asset(session, int(params["video_id"]))
 
-            if task.task_type == "audio_replace":
+            if task_type == "audio_replace":
                 audio = await self._get_asset(session, int(params["audio_id"]))
-                await self._execute_replace_audio(task.task_id, video.url, audio.url)
+                await self._execute_replace_audio(task_id, video.url, audio.url)
                 return
 
-            if task.task_type == "bgm":
+            if task_type == "bgm":
                 bgm = await self._get_asset(session, int(params["bgm_id"]))
                 await self._execute_add_bgm(
-                    task.task_id,
+                    task_id,
                     video.url,
                     bgm.url,
                     float(params.get("bgm_volume", 0.3)),
@@ -142,13 +174,13 @@ class MergeService:
                 )
                 return
 
-            if task.task_type == "mix":
+            if task_type == "mix":
                 audio_urls = []
                 for audio_id in params.get("audio_ids", []):
                     audio = await self._get_asset(session, int(audio_id))
                     audio_urls.append(audio.url)
                 await self._execute_mix_audio(
-                    task.task_id,
+                    task_id,
                     video.url,
                     audio_urls,
                     params.get("volumes"),
@@ -156,40 +188,48 @@ class MergeService:
                 return
 
             await self._update_task_status(
-                task.task_id,
+                task_id,
                 "failed",
-                error_message=f"unsupported merge task type: {task.task_type}",
+                error_message=f"unsupported merge task type: {task_type}",
             )
 
-    async def _create_task(
+    def _create_task(
         self,
         db: AsyncSession,
         *,
         task_type: str,
         video_id: int,
         params: dict,
-    ) -> MergeTask:
-        task = MergeTask(
-            task_id=f"merge_{uuid.uuid4().hex[:16]}",
+        user_id: int | None = None,
+    ) -> dict:
+        return task_event_service.create_task_sync(
+            db=db.sync_session,
+            user_id=user_id,
+            task_domain="merge",
             task_type=task_type,
-            video_id=video_id,
-            params=json.dumps(params),
+            asset_id=video_id,
             status="queued",
+            extra=params,
         )
-        db.add(task)
-        await db.commit()
-        return task
+
+    @staticmethod
+    def _normalize_status(status: str | None) -> str | None:
+        if status == "succeeded":
+            return "completed"
+        if status == "running":
+            return "processing"
+        return status
 
     def _dispatch_task(self, task_id: str, task_type: str) -> None:
         task_name = MERGE_TASK_NAMES[task_type]
         celery_app.send_task(task_name, args=[task_id], task_id=task_id)
 
-    async def _fetch_task(self, db: AsyncSession, task_id: str) -> MergeTask:
-        result = await db.execute(select(MergeTask).where(MergeTask.task_id == task_id))
-        task = result.scalar_one_or_none()
-        if not task:
-            raise ValueError(f"merge task not found: {task_id}")
-        return task
+    async def _get_task_params(self, db: AsyncSession, task_id: str) -> dict:
+        events = await task_event_service.get_task_events(db, task_id)
+        for event in events:
+            if event.event_type == "task_created":
+                return event.result or {}
+        raise ValueError(f"merge task params not found: {task_id}")
 
     async def _execute_replace_audio(self, task_id: str, video_path: str, audio_path: str) -> None:
         temp_files: list[str] = []
@@ -285,12 +325,27 @@ class MergeService:
         error_message: str | None = None,
     ) -> None:
         async with SessionLocal() as session:
-            task = await self._fetch_task(session, task_id)
-            task.status = status
-            if result is not None:
-                task.result = json.dumps(result)
-            if error_message is not None:
-                task.error_message = error_message
+            snapshot = await task_event_service.get_task_snapshot(session, task_id)
+            event_type = "task_progress"
+            normalized = status
+            if status == "completed":
+                event_type = "task_succeeded"
+                normalized = "succeeded"
+            elif status == "failed":
+                event_type = "task_failed"
+            task_event_service.emit_event_sync(
+                db=session.sync_session,
+                task_id=task_id,
+                task_domain="merge",
+                task_type=snapshot.get("task_type") or "unknown",
+                event_type=event_type,
+                status=normalized,
+                progress=100 if status in {"completed", "failed"} else None,
+                asset_id=snapshot.get("asset_id"),
+                trace_id=snapshot.get("trace_id"),
+                result=result,
+                error={"message": error_message} if error_message is not None else None,
+            )
             await session.commit()
 
     async def _get_asset(self, db: AsyncSession, asset_id: int) -> Asset:
@@ -345,18 +400,5 @@ class MergeService:
         ext = os.path.splitext(local_path)[1] or ".mp4"
         object_key = f"merge/{task_id}/{suffix}_{uuid.uuid4().hex[:8]}{ext}"
         return get_storage_client().upload_file(local_path, object_key)
-
-    def _task_to_dict(self, task: MergeTask) -> dict:
-        return {
-            "task_id": task.task_id,
-            "task_type": task.task_type,
-            "video_id": task.video_id,
-            "status": task.status,
-            "result": json.loads(task.result) if task.result else None,
-            "error_message": task.error_message,
-            "created_at": task.created_at.isoformat() if task.created_at else None,
-            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
-        }
-
 
 merge_service = MergeService()
