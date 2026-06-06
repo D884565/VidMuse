@@ -12,7 +12,6 @@ from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.store.database.sync_database import SessionLocal
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
-from backend.v1.app.models.generation_task import GenerationTask
 from backend.providers.tts import tts_service
 from backend.v1.app.generate.service.generateUtils.external_call_policy import ALLOW_DEGRADED_AUDIO
 from backend.v1.app.generate.service.stages.image_service import image_generation_service
@@ -23,6 +22,9 @@ from backend.ffmpeg import ffmpeg_tool
 from backend.v1.app.generate.service.stages.music_service import music_generation_service
 from backend.v1.app.generate.service.stages.bgm_selector import bgm_selector_service
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
+from backend.v1.app.generate.service.generateUtils.task_tracker import generation_task_tracker
+from backend.v1.app.generate.service.generateUtils.retry_coordinator import retry_coordinator
+from backend.v1.app.push.service.task_event_service import task_event_service
 from backend.v1.app.models.script import Script
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
 from backend.v1.app.generate.service.workflow.blocks import build_video_stage_blocks
@@ -108,19 +110,23 @@ def _reload_project_frames(db: Session, project_id: int) -> list[Frame]:
 
 
 def _dispatch_frame_video_tasks(db: Session, project_id: int, frames: list[Frame]) -> list[int]:
-    child_task_ids = []
+    child_task_ids: list[str] = []
     for frame in frames:
         task = generation_task_service.create_task_sync(db, project_id, "frame_video", status="queued")
         sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame.id, task.id])
-        task.celery_task_id = sent.id
-        db.commit()
+        generation_task_service.update_task_sync(
+            db,
+            task.id,
+            current_step="CELERY_DISPATCHED",
+            error_message=None,
+        )
         child_task_ids.append(task.id)
     return child_task_ids
 
 
 def _wait_for_frame_video_tasks(
     db: Session,
-    task_ids: list[int],
+    task_ids: list[str],
     *,
     timeout_seconds: int = FRAME_VIDEO_WAIT_TIMEOUT_SECONDS,
     poll_interval_seconds: float = FRAME_VIDEO_POLL_INTERVAL_SECONDS,
@@ -130,15 +136,17 @@ def _wait_for_frame_video_tasks(
 
     started_at = time.monotonic()
     while True:
-        db.expire_all()
-        tasks = list(db.execute(
-            select(GenerationTask).where(GenerationTask.id.in_(task_ids))
-        ).scalars())
-        statuses = {task.id: task.status for task in tasks}
-        failed = [task for task in tasks if task.status in {"failed", "cancelled"}]
+        statuses = {}
+        failed = []
+        for task_id in task_ids:
+            snapshot = task_event_service.get_task_snapshot_sync(db, task_id)
+            statuses[task_id] = snapshot.get("status")
+            if snapshot.get("status") in {"failed", "cancelled"}:
+                failed.append(snapshot)
         if failed:
             details = ", ".join(
-                f"{task.id}:{task.status}:{task.error_message or task.error_code or ''}" for task in failed
+                f"{task['task_id']}:{task.get('status')}:{task.get('error_message') or task.get('error_code') or ''}"
+                for task in failed
             )
             raise GenerationStageError(
                 stage="video",
@@ -306,6 +314,26 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
         if not frames:
             raise ValueError(f"项目 {project_id} 没有帧数据，请先生成剧本")
 
+        # 初始化帧进度追踪
+        tracker_task_id = str(task_id) if task_id else generation_task_tracker.create_task(db, project_id, "image")
+        all_frame_ids = [f.id for f in frames]
+        generation_task_tracker.init_frame_progress(db, tracker_task_id, project_id, all_frame_ids, "image")
+        db.commit()
+
+        # 过滤出需要生成的帧（跳过已完成的）
+        frames_to_generate = [f for f in frames if not (f.status == 2 and f.image_url)]
+        skipped_frame_ids = [f.id for f in frames if f.status == 2 and f.image_url]
+        for fid in skipped_frame_ids:
+            generation_task_tracker.update_frame_status(db, tracker_task_id, fid, "image", "succeeded")
+        if skipped_frame_ids:
+            logger.info(f"[image tracker] skipped {len(skipped_frame_ids)} already-completed frames")
+            db.commit()
+
+        # 标记待生成帧为 running
+        for f in frames_to_generate:
+            generation_task_tracker.update_frame_status(db, tracker_task_id, f.id, "image", "running")
+        db.commit()
+
         reference_images = extract_reference_images(project)
         step = generation_task_service.start_step_sync(db, task_id, "IMAGE_GENERATING", progress=10) if task_id else None
         frames = image_generation_service.generate_frame_images(
@@ -313,16 +341,36 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
             project_id,
             reference_images=reference_images,
         )
+
+        # 更新每帧状态到追踪器
+        for frame in frames:
+            if frame.id in skipped_frame_ids:
+                continue
+            if frame.status == 2:
+                generation_task_tracker.update_frame_status(
+                    db, tracker_task_id, frame.id, "image", "succeeded",
+                    result_url=frame.image_url,
+                )
+            elif frame.status == 3:
+                generation_task_tracker.update_frame_status(
+                    db, tracker_task_id, frame.id, "image", "failed",
+                    error_message=frame.error_message,
+                )
         db.commit()
+
+        # 检查帧汇总
+        summary = generation_task_tracker.get_frame_summary(db, tracker_task_id, "image")
         failed = [frame.id for frame in frames if frame.status == 3]
-        if failed:
+        if summary["failed"] > 0:
+            generation_task_tracker.fail_task(db, tracker_task_id, "IMAGE_GENERATION_FAILED",
+                f"failed frame ids: {failed}")
             generation_task_service.finish_step_sync(
                 db,
                 step,
                 status="failed",
                 progress=100,
                 output_snapshot={"failed_frame_ids": failed},
-                error_message="閮ㄥ垎鍒嗛暅鍥剧墖鐢熸垚澶辫触",
+                error_message="部分分镜图片生成失败",
             ) if task_id else None
             generation_task_service.update_task_sync(
                 db,
@@ -334,6 +382,8 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
                 error_message=f"failed frame ids: {failed}",
             ) if task_id else None
             raise RuntimeError(f"IMAGE_GENERATION_FAILED: failed frame ids {failed}")
+
+        generation_task_tracker.complete_task(db, tracker_task_id)
 
         project_workflow_state.mark_project_stage_review(project, "image", task_id)
         message = build_image_stage_message(frames, task_id)
@@ -590,7 +640,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         generation_task_service.finish_step_sync(db, step, progress=95, output_snapshot={"video_url": video_url}) if task_id else None
         logger.info(f"[视频] 完成: {video_object}")
 
-        # ---- Step 6: 鏇存柊项目鐘舵€?----
+        # ---- Step 6: 储存最终项目状态----
         project.video_output_url = video_url
         for frame in frames:
             frame.dirty = 0
