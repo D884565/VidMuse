@@ -14,11 +14,16 @@ class PromptManager:
     SLICE_UNDERSTANDING = "slice_understanding"
     VIDEO_OVERALL_UNDERSTANDING = "video_overall_understanding"
     PRODUCT_UNDERSTANDING = "product_understanding"
+    EXTRACT_COMMON_FEATURES = "extract_video_common_features"
+    EXTRACT_COMMON_FACTORS = "extract_common_factors"
+    GENERATE_STRATEGY = "generate_strategy"
 
     # 模板类型常量
     TEMPLATE_SLICE = "slice"
     TEMPLATE_VIDEO = "video"
     TEMPLATE_PRODUCT = "product"
+    TEMPLATE_FACTOR = "factor"
+    TEMPLATE_STRATEGY = "strategy"
 
     # 输出结构字段常量（与JSON模板结构对应）
     FIELD_SLICE_TEMPLATE = "片段模板"
@@ -130,6 +135,41 @@ class PromptManager:
     def get_product_template(self) -> Dict[str, Any]:
         """获取商品校验模板（快捷方法）"""
         return self.get_template(self.TEMPLATE_PRODUCT)
+
+    def get_common_features_extraction_prompt(self, report_count: int, reports: str) -> str:
+        """获取视频共性特征提取提示词"""
+        return self.get_prompt(
+            self.EXTRACT_COMMON_FEATURES,
+            report_count=report_count,
+            reports=reports
+        )
+
+    def get_common_factors_extraction_prompt(self, report_count: int, reports: str, common_features: str) -> str:
+        """获取共性因子提取提示词"""
+        return self.get_prompt(
+            self.EXTRACT_COMMON_FACTORS,
+            report_count=report_count,
+            reports=reports,
+            common_features=common_features
+        )
+
+    def get_strategy_generation_prompt(self, report_count: int, factor_count: int, reports: str, factors: str) -> str:
+        """获取策略生成提示词"""
+        return self.get_prompt(
+            self.GENERATE_STRATEGY,
+            report_count=report_count,
+            factor_count=factor_count,
+            reports=reports,
+            factors=factors
+        )
+
+    def get_factor_template(self) -> Dict[str, Any]:
+        """获取因子校验模板（快捷方法）"""
+        return self.get_template(self.TEMPLATE_FACTOR)
+
+    def get_strategy_template(self) -> Dict[str, Any]:
+        """获取策略校验模板（快捷方法）"""
+        return self.get_template(self.TEMPLATE_STRATEGY)
 
 
 # 全局实例

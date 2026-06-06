@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "name",
+    "description",
+    "applicable_scenarios",
+    "core_logic",
+    "required_factor_types",
+    "optional_factor_types",
+    "combination_rules",
+    "tags"
+  ],
+  "properties": {
+    "strategy_id": {
+      "type": "string",
+      "description": "可选的策略ID，如果提供则使用，否则自动生成"
+    },
+    "name": {
+      "type": "string",
+      "maxLength": 20,
+      "description": "策略名称"
+    },
+    "description": {
+      "type": "string",
+      "description": "详细描述策略的核心思想和适用场景"
+    },
+    "applicable_scenarios": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "适用场景列表"
+    },
+    "core_logic": {
+      "type": "string",
+      "description": "核心创作逻辑描述，用箭头表示步骤顺序"
+    },
+    "required_factor_types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "必填因子类型列表"
+    },
+    "optional_factor_types": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "可选因子类型列表"
+    },
+    "combination_rules": {
+      "type": "string",
+      "description": "因子组合规则描述"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "description": "标签列表，便于检索"
+    }
+  },
+  "description": "创作策略定义"
+}

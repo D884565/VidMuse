@@ -43,22 +43,37 @@ app.add_middleware(TraceMiddleware)
 # 注册全局异常处理器
 register_exception_handlers(app)
 
+
 # 注册业务路由
 app.include_router(generation_router)
+
 app.include_router(user_router, prefix="/v1")
+
+
 app.include_router(product_router, prefix="/v1")
+
 app.include_router(product_category_router, prefix="/v1")
+
 app.include_router(asset_router, prefix="/v1")
+
 app.include_router(slice_router, prefix="/v1")
+
 app.include_router(agent_trace_router, prefix="/v1")  # 后台观测系统接口
+
 app.include_router(video_router, prefix="/v1")
+
 app.include_router(merge_router, prefix="/v1")
+
 app.include_router(video_library_router, prefix="/v1")
+
 app.include_router(trace_management_router, prefix="/v1")  # 后台链路追踪管理接口
+
 app.include_router(inspiration_template_router, prefix="/v1")  # 后台灵感模板管理接口
+
 # 注册推送模块路由
 app.include_router(ws_router, prefix="/v1")
 app.include_router(message_router, prefix="/v1")
+
 
 
 @app.get("/", response_model=Response)

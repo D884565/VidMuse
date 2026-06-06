@@ -44,6 +44,9 @@ class Asset(Base):
     # 关系：资产拥有多个切片
     slices = relationship("Slice", back_populates="asset", cascade="all, delete-orphan")
 
+    # 关系：资产关联的商品（多对多）
+    products = relationship("Product", secondary="product_assets", back_populates="assets")
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {

@@ -27,8 +27,10 @@ class ProductCreateRequest(BaseModel):
     platform_id: Optional[str] = Field(None, max_length=100, description="平台商品ID")
     specs: Optional[Dict[str, Any]] = Field(None, description="规格参数，如{'容量': '60ml', '产地': '日本'}")
     tags: Optional[List[str]] = Field(None, description="标签列表，如['防晒', '夏季必备']")
-    images: Optional[List[str]] = Field(None, description="商品图片URL列表")
+    images: Optional[List[str]] = Field(None, description="商品图片URL列表（兼容旧版，推荐使用asset_ids关联已上传资产）")
     auto_parse: bool = Field(False, description="是否创建后自动触发解析")
+    asset_ids: Optional[List[int]] = Field(None, description="关联的资产ID列表，可关联已上传的图片/视频/音频等")
+    asset_roles: Optional[Dict[int, str]] = Field(None, description="资产角色映射，key为asset_id，value为角色（main/image/video/audio）")
 
 
 class ProductUpdateRequest(BaseModel):
@@ -72,7 +74,7 @@ def _parse_json_field(value, default=None):
     return value
 
 
-def product_to_dict(product, include_category_info: bool = False) -> dict:
+def product_to_dict(product, include_category_info: bool = False, include_assets: bool = True) -> dict:
     """将 Product ORM 对象转换为字典
 
     负责将数据库中的 JSON 字符串字段反序列化为 Python 对象，
@@ -80,6 +82,7 @@ def product_to_dict(product, include_category_info: bool = False) -> dict:
 
     :param product: Product ORM 对象
     :param include_category_info: 是否包含完整的分类信息
+    :param include_assets: 是否包含关联的资产信息
     :return: 商品信息字典，可直接作为 API 响应
     """
     result = {
@@ -122,6 +125,14 @@ def product_to_dict(product, include_category_info: bool = False) -> dict:
             created_at=product.category_obj.created_at.isoformat() if product.category_obj.created_at else "",
             updated_at=product.category_obj.updated_at.isoformat() if product.category_obj.updated_at else ""
         ).model_dump() if hasattr(product, 'category_obj') and product.category_obj else None
+
+    # 如果需要包含关联资产信息
+    if include_assets and hasattr(product, 'assets') and product.assets:
+        result["assets"] = []
+        for asset in product.assets:
+            # 获取资产角色（需要从中间表获取，这里简化处理，后续优化）
+            asset_dict = asset.to_dict()
+            result["assets"].append(asset_dict)
 
     return result
 

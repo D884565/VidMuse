@@ -103,8 +103,14 @@ class TemplateAssembler(BaseProcessor):
             "factors": {}
         }
 
-        # 按核心逻辑顺序排列因子
-        logic_steps = [step.strip() for step in strategy.core_logic.split("→")]
+        # 按核心逻辑顺序排列因子，支持多种分隔符
+        import re
+        # 支持的分隔符：→, ->, =>, 换行, 分号, 顿号
+        logic_steps = [
+            step.strip()
+            for step in re.split(r'→|->|=>|\n|;|、', strategy.core_logic)
+            if step.strip()  # 过滤空步骤
+        ]
 
         # 所有可用因子（必填 + 可选）
         all_factors = required_factors + optional_factors

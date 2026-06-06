@@ -8,7 +8,9 @@ from jsonschema import Draft7Validator
 TEMPLATE_TYPE_MAP = {
     "video": "video_valid.json",
     "slice": "slice_valid.json",
-    "product": "product_valid.json"
+    "product": "product_valid.json",
+    "factor": "factor_schema.json",
+    "strategy": "strategy_schema.json"
 }
 
 # 模板文件根目录（相对于当前文件的路径）
@@ -27,7 +29,10 @@ _general_json_cache: Dict[str, Any] = {}
 PROMPT_TYPE_MAP = {
     "slice_understanding": "slice_understanding.txt",
     "video_overall_understanding": "video_overall_understanding.txt",
-    "product_understanding": "product_understanding.txt"
+    "product_understanding": "product_understanding.txt",
+    "extract_common_factors": "extract_common_factors.txt",
+    "generate_strategy": "generate_strategy.txt",
+    "extract_video_common_features": "extract_video_common_features.txt"
 }
 # 提示词缓存
 _prompt_cache: Dict[str, Dict[str, Any]] = {}

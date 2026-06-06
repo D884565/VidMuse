@@ -3,6 +3,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 
 from backend.v1.app.product.dao.product_category_dao import ProductCategoryDAO
+from backend.v1.app.product.dao.product_dao import ProductDAO
 from backend.v1.app.product.dao.schema import CategoryTree, CategoryCreateRequest, CategoryInfo, CategoryUpdateRequest
 
 
@@ -201,8 +202,9 @@ class ProductCategoryService:
             raise ValueError("该分类下有子分类，请先删除子分类")
 
         # 检查是否有商品关联该分类
-        # 这里简单判断，实际应该查询是否有商品关联该分类
-        # TODO: 实现查询商品是否关联该分类的逻辑
+        total, _ = ProductDAO.list_products(db, category3=category_id, page_size=1)
+        if total > 0:
+            raise ValueError("该分类下有关联商品，请先删除关联商品后再删除分类")
 
         return ProductCategoryDAO.delete_category(db, category_id)
 

@@ -6,6 +6,7 @@ from .base import PipelineContext, BaseProcessor, BasePipeline
 # 导出流水线
 from .pipelines import (
     VideoParsingPipeline,
+    VideoParsingABPipeline,
     ProductParsingPipeline,
     VideoOverallParsingPipeline,
     AudioParsingPipeline
@@ -23,6 +24,7 @@ __all__ = [
 
     # 流水线
     "VideoParsingPipeline",
+    "VideoParsingABPipeline",
     "ProductParsingPipeline",
     "VideoOverallParsingPipeline",
     "AudioParsingPipeline",
