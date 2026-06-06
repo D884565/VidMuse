@@ -44,6 +44,9 @@ async function doRefresh() {
 // 响应拦截器：解包响应信封，处理 401 自动刷新
 api.interceptors.response.use(
   (response) => {
+    if (response.config?.responseType === 'blob') {
+      return response
+    }
     const { code, message, data } = response.data
     // 业务状态码非 "0000000" 视为失败
     if (code !== '0000000') {

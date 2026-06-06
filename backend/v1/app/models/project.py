@@ -35,6 +35,7 @@ class Project(Base):
     voice_type: Mapped[str] = mapped_column(
         String(50), nullable=False, default="zh_female_cancan_mars_bigtts", comment="音色类型"
     )
+    summary: Mapped[str | None] = mapped_column(String(200), nullable=True, comment="对话摘要，用于侧边栏展示")
 
     # 工作流状态字段
     workflow_stage: Mapped[str] = mapped_column(String(30), nullable=False, default="created", server_default="created", comment="当前工作流阶段: created/script/image/video/completed")

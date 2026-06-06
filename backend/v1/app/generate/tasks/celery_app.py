@@ -7,7 +7,7 @@ celery_app = Celery(
     broker=settings.celery_broker,
     backend=settings.celery_backend,
     include=[
-        "backend.v1.app.generate.temp.video_tasks",
+        "backend.v1.app.generate.tasks.video_tasks",
         "backend.v1.app.merge.service.merge_tasks",
     ],
 )

@@ -153,6 +153,20 @@ def test_mark_project_completed_syncs_legacy_status():
     assert project.last_task_id == 99
 
 
+def test_video_task_completion_should_leave_video_ready_for_review_before_final_confirmation():
+    project = Project()
+    project.workflow_stage = "video"
+    project.stage_status = "running"
+    project.status = "render_queued"
+
+    mark_project_stage_review(project, "video", task_id=99)
+
+    assert project.workflow_stage == "video"
+    assert project.stage_status == "awaiting_review"
+    assert project.status == "review_required"
+    assert project.last_task_id == 99
+
+
 def test_confirm_stage_rejects_dirty_current_stage():
     project = Project()
     project.workflow_stage = "image"

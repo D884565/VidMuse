@@ -31,8 +31,20 @@ class ScriptGenerationService:
     """剧本生成服务（接入火山引擎 LLM）"""
 
     def __init__(self, rag_service=None):
-        self.llm = VolcanoLLM(key=None, model_name=None)
-        self.rag_service = rag_service  # TODO: RAG 后续单独集成
+        self._llm = None
+        if rag_service is not None:
+            self.rag_service = rag_service
+        else:
+            from backend.v1.app.search.rag_service_adapter import RAGServiceAdapter
+            self.rag_service = RAGServiceAdapter()
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            if VolcanoLLM is None:
+                raise RuntimeError("VolcanoLLM 不可用，请安装 openai 依赖")
+            self._llm = VolcanoLLM(key=None, model_name=None)
+        return self._llm
 
     async def generate_script(
         self,
@@ -128,7 +140,7 @@ class ScriptGenerationService:
                 image_prompt=image_prompt,
                 video_prompt=video_prompt,
                 text_overlay=subtitle_text,
-                duration=scene.get("duration", 3),
+                duration=max(1, scene.get("duration", 5)),
                 transition_type=0,
                 status=0,  # 待生成
                 dirty=0,
@@ -210,7 +222,11 @@ class ScriptGenerationService:
         return 10
 
     async def _retrieve_references(self, project: Project, rag_weight: float) -> str:
-        """并行三路 RAG 检索，返回格式化的参考文本"""
+        """并行三路 RAG 检索，返回格式化的参考文本。
+        同时将 RAG 检索到的图片 URL 存入 self.rag_image_urls 供下游图片生成使用。
+        """
+        self.rag_image_urls: list[str] = []
+
         if not self.rag_service:
             return ""
         top_k = self._rag_top_k(rag_weight)
@@ -219,12 +235,12 @@ class ScriptGenerationService:
             return ""
 
         query = project.user_prompt or project.title or ""
-        image_url = (project.reference_images or [None])[0] if project.reference_images else None
+        ref_images = project.reference_images or []
 
         try:
             scripts, assets, knowledge = await asyncio.gather(
                 self.rag_service.search_scripts(query, top_k=top_k),
-                self.rag_service.search_assets(query, image_url=image_url, top_k=top_k),
+                self.rag_service.search_assets(query, top_k=top_k, image_urls=ref_images),
                 self.rag_service.search_product_knowledge(query, top_k=top_k),
                 return_exceptions=True,
             )
@@ -239,6 +255,10 @@ class ScriptGenerationService:
 
             if isinstance(assets, list) and assets:
                 sections.append(self._format_rag_section("参考视觉素材", assets, rag_detail))
+                # 收集图片知识库中的图片 URL，供图片生成阶段使用
+                for doc in assets:
+                    if doc.url:
+                        self.rag_image_urls.append(doc.url)
             elif isinstance(assets, Exception):
                 logger.warning(f"[RAG] 素材检索异常: {assets}")
 
@@ -246,6 +266,9 @@ class ScriptGenerationService:
                 sections.append(self._format_rag_section("商品知识参考", knowledge, rag_detail))
             elif isinstance(knowledge, Exception):
                 logger.warning(f"[RAG] 商品知识检索异常: {knowledge}")
+
+            if self.rag_image_urls:
+                logger.info(f"[RAG] 从图片知识库检索到 {len(self.rag_image_urls)} 张参考图")
 
             if not sections:
                 return ""
@@ -266,7 +289,16 @@ class ScriptGenerationService:
                 content = r.content[:200] + "..." if len(r.content) > 200 else r.content
             else:
                 content = r.content
-            lines.append(f"{i}. {content}")
+            line = f"{i}. {content}"
+            # 附带来源信息（标题、URL、图片URL等）
+            meta_parts = []
+            if r.title:
+                meta_parts.append(f"标题: {r.title}")
+            if r.url:
+                meta_parts.append(f"参考图: {r.url}")
+            if meta_parts:
+                line += f" [{'，'.join(meta_parts)}]"
+            lines.append(line)
         return "\n".join(lines)
 
     # ========== Prompt 组装 ==========
@@ -482,9 +514,10 @@ class ScriptGenerationService:
         ]
 
         for i, (scene_type, voice, img_prompt, vid_prompt, overlay) in enumerate(scene_configs):
-            duration = min(8, target_duration - total_sec)
-            if duration <= 2:
+            remaining = target_duration - total_sec
+            if remaining < 4:
                 break
+            duration = min(8, remaining)
             scenes.append({
                 "scene_id": i + 1,
                 "type": scene_type,

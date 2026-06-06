@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.framework.exceptions.exceptions import BusinessException
 from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, PARAM_ERROR
 from backend.v1.app.generate.dao.project_dao import ProjectDAO
+from backend.v1.app.generate.service.chat.entry_intent import classify_no_project_message
 
 
 class ProjectService:
@@ -40,13 +41,19 @@ class ProjectService:
             db=db, user_id=user_id, status=db_status, keyword=keyword, page=page, page_size=page_size
         )
 
+        visible_projects = [
+            (p, frame_count)
+            for p, frame_count in projects
+            if not _is_noise_created_project(p, frame_count=frame_count)
+        ]
+
         return {
-            "list": [_project_to_dict(p, frame_count=frame_count) for p, frame_count in projects],
+            "list": [_project_to_dict(p, frame_count=frame_count) for p, frame_count in visible_projects],
             "pagination": {
                 "page": page,
                 "page_size": page_size,
-                "total": total,
-                "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
+                "total": len(visible_projects),
+                "total_pages": (len(visible_projects) + page_size - 1) // page_size if visible_projects else 0,
             },
         }
 
@@ -122,6 +129,36 @@ def _derive_status_int(project) -> int:
     return 0
 
 
+def _derive_status_name(project, status_int: int) -> str:
+    """Return a sidebar-friendly label that preserves the active workflow stage."""
+    stage = getattr(project, "workflow_stage", None) or "created"
+    stage_status = getattr(project, "stage_status", None) or "idle"
+
+    if stage == "completed":
+        return "已完成"
+    if stage_status == "failed":
+        return "失败"
+    if stage_status == "running":
+        return {
+            "script": "剧本生成中",
+            "image": "图片生成中",
+            "video": "视频生成中",
+        }.get(stage, "生成中")
+    if stage_status == "awaiting_review":
+        return {
+            "script": "剧本就绪",
+            "image": "图片待确认",
+            "video": "视频待确认",
+        }.get(stage, "待确认")
+    if stage_status == "confirmed":
+        return {
+            "script": "剧本已确认",
+            "image": "图片已确认",
+            "video": "视频已确认",
+        }.get(stage, "已确认")
+    return _STATUS_NAME.get(status_int, "未知")
+
+
 def _project_to_dict(project, frame_count: int | None = None) -> dict:
     status_int = _derive_status_int(project)
     safe_frame_count = 0 if frame_count is None else frame_count
@@ -129,16 +166,50 @@ def _project_to_dict(project, frame_count: int | None = None) -> dict:
         "id": project.id,
         "title": project.title,
         "description": project.description,
+        "summary": getattr(project, "summary", None),
         "product_url": project.product_url,
         "video_output_url": project.video_output_url,
         "audio_url": project.audio_url,
         "user_id": project.user_id,
         "status_key": project.status,
         "status": status_int,
-        "status_name": _STATUS_NAME.get(status_int, "未知"),
+        "status_name": _derive_status_name(project, status_int),
         "workflow_stage": getattr(project, "workflow_stage", None),
         "stage_status": getattr(project, "stage_status", None),
         "frame_count": safe_frame_count,
         "created_at": project.created_at.isoformat() if project.created_at else None,
         "updated_at": project.updated_at.isoformat() if project.updated_at else None,
     }
+
+
+def _is_noise_created_project(project, frame_count: int | None = None) -> bool:
+    """Hide legacy projects that were accidentally created from ordinary chat."""
+    stage = getattr(project, "workflow_stage", None) or "created"
+    stage_status = getattr(project, "stage_status", None) or "idle"
+    safe_frame_count = 0 if frame_count is None else frame_count
+
+    if stage != "created" or stage_status != "idle":
+        return False
+    if safe_frame_count > 0:
+        return False
+    if getattr(project, "product_url", None) or getattr(project, "video_output_url", None):
+        return False
+    title = getattr(project, "title", None)
+    if isinstance(title, str) and any(word in title for word in ("视频", "短视频", "带货")):
+        return False
+
+    text = " ".join(
+        part.strip()
+        for part in (
+            getattr(project, "user_prompt", None),
+            getattr(project, "title", None),
+            getattr(project, "description", None),
+            getattr(project, "summary", None),
+        )
+        if isinstance(part, str) and part.strip()
+    )
+    if not text:
+        return False
+
+    intent = classify_no_project_message(text)
+    return not intent.get("should_create_project", False)

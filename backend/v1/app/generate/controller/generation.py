@@ -3,6 +3,7 @@ import json
 import logging
 
 from typing import Optional
+from urllib.parse import quote
 
 from fastapi import APIRouter, Body, Depends, Path, Query
 from fastapi.responses import StreamingResponse
@@ -15,6 +16,9 @@ from backend.v1.app.generate.service.generateUtils.project import ProjectService
 from backend.v1.app.generate.service.stages.script import script_generation_service
 from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
 from backend.v1.app.generate.service.chat.chat_service import chat_service
+from backend.v1.app.generate.service.chat.entry_intent import classify_no_project_message
+from backend.v1.app.generate.service.chat.project_title import build_video_project_title
+from backend.v1.app.generate.service.workflow.llm_agent import llm_agent_service
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
 from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
 from backend.v1.app.generate.service.chat.initial_message import project_initial_message_builder
@@ -68,8 +72,20 @@ async def create_project(
         except Exception as e:
             logger.warning(f"[项目创建] 商品抓取失败，继续创建项目: {e}")
 
+    # 自动生成标题：项目内使用简洁产品标题，避免侧栏展示整句用户原话。
+    title = project.title
+    if not title:
+        title = build_video_project_title(project.user_prompt)
+
+    # 自动生成摘要：取 user_prompt 前100个字符
+    summary = None
+    if project.user_prompt:
+        summary = project.user_prompt[:100].strip()
+    elif title:
+        summary = title[:100].strip()
+
     p = Project(
-        title=project.title,
+        title=title,
         description=project.description,
         product_url=project.product_url,
         product_info=product_info_str,
@@ -83,6 +99,7 @@ async def create_project(
         rag_weight=project.rag_weight,
         target_duration=project.target_duration,
         voice_type=project.voice_type,
+        summary=summary,
     )
     db.add(p)
     await db.commit()
@@ -94,6 +111,20 @@ async def create_project(
             product_info_data = json.loads(product_info_str)
         except (json.JSONDecodeError, TypeError):
             product_info_data = None
+
+    # 存储系统介绍消息（assistant 角色）
+    system_intro = project_initial_message_builder.build_system_intro()
+    db.add(Conversation(
+        project_id=p.id,
+        role=system_intro["role"],
+        content=system_intro["content"],
+        message_type=system_intro["message_type"],
+        stage=system_intro["stage"],
+        blocks=system_intro["blocks"],
+        metadata_=system_intro["metadata"],
+    ))
+
+    # 存储用户初始消息（user 角色）
     initial_message = project_initial_message_builder.build(
         title=p.title,
         user_prompt=p.user_prompt,
@@ -372,7 +403,12 @@ async def export_project_video(
     return StreamingResponse(
         stream.iter_bytes(),
         media_type=stream.media_type,
-        headers={"Content-Disposition": f'attachment; filename="{stream.filename}"'},
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="project_{project_id}.mp4"; '
+                f"filename*=UTF-8''{quote(stream.filename)}"
+            )
+        },
     )
 
 
@@ -547,6 +583,118 @@ async def chat_refinement(
         if not content:
             raise BusinessException(VIDEO_ERROR, "content 不能为空")
         result = await chat_service.handle_message(db, project_id, content, frame_id)
+        return Response.success(data=result)
+    except ValueError as e:
+        raise BusinessException(VIDEO_ERROR, str(e))
+
+
+@router.post("/projects/{project_id}/chat/stream")
+async def chat_stream(
+    req: dict = Body(...),
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """流式对话端点：SSE 逐事件返回结果。"""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    content = req.get("content", "")
+    frame_id = req.get("frame_id")
+    if not content:
+        raise BusinessException(VIDEO_ERROR, "content 不能为空")
+
+    async def stream_events():
+        try:
+            async for event in chat_service.handle_message_stream(db, project_id, content, frame_id):
+                yield event
+        except Exception as exc:
+            logger.exception("[chat_stream] stream failed project_id=%s", project_id)
+            payload = json.dumps({"message": str(exc)}, ensure_ascii=False)
+            yield f"event: error\ndata: {payload}\n\n"
+
+    return StreamingResponse(
+        stream_events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/chat/entry/stream")
+async def chat_entry_stream(
+    req: dict = Body(...),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    """Classify and answer messages before a project exists."""
+    content = (req.get("content") or "").strip()
+    if not content:
+        raise BusinessException(VIDEO_ERROR, "content 不能为空")
+
+    def sse(event: str, data: dict) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+    async def stream_events():
+        intent = classify_no_project_message(content)
+        yield sse("start", {"action": intent["action"], "should_create_project": intent["should_create_project"]})
+        if intent["should_create_project"]:
+            yield sse("done", {
+                "action": "CREATE_PROJECT",
+                "should_create_project": True,
+                "user_prompt": content,
+            })
+            return
+
+        try:
+            for chunk in llm_agent_service.stream_entry_converse(content):
+                yield sse("token", {"content": chunk})
+        except Exception as exc:
+            logger.warning("[chat_entry_stream] LLM converse fallback: %s", exc)
+            reply = "我先按普通问题回答，不会创建项目。你可以继续提问；如果想开始做视频，请直接告诉我产品和目标。"
+            for char in reply:
+                yield sse("token", {"content": char})
+        yield sse("done", {
+            "action": "CONVERSE",
+            "should_create_project": False,
+        })
+
+    return StreamingResponse(
+        stream_events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/projects/{project_id}/pending-actions/{pending_action_id}/confirm", response_model=Response)
+async def confirm_pending_action(
+    project_id: int = Path(..., gt=0),
+    pending_action_id: str = Path(..., min_length=1),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Confirm and execute a previously persisted chat pending action."""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "No permission to operate this project")
+    try:
+        result = await chat_service.confirm_pending_action(db, project_id, pending_action_id)
+        return Response.success(data=result)
+    except ValueError as e:
+        raise BusinessException(VIDEO_ERROR, str(e))
+
+
+@router.post("/projects/{project_id}/pending-actions/{pending_action_id}/cancel", response_model=Response)
+async def cancel_pending_action(
+    project_id: int = Path(..., gt=0),
+    pending_action_id: str = Path(..., min_length=1),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """Cancel a previously persisted chat pending action."""
+    project = await ProjectService.get_project(db, project_id)
+    if project.get("user_id") != current_user_id:
+        raise BusinessException(UNAUTHORIZED, "No permission to operate this project")
+    try:
+        result = await chat_service.cancel_pending_action(db, project_id, pending_action_id)
         return Response.success(data=result)
     except ValueError as e:
         raise BusinessException(VIDEO_ERROR, str(e))

@@ -787,7 +787,7 @@ class FFmpegVideoTool:
         cmd = [
             self.ffmpeg, "-y",
             "-i", video_path,
-            "-i", bgm_path,
+            "-stream_loop", "-1", "-i", bgm_path,  # 循环 BGM 直到视频结束
             "-filter_complex",
             f"[0:a]volume={original_volume}[a0];[1:a]volume={bgm_volume}[a1];[a0][a1]amix=inputs=2:duration=first[out]",
             "-map", "0:v:0",
@@ -983,7 +983,8 @@ class FFmpegVideoTool:
                 [self.ffmpeg, "-y",
                  "-f", "concat", "-safe", "0",
                  "-i", concat_file,
-                 "-c", "copy",
+                 "-c:a", "aac",
+                 "-b:a", "192k",
                  output_path],
                 timeout=60,
             )
@@ -992,6 +993,36 @@ class FFmpegVideoTool:
                 os.remove(concat_file)
             except OSError:
                 pass
+        self._track_file(output_path)
+        return output_path
+
+    def append_tail_silence(
+        self,
+        input_path: str,
+        tail_seconds: float,
+        output_path: Optional[str] = None,
+    ) -> str:
+        """在音频末尾追加一小段静音，避免句尾贴边。"""
+        safe_tail_seconds = max(0.0, float(tail_seconds or 0.0))
+        if safe_tail_seconds <= 0:
+            return input_path
+
+        output_path = output_path or self._generate_temp_path(suffix=".mp3", prefix="tailpad")
+        cmd = [
+            self.ffmpeg, "-y",
+            "-i", input_path,
+            "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo",
+            "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[aout]",
+            "-map", "[aout]",
+            "-t", str(self.get_audio_duration(input_path) + safe_tail_seconds),
+            "-c:a", "mp3",
+            "-q:a", "2",
+            output_path,
+        ]
+        try:
+            self._run_checked(cmd, timeout=60)
+        except RuntimeError as e:
+            raise RuntimeError(f"音频尾部补静音失败: {e}")
         self._track_file(output_path)
         return output_path
 

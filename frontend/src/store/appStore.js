@@ -4,6 +4,7 @@ export const useAppStore = create((set) => ({
   activeView: 'chat',
   sidebarCollapsed: false,
   activeProjectId: null,
+  draftConversationTitle: '',
   projectListVersion: 0,
   isLoggedIn: !!localStorage.getItem('token'),
   authLoading: !!localStorage.getItem('token'),
@@ -19,6 +20,8 @@ export const useAppStore = create((set) => ({
   toggleSidebar: () =>
     set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
   setActiveProjectId: (activeProjectId) => set({ activeProjectId }),
+  setDraftConversationTitle: (draftConversationTitle) => set({ draftConversationTitle }),
+  clearDraftConversation: () => set({ draftConversationTitle: '' }),
   bumpProjectListVersion: () => set((state) => ({ projectListVersion: state.projectListVersion + 1 })),
   setUser: (user) => set({ user }),
   setAuthLoading: (authLoading) => set({ authLoading }),
@@ -38,7 +41,7 @@ export const useAppStore = create((set) => ({
   logout: () => {
     localStorage.removeItem('token')
     localStorage.removeItem('refresh_token')
-    set({ isLoggedIn: false, user: null, authLoading: false })
+    set({ isLoggedIn: false, user: null, authLoading: false, draftConversationTitle: '', activeProjectId: null })
   },
   updateParameters: (patch) =>
     set((state) => ({ parameters: { ...state.parameters, ...patch } })),

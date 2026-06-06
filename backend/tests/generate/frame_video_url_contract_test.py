@@ -18,6 +18,6 @@ def test_frame_video_task_writes_video_url_not_audio_url():
 
 
 def test_project_detail_exposes_frame_video_url():
-    source = Path("backend/v1/app/generate/service/video_generation.py").read_text(encoding="utf-8")
+    source = Path("backend/v1/app/generate/service/stages/video_workflow.py").read_text(encoding="utf-8")
 
     assert '"video_url": f.video_url' in source

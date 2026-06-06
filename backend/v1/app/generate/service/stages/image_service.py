@@ -15,6 +15,7 @@ from backend.v1.app.generate.service.generateUtils.reference_image_utils import 
     MAX_REFERENCE_IMAGES,
     select_reference_images,
 )
+from backend.v1.app.generate.service.workflow.media_resolvers import resolve_image_generation_prompt
 from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)
@@ -150,7 +151,7 @@ class ImageGenerationService:
     ) -> None:
         """生成单帧图片并回填状态。成功写入 frame.status=2，失败写入 frame.status=3。"""
         try:
-            prompt = frame.description or ""
+            prompt = resolve_image_generation_prompt(frame)
             if reference_images:
                 prompt = self._build_reference_image_prompt(prompt)
                 image_path = self._call_image_to_image(prompt, reference_images)

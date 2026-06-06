@@ -1,6 +1,5 @@
 import api from './api'
 
-// 创建新项目
 export async function createProject(data) {
   return api.post('/v1/projects', data)
 }
@@ -33,31 +32,18 @@ export async function getGenerationTaskSteps(taskId) {
   return api.get(`/v1/tasks/${taskId}/steps`)
 }
 
-// 获取项目详情（轮询用）
 export async function getProjectDetail(projectId) {
   return api.get(`/generate/v1/projects/${projectId}`)
 }
 
-/**
- * 获取项目列表
- * @param {Object} params - 查询参数
- * @param {number} [params.status] - 状态筛选 (0=待生成, 1=生成中, 2=已完成, 3=失败)
- * @param {string} [params.keyword] - 关键词搜索
- * @param {string} [params.start_date] - 开始日期 YYYY-MM-DD
- * @param {string} [params.end_date] - 结束日期 YYYY-MM-DD
- * @param {number} [params.page] - 页码
- * @param {number} [params.page_size] - 每页数量
- */
 export async function getProjects(params = {}) {
   return api.get('/generate/v1/projects', { params })
 }
 
-// 更新项目
 export async function updateProject(projectId, data) {
   return api.put(`/generate/v1/projects/${projectId}`, data)
 }
 
-// 删除项目
 export async function deleteProject(projectId) {
   return api.delete(`/generate/v1/projects/${projectId}`)
 }
@@ -66,18 +52,31 @@ export async function getProjectScripts(projectId) {
   return api.get(`/generate/v1/projects/${projectId}/scripts`)
 }
 
-/**
- * 直接下载项目成片视频到本地（blob 方式），不创建异步任务。
- */
+export async function getProjectScript(projectId, scriptId) {
+  return api.get(`/generate/v1/projects/${projectId}/scripts/${scriptId}`)
+}
+
 export async function downloadProjectVideo(projectId) {
   const response = await api.get(`/generate/v1/projects/${projectId}/export/download`, {
     responseType: 'blob',
   })
-  // 从 content-disposition 取文件名
+
+  const contentType = response.headers?.['content-type'] || ''
+  if (contentType.includes('application/json')) {
+    const errorText = await response.data.text()
+    const errorPayload = JSON.parse(errorText)
+    throw new Error(errorPayload.message || '导出失败')
+  }
+
   const disposition = response.headers?.['content-disposition'] || ''
-  const match = disposition.match(/filename="?([^";\n]+)"?/)
-  const filename = match ? match[1] : `project_${projectId}.mp4`
-  // 触发浏览器下载
+  const utf8Match = disposition.match(/filename\*=UTF-8''([^;\n]+)/i)
+  const asciiMatch = disposition.match(/filename="?([^";\n]+)"?/)
+  const filename = utf8Match
+    ? decodeURIComponent(utf8Match[1])
+    : asciiMatch
+      ? asciiMatch[1]
+      : `project_${projectId}.mp4`
+
   const blob = response.data instanceof Blob ? response.data : new Blob([response.data])
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -92,4 +91,12 @@ export async function downloadProjectVideo(projectId) {
 
 export async function bindProjectAsset(projectId, payload) {
   return api.post(`/generate/v1/projects/${projectId}/assets`, payload)
+}
+
+export async function confirmPendingAction(projectId, pendingActionId) {
+  return api.post(`/generate/v1/projects/${projectId}/pending-actions/${pendingActionId}/confirm`)
+}
+
+export async function cancelPendingAction(projectId, pendingActionId) {
+  return api.post(`/generate/v1/projects/${projectId}/pending-actions/${pendingActionId}/cancel`)
 }

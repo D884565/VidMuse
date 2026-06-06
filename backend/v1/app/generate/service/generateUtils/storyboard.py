@@ -66,6 +66,11 @@ class StoryboardService:
         for field, value in patch.items():
             if field not in EDITABLE_FRAME_FIELDS:
                 continue
+            if field == "duration":
+                try:
+                    value = max(4.0, float(value))
+                except (TypeError, ValueError):
+                    continue
             setattr(frame, field, value)
             changed = True
 

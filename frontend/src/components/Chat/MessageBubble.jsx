@@ -2,6 +2,17 @@ import MessageBlocks from './MessageBlocks.jsx'
 
 export default function MessageBubble({ message, index, onActionComplete }) {
   const isUser = message.role === 'user'
+  const isStreaming = message.streaming
+  const hasRenderableContent = Boolean(
+    (message.content || '').trim()
+    || (message.blocks || []).length
+    || message.progress
+    || (message.updated_frames || []).length
+  )
+
+  if (!isUser && !hasRenderableContent) {
+    return null
+  }
 
   return (
     <article
@@ -15,7 +26,10 @@ export default function MessageBubble({ message, index, onActionComplete }) {
             : 'border-l-[3px] border-[#7c3aed] bg-[rgba(26,26,46,0.86)] text-white shadow-[0_4px_24px_rgba(124,58,237,0.08)]'
         }`}
       >
-        <p className="m-0 whitespace-pre-wrap">{message.content}</p>
+        <p className="m-0 whitespace-pre-wrap">
+          {message.content}
+          {isStreaming && <span className="inline-block w-[2px] h-[1em] bg-[#a78bfa] ml-[1px] align-text-bottom animate-pulse" />}
+        </p>
         <MessageBlocks blocks={message.blocks || []} onActionComplete={onActionComplete} />
         {message.progress ? (
           <div className="mt-4">

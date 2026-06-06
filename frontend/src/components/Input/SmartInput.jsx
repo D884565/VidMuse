@@ -34,7 +34,7 @@ export default function SmartInput({ onSend }) {
             value={value}
             onChange={(event) => setValue(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="鎻忚堪浣犳兂鐢熸垚鐨勮棰戯紝Shift + Enter 鎹㈣"
+            placeholder="描述你想生成的视频，Shift + Enter 换行"
           />
 
           <div className="mt-2 flex items-center justify-between gap-3">

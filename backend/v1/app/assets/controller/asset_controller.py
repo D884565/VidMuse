@@ -4,7 +4,11 @@ from sqlalchemy.orm import Session
 
 from backend.framework.web.response import Response
 from backend.store.database.sync_database import get_db
+<<<<<<< HEAD
 from backend.v1.app.assets.service import AssetService
+=======
+from backend.v1.app.assets.service.asset_service import AssetService
+>>>>>>> ef2cd102a639b877b80fed22c991ce46b6da0f7b
 
 router = APIRouter(prefix="/assets", tags=["资产管理"])
 

@@ -17,7 +17,7 @@ export function useProjects(initialParams = {}) {
   const fetchProjects = useCallback(async (options = {}) => {
     const { cancelledRef } = options
     try {
-      setLoading(true)
+      setLoading(projects.length === 0)
       const data = await getProjects(params)
       if (cancelledRef?.current) return
       setProjects(data?.list ?? [])
@@ -29,7 +29,7 @@ export function useProjects(initialParams = {}) {
     } finally {
       if (!cancelledRef?.current) setLoading(false)
     }
-  }, [params])
+  }, [params, projects.length])
 
   useEffect(() => {
     const cancelledRef = { current: false }

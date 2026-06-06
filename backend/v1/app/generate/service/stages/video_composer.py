@@ -7,6 +7,7 @@ import math
 
 from backend.providers import VolcanoLLM, VideoRequest
 from backend.v1.app.models.frame import Frame
+from backend.v1.app.generate.service.workflow.media_resolvers import resolve_video_generation_prompt
 from backend.ffmpeg import ffmpeg_tool
 from backend.store.obj.factory import get_storage_client
 
@@ -18,8 +19,16 @@ class VideoComposer:
 
     def __init__(self):
         self.temp_dir = tempfile.gettempdir()
-        self.llm = VolcanoLLM(key=None, model_name=None)
+        self._llm = None
         self.storage = get_storage_client()
+
+    @property
+    def llm(self):
+        if self._llm is None:
+            if VolcanoLLM is None:
+                raise RuntimeError("VolcanoLLM 不可用，请安装 openai 依赖")
+            self._llm = VolcanoLLM(key=None, model_name=None)
+        return self._llm
 
     def compose_frames(
         self,
@@ -99,7 +108,7 @@ class VideoComposer:
             except Exception as stale_err:
                 logger.warning(f"[视频复用] 帧 {frame.sequence} 已有视频不可用，重新生成: {stale_err}")
 
-        prompt = frame.prompt or frame.description or ""
+        prompt = resolve_video_generation_prompt(frame)
         ai_params = frame.ai_params or {}
         camera = ai_params.get("camera", "")
         mood = ai_params.get("mood", "")
