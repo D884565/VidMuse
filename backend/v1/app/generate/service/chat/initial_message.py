@@ -88,11 +88,6 @@ class ProjectInitialMessageBuilder:
             parts.append(f"重点卖点：{'、'.join(item for item in key_points if item)}")
         if avoid:
             parts.append(f"避免内容：{'、'.join(item for item in avoid if item)}")
-        if target_duration:
-            parts.append(f"时长：约 {target_duration} 秒")
-        if voice_type:
-            parts.append(f"音色：{voice_type}")
-
         return "；".join(part for part in parts if part)
 
     def _build_blocks(

@@ -1,4 +1,5 @@
-"""用于修复孤立生成任务的辅助工具。"""
+"""Helpers for repairing orphaned generation tasks."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -10,10 +11,7 @@ ACTIVE_CELERY_STATES = {"PENDING", "RECEIVED", "STARTED", "RETRY"}
 
 
 def reconcile_orphaned_task(db, *, task, project, celery_state: str | None, error_message: str) -> bool:
-    """修复工作节点状态已不可信的排队/运行中任务。
-
-    当任务/项目状态被修改时返回 True。
-    """
+    """Mark queued/running tasks as failed when their Celery worker is gone."""
     if task.status == "cancelled":
         return False
     if task.status not in {"queued", "running"}:

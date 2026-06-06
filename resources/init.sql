@@ -2,11 +2,13 @@ DROP TABLE IF EXISTS agent_traces;
 
 DROP TABLE IF EXISTS trace_log;
 DROP TABLE IF EXISTS conversations;
+DROP TABLE IF EXISTS generation_task_steps;
 DROP TABLE IF EXISTS generation_tasks;
 DROP TABLE IF EXISTS scripts;
 DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS merge_tasks;
 DROP TABLE IF EXISTS slices;
+DROP TABLE IF EXISTS project_assets;
 DROP TABLE IF EXISTS assets;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS product_categories;
@@ -92,6 +94,9 @@ CREATE TABLE IF NOT EXISTS assets (
     duration        INT COMMENT '时长(视频/音频)',
     format          VARCHAR(20) COMMENT '文件格式',
     ai_features     JSON COMMENT 'AI特征因子',
+    tags            JSON COMMENT '素材标签',
+    scope           VARCHAR(30) NOT NULL DEFAULT 'library' COMMENT 'library/project/output',
+    metadata        JSON COMMENT '素材扩展元数据',
     source_type     TINYINT DEFAULT 0 COMMENT '来源',
     parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
     execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
@@ -102,6 +107,20 @@ CREATE TABLE IF NOT EXISTS assets (
     INDEX idx_parsing_status (parsing_status),
     INDEX idx_execution_id (execution_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='素材库';
+
+
+CREATE TABLE IF NOT EXISTS project_assets (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '项目素材绑定ID',
+    project_id      BIGINT NOT NULL COMMENT '项目ID',
+    asset_id        BIGINT NOT NULL COMMENT '素材ID',
+    role            VARCHAR(50) NOT NULL DEFAULT 'reference' COMMENT '素材在项目中的用途',
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+    INDEX idx_project_assets_project (project_id),
+    INDEX idx_project_assets_asset (asset_id),
+    UNIQUE KEY uq_project_assets_project_asset_role (project_id, asset_id, role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目素材绑定表';
 
 
 CREATE TABLE IF NOT EXISTS slices (
@@ -240,9 +259,11 @@ CREATE TABLE IF NOT EXISTS scripts (
     prompt_snapshot JSON COMMENT '生成时的提示词快照',
     rag_snapshot    JSON COMMENT 'RAG检索结果快照',
     content         JSON COMMENT '剧本内容（帧列表JSON）',
+    parent_id       BIGINT COMMENT '父脚本版本ID',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+    FOREIGN KEY (parent_id) REFERENCES scripts(id),
     INDEX idx_project_id (project_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='剧本版本表';
 
@@ -253,14 +274,42 @@ CREATE TABLE IF NOT EXISTS generation_tasks (
     task_type       VARCHAR(50) NOT NULL COMMENT '任务类型: script/image/video/tts',
     status          VARCHAR(20) NOT NULL DEFAULT 'queued' COMMENT '状态: queued/running/completed/failed/cancelled',
     celery_task_id  VARCHAR(200) COMMENT 'Celery异步任务ID',
+    progress        INT NOT NULL DEFAULT 0 COMMENT '任务进度百分比',
+    current_step    VARCHAR(80) COMMENT '当前执行步骤',
+    current_frame_id BIGINT COMMENT '当前处理分镜ID',
+    retry_count     INT NOT NULL DEFAULT 0 COMMENT '重试次数',
+    error_code      VARCHAR(80) COMMENT '错误码',
     error_message   TEXT COMMENT '失败原因',
+    trace_id        VARCHAR(100) COMMENT '链路追踪ID',
     result_data     JSON COMMENT '任务结果数据',
+    started_at      DATETIME COMMENT '开始时间',
+    finished_at     DATETIME COMMENT '结束时间',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     INDEX idx_project_id (project_id),
-    INDEX idx_status (status)
+    INDEX idx_status (status),
+    INDEX idx_generation_tasks_celery (celery_task_id),
+    INDEX idx_generation_tasks_trace (trace_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步生成任务表';
+
+
+CREATE TABLE IF NOT EXISTS generation_task_steps (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '任务步骤ID',
+    task_id         BIGINT NOT NULL COMMENT '所属任务ID',
+    step_name       VARCHAR(80) NOT NULL COMMENT '步骤名称',
+    frame_id        BIGINT COMMENT '关联分镜ID',
+    status          VARCHAR(30) NOT NULL DEFAULT 'running' COMMENT '步骤状态',
+    progress        INT NOT NULL DEFAULT 0 COMMENT '步骤进度百分比',
+    input_snapshot  JSON COMMENT '步骤输入快照',
+    output_snapshot JSON COMMENT '步骤输出快照',
+    error_message   TEXT COMMENT '错误信息',
+    started_at      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '开始时间',
+    finished_at     DATETIME COMMENT '结束时间',
+    FOREIGN KEY (task_id) REFERENCES generation_tasks(id) ON DELETE CASCADE,
+    INDEX idx_generation_task_steps_task (task_id),
+    INDEX idx_generation_task_steps_frame (frame_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生成任务步骤表';
 
 
 CREATE TABLE IF NOT EXISTS trace_log (

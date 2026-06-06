@@ -30,7 +30,7 @@ const WELCOME_MESSAGE = {
 
 export default function ChatContainer() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
-  const { messages, isTyping, sendMessage, reload } = useChat()
+  const { messages, isTyping, isThinking, sendMessage, reload } = useChat()
   const { project, refetch } = useProjectPolling(activeProjectId)
 
   function handleActionComplete() {
@@ -74,6 +74,11 @@ export default function ChatContainer() {
         </div>
       </div>
 
+      {isThinking && (
+        <div className="fixed bottom-24 left-1/2 z-50 -translate-x-1/2 text-xs text-[var(--text-muted)] animate-pulse">
+          VidMuse 正在思考…
+        </div>
+      )}
       <SmartInput onSend={sendMessage} />
     </section>
   )

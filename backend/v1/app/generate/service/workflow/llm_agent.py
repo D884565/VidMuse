@@ -290,5 +290,64 @@ class LLMAgentService:
         }
         return "high" if action in high_cost else "low"
 
+    def stream_converse(
+        self,
+        project,
+        frames: list,
+        content: str,
+        conversation_history: list[dict] | None = None,
+    ):
+        """生成流式对话回复（纯文本，非 JSON）。用于 CONVERSE 动作。"""
+        converse_prompt = self._build_converse_prompt(project, frames)
+        messages = self._build_messages(converse_prompt, conversation_history, content)
+        request = ChatRequest(
+            messages=[ChatMessage(**msg) for msg in messages],
+            temperature=0.7,
+            max_tokens=1000,
+        )
+        for chunk in self.llm.stream_chat(request):
+            yield chunk
+
+    def stream_entry_converse(self, content: str):
+        """Stream ordinary conversation before a project exists."""
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是带货视频生成系统的 AI 助手。当前还没有创建视频项目。"
+                    "请像正常聊天一样回答用户问题，可以解释系统能力、讨论创意、回答闲聊。"
+                    "不要擅自创建项目，不要输出 JSON；如果用户想开始做视频，引导他说清楚产品和目标。"
+                ),
+            },
+            {"role": "user", "content": content},
+        ]
+        request = ChatRequest(
+            messages=[ChatMessage(**msg) for msg in messages],
+            temperature=0.7,
+            max_tokens=800,
+        )
+        for chunk in self.llm.stream_chat(request):
+            yield chunk
+
+    def _build_converse_prompt(self, project, frames: list) -> str:
+        """构建对话模式的 system prompt（非 JSON 输出）。"""
+        workflow_stage = getattr(project, "workflow_stage", None) or "created"
+        stage_status = getattr(project, "stage_status", None) or "idle"
+        frame_count = len(frames)
+
+        return f"""你是「带货视频生成系统」的 AI 助手。你正在和用户讨论视频项目。
+
+当前项目状态:
+- 阶段: {workflow_stage}（{stage_status}）
+- 共 {frame_count} 个分镜
+
+你可以：
+- 回答用户关于项目的问题
+- 讨论创意方向和风格偏好
+- 解释系统功能和操作方式
+- 给出修改建议
+
+用自然、友好的中文回复。不要输出 JSON 格式。"""
+
 
 llm_agent_service = LLMAgentService()

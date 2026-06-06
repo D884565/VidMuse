@@ -17,7 +17,7 @@ def _duration_value(value) -> float:
 
 
 def build_script_stage_blocks(frames: Iterable) -> list[dict]:
-    """构建剧本阶段的结构化 blocks：摘要卡片 + 分镜表格 + 操作按钮。"""
+    """构建剧本阶段的结构化 blocks：摘要卡片 + 分镜表格 + 对话式追问。"""
     frames = list(frames)
     total_duration = sum(_duration_value(getattr(frame, "duration", 0)) for frame in frames)
     summary = {
@@ -44,19 +44,15 @@ def build_script_stage_blocks(frames: Iterable) -> list[dict]:
             for frame in frames
         ],
     }
-    actions = {
-        "type": "action_bar",
-        "actions": [
-            {"label": "确认剧本", "action": "confirm", "stage": "script"},
-            {"label": "确认并生成图片", "action": "advance", "confirmed_stage": "script"},
-            {"label": "重新生成剧本", "action": "chat", "prompt": "请重新生成剧本"},
-        ],
+    follow_up = {
+        "type": "follow_up",
+        "message": "剧本和分镜方案已经准备好了。你看一下节奏、卖点和画面方向，如果没问题，回复「继续」或「可以生成图片」，我就开始生成首帧图片；如果要改，直接告诉我想调整哪一段。",
     }
-    return [summary, table, actions]
+    return [summary, table, follow_up]
 
 
 def build_image_stage_blocks(frames: Iterable) -> list[dict]:
-    """构建图片阶段的结构化 blocks：图片网格 + 操作按钮。"""
+    """构建图片阶段的结构化 blocks：图片网格 + 对话式追问。"""
     frames = list(frames)
     return [
         {
@@ -74,18 +70,14 @@ def build_image_stage_blocks(frames: Iterable) -> list[dict]:
             ],
         },
         {
-            "type": "action_bar",
-            "actions": [
-                {"label": "确认图片", "action": "confirm", "stage": "image"},
-                {"label": "确认并生成视频", "action": "advance", "confirmed_stage": "image"},
-                {"label": "重生成某张图", "action": "chat", "prompt": "请重生成第 1 张图"},
-            ],
+            "type": "follow_up",
+            "message": "首帧图片已经生成好了。你看一下商品质感、构图和每个镜头的画面方向；如果没问题，回复「继续」或「可以生成视频」，我就开始批量生成视频。若某张图不满意，直接说例如「图 3 换成更自然的状态」。",
         },
     ]
 
 
 def build_video_stage_blocks(project, *, video_url: str | None = None, task_id: int | None = None) -> list[dict]:
-    """构建视频阶段的结构化 blocks：视频播放卡片 + 操作按钮。"""
+    """构建视频阶段的结构化 blocks：视频播放卡片 + 对话式追问。"""
     url = video_url or getattr(project, "video_output_url", None)
     return [
         {
@@ -96,11 +88,8 @@ def build_video_stage_blocks(project, *, video_url: str | None = None, task_id: 
             "status": getattr(project, "stage_status", None),
         },
         {
-            "type": "action_bar",
-            "actions": [
-                {"label": "确认完成", "action": "advance", "confirmed_stage": "video"},
-                {"label": "继续修改", "action": "chat", "prompt": "我想继续修改视频"},
-            ],
+            "type": "follow_up",
+            "message": "视频阶段已经推进完成。你可以先预览成片；如果满意，回复「确认完成」。如果还想改配音、某个镜头或首帧，直接告诉我具体位置和修改方向。",
         },
     ]
 

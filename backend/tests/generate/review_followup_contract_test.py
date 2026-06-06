@@ -33,9 +33,9 @@ def test_controller_dispatches_export_and_frame_tasks():
 
 def test_core_paths_use_project_workflow_state_helper():
     for path in (
-        "backend/v1/app/generate/service/video_generation.py",
+        "backend/v1/app/generate/service/stages/video_workflow.py",
         "backend/v1/app/generate/tasks/video_tasks.py",
-        "backend/v1/app/generate/service/script_generation.py",
+        "backend/v1/app/generate/service/stages/script.py",
         "backend/v1/app/generate/service/chat/chat_service.py",
     ):
         source = read(path)

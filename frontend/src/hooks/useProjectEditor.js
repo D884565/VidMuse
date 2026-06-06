@@ -1,3 +1,4 @@
+import { useCallback } from 'react'
 import { useChat } from './useChat.js'
 import { useProjectPolling } from './useProjectPolling.js'
 import { useAppStore } from '../store/appStore.js'
@@ -10,8 +11,14 @@ import { advanceWorkflowStage, confirmWorkflowStage, generateProjectScript } fro
  */
 export function useProjectEditor() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
-  const chat = useChat()
   const polling = useProjectPolling(activeProjectId)
+  const bumpProjectListVersion = useAppStore((state) => state.bumpProjectListVersion)
+  const { refetch } = polling
+  const handleMessageHandled = useCallback(() => {
+    refetch()
+    bumpProjectListVersion()
+  }, [bumpProjectListVersion, refetch])
+  const chat = useChat({ onMessageHandled: handleMessageHandled })
 
   // 统一的操作方法——Chat 和 Canvas 都调用这些
   const editFrame = async (frameId, patch) => {

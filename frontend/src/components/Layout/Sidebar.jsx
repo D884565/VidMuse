@@ -2,12 +2,12 @@ import { useState } from 'react'
 import {
   FolderKanban,
   Images,
-  KeyRound,
+
   LogOut,
   MessageSquarePlus,
   PanelLeftClose,
   PanelLeftOpen,
-  Plus,
+  Film,
   Sparkles,
   User,
 } from 'lucide-react'
@@ -23,6 +23,7 @@ export default function Sidebar() {
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
+  const clearDraftConversation = useAppStore((state) => state.clearDraftConversation)
 
   const storeLogout = useAppStore((state) => state.logout)
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -69,7 +70,22 @@ export default function Sidebar() {
         >
           <FolderKanban size={18} />
           <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            项目
+            对话
+          </span>
+        </button>
+
+        <button
+          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,#7C3AED_0%,#A855F7_100%)] px-3 py-2.5 text-sm font-medium shadow-[0_4px_24px_rgba(124,58,237,0.15)] hover:shadow-[0_4px_30px_rgba(124,58,237,0.35)]"
+          type="button"
+          onClick={() => {
+            setActiveProjectId(null)
+            clearDraftConversation()
+            setActiveView('chat')
+          }}
+        >
+          <MessageSquarePlus size={18} />
+          <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
+            新建对话
           </span>
         </button>
 
@@ -86,22 +102,19 @@ export default function Sidebar() {
         >
           <Images size={18} />
           <span className="max-[1024px]:hidden">素材库</span>
-          <span className="ml-auto rounded-full bg-[rgba(124,58,237,0.22)] px-2 py-0.5 text-xs text-white max-[1024px]:hidden">
-            12
-          </span>
         </button>
 
         <button
           className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
-            activeView === 'keyframes'
+            activeView === 'projects'
               ? 'bg-[var(--brand-soft)] text-white'
               : 'text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white'
           }`}
           type="button"
-          onClick={() => setActiveView('keyframes')}
+          onClick={() => setActiveView('projects')}
         >
-          <KeyRound size={18} />
-          <span className="max-[1024px]:hidden">关键帧</span>
+          <Film size={18} />
+          <span className="max-[1024px]:hidden">项目管理</span>
         </button>
 
         <button
@@ -117,21 +130,6 @@ export default function Sidebar() {
           <span className="max-[1024px]:hidden">个人信息</span>
         </button>
 
-        <div className="my-4 h-px bg-[var(--border-soft)]" />
-
-        <button
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,#7C3AED_0%,#A855F7_100%)] px-3 py-2.5 text-sm font-medium shadow-[0_4px_24px_rgba(124,58,237,0.15)] hover:shadow-[0_4px_30px_rgba(124,58,237,0.35)]"
-          type="button"
-          onClick={() => {
-            setActiveProjectId(null)
-            setActiveView('chat')
-          }}
-        >
-          <MessageSquarePlus size={18} />
-          <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            新建对话
-          </span>
-        </button>
       </nav>
 
       <div className="border-t border-[var(--border-soft)] p-3">

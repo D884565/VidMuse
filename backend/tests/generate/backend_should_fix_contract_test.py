@@ -7,7 +7,7 @@ from backend.v1.app.generate.service.generateUtils.reference_image_utils import 
 )
 
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def read(path: str) -> str:
@@ -154,3 +154,10 @@ def test_export_controller_uses_direct_download_instead_of_celery_export_task():
 
     assert '"/projects/{project_id}/export/download"' in source
     assert '"export_video_task"' not in source
+
+
+def test_export_controller_uses_ascii_safe_content_disposition_filename():
+    source = read("backend/v1/app/generate/controller/generation.py")
+
+    assert "filename*=UTF-8''" in source
+    assert "quote(stream.filename)" in source

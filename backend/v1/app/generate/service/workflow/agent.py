@@ -35,6 +35,14 @@ class WorkflowAgentService:
                 assistant_content="好的，我来为你重新选择背景音乐。",
             )
 
+        if self._wants_tts_regeneration(text):
+            return self._plan(
+                "REGENERATE_TTS",
+                affected_stage="video",
+                next_stage="video",
+                assistant_content="好的，我会按你的要求重新生成配音。",
+            )
+
         # 判断确认意图：根据当前阶段分发到不同的确认动作
         if self._has_confirm_intent(text):
             if stage == "script" and self._mentions_image_or_next(text):
@@ -60,7 +68,10 @@ class WorkflowAgentService:
                 )
 
         # 判断生成剧本意图（显式关键词）
-        if stage in {"created", "script"} and self._mentions_script_generation(text):
+        if stage in {"created", "script"} and (
+            self._mentions_script_generation(text)
+            or (self._has_generation_intent(text) and self._is_product_description(text))
+        ):
             return self._plan(
                 "GENERATE_SCRIPT",
                 affected_stage="script",
@@ -91,7 +102,7 @@ class WorkflowAgentService:
             return self._plan(
                 "CONVERSE",
                 affected_stage="",
-                assistant_content="",
+                assistant_content="你好，我在。你可以直接告诉我想做什么产品的带货视频，比如产品名称、卖点、风格或参考画面；我会先帮你整理剧本和分镜方向。",
             )
 
         # 无法判断意图时，返回澄清动作
@@ -168,8 +179,14 @@ class WorkflowAgentService:
         url_pattern = r"https?://\S+"
         has_url = bool(re.search(url_pattern, text))
         has_keyword = any(kw in text for kw in product_keywords)
+        has_generation_intent = self._has_generation_intent(text)
+        has_video_or_sales_intent = any(word in text for word in ("带货", "视频", "商品", "产品", "推广", "广告"))
         # 有意义的长度 + 关键词或 URL
-        return len(text) > 10 and (has_keyword or has_url)
+        return (len(text) >= 8 and has_generation_intent and has_video_or_sales_intent) or (len(text) > 10 and (has_keyword or has_url))
+
+    def _has_generation_intent(self, text: str) -> bool:
+        """判断用户是否明确要求生成或重新生成内容。"""
+        return any(word in text for word in ("生成", "重新生成", "重生成", "制作", "做一个", "来一个", "写一个"))
 
     def _wants_image_regeneration(self, text: str, frame_ids: list[int]) -> bool:
         """判断用户是否要求重生成某张图片（需要同时有帧引用和图片相关词）。"""
@@ -180,6 +197,12 @@ class WorkflowAgentService:
     def _wants_change_bgm(self, text: str) -> bool:
         """判断用户是否要求更换背景音乐。"""
         return any(word in text for word in ("换一首", "换个BGM", "换音乐", "换个背景音乐", "换个bgm", "BGM换了", "bgm换了"))
+
+    def _wants_tts_regeneration(self, text: str) -> bool:
+        """判断用户是否要求重生成配音、旁白或调整音色。"""
+        tts_keywords = ("配音", "旁白", "音色", "声音", "女声", "男声", "语速", "tts", "TTS")
+        regenerate_keywords = ("重生成", "重新生成", "重做", "换", "调整", "修改")
+        return any(word in text for word in tts_keywords) and any(word in text for word in regenerate_keywords)
 
 
 workflow_agent_service = WorkflowAgentService()

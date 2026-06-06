@@ -140,7 +140,7 @@ class ScriptGenerationService:
                 image_prompt=image_prompt,
                 video_prompt=video_prompt,
                 text_overlay=subtitle_text,
-                duration=scene.get("duration", 3),
+                duration=max(1, scene.get("duration", 5)),
                 transition_type=0,
                 status=0,  # 待生成
                 dirty=0,
@@ -514,9 +514,10 @@ class ScriptGenerationService:
         ]
 
         for i, (scene_type, voice, img_prompt, vid_prompt, overlay) in enumerate(scene_configs):
-            duration = min(8, target_duration - total_sec)
-            if duration <= 2:
+            remaining = target_duration - total_sec
+            if remaining < 4:
                 break
+            duration = min(8, remaining)
             scenes.append({
                 "scene_id": i + 1,
                 "type": scene_type,

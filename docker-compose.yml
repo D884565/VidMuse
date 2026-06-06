@@ -191,7 +191,7 @@ services:
       context: .
       dockerfile: Dockerfile.playwright
     container_name: aigc_celery
-    command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A backend.v1.app.generate.tasks.celery_app.celery_app worker --loglevel=info --concurrency=${CELERY_WORKER_CONCURRENCY:-6}
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
@@ -200,6 +200,8 @@ services:
       - CHROMADB_HOST=chromadb
       - REDIS_HOST=redis
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - FRAME_VIDEO_WAIT_TIMEOUT_SECONDS=${FRAME_VIDEO_WAIT_TIMEOUT_SECONDS:-1800}
+      - FRAME_VIDEO_POLL_INTERVAL_SECONDS=${FRAME_VIDEO_POLL_INTERVAL_SECONDS:-5}
     env_file:
       - .env
     depends_on:

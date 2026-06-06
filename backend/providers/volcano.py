@@ -69,9 +69,9 @@ class VolcanoLLM(LLMBase):
         key =  os.getenv("DOUBAO_SEED_API_KEY")
         self.default_model = os.getenv("DOUBAO_SEED", "doubao-1.5-pro")
         self.video_model = os.getenv("DOUBAO_SEEDDANCE")
-        self.default_embedding_model = os.getenv("EMBED_MODEL")
+        self.default_embedding_model = os.getenv("VOLC_EMBEDDING_MODEL") or os.getenv("EMBED_MODEL")
         # 向量模型可能使用单独的 API Key
-        embedding_key = os.getenv("EMBED_API_KEY")
+        embedding_key = os.getenv("VOLC_EMBEDDING_API_KEY") or os.getenv("EMBED_API_KEY") or key
 
         url ="https://ark.cn-beijing.volces.com/api/v3"
 

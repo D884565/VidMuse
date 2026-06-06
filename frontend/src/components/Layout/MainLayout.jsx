@@ -3,6 +3,7 @@ import WorkbenchView from '../Workbench/WorkbenchView.jsx'
 import FrameGrid from '../Keyframes/FrameGrid.jsx'
 import MediaGrid from '../Media/MediaGrid.jsx'
 import UserProfile from '../User/UserProfile.jsx'
+import ProjectManager from '../Project/ProjectManager.jsx'
 import Sidebar from './Sidebar.jsx'
 import { useAppStore } from '../../store/appStore.js'
 import { getUserInfo } from '../../services/user.js'
@@ -53,6 +54,8 @@ export default function MainLayout() {
         return <MediaGrid />
       case 'profile':
         return <UserProfile />
+      case 'projects':
+        return <ProjectManager />
       default:
         return <WorkbenchView />
     }

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import random
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -82,11 +83,13 @@ class BGMSelectorService:
         except Exception as exc:
             logger.warning("[BGM选曲] LLM 调用失败，降级到标签匹配: %s", exc)
 
-        # 5. 降级：取评分最高的候选
+        # 5. 降级：从最高评分梯队中随机选一首（相似风格随机轮换）
         if top_candidates:
-            fallback_id = top_candidates[0]["id"]
-            logger.info("[BGM选曲] 降级选择评分最高的 bgm_id=%s", fallback_id)
-            return fallback_id
+            top_score = top_candidates[0].get("_score", 0)
+            top_tier = [c for c in top_candidates if c.get("_score", 0) == top_score]
+            chosen = random.choice(top_tier)
+            logger.info("[BGM选曲] 随机选择 bgm_id=%s (top_tier %d 首, score=%d)", chosen["id"], len(top_tier), top_score)
+            return chosen["id"]
 
         return None
 
