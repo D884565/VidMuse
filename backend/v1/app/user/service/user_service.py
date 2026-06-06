@@ -33,33 +33,6 @@ class UserService:
 
     @staticmethod
     def _hash_password(password: str) -> str:
-<<<<<<< HEAD
-        """将明文密码哈希为 bcrypt 摘要
-
-        bcrypt 算法限制密码最长为 72 字节，超出部分需要截断
-        """
-        # bcrypt 限制密码不能超过 72 字节
-        # 先编码为 UTF-8 检查长度
-        password_bytes = password.encode('utf-8')
-        if len(password_bytes) > 72:
-            # 截断到 72 字节，然后安全解码回字符串
-            password = password_bytes[:72].decode('utf-8', errors='ignore')
-        return pwd_context.hash(password)
-
-    @staticmethod
-    def _verify_password(plain: str, hashed: str) -> bool:
-        """验证明文密码是否匹配哈希值
-
-        验证时也需要对密码进行相同的截断处理
-        """
-        # bcrypt 限制密码不能超过 72 字节
-        # 先编码为 UTF-8 检查长度
-        plain_bytes = plain.encode('utf-8')
-        if len(plain_bytes) > 72:
-            # 截断到 72 字节，然后安全解码回字符串
-            plain = plain_bytes[:72].decode('utf-8', errors='ignore')
-        return pwd_context.verify(plain, hashed)
-=======
         """明文存储密码"""
         return password
 
@@ -67,7 +40,6 @@ class UserService:
     def _verify_password(plain: str, hashed: str) -> bool:
         """明文比对密码"""
         return plain == hashed
->>>>>>> ef2cd102a639b877b80fed22c991ce46b6da0f7b
 
     # ==================== JWT 令牌方法 ====================
 

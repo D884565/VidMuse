@@ -32,11 +32,7 @@ class ScriptGenerationService:
 
     def __init__(self, rag_service=None):
         self._llm = None
-        if rag_service is not None:
-            self.rag_service = rag_service
-        else:
-            from backend.v1.app.search.rag_service_adapter import RAGServiceAdapter
-            self.rag_service = RAGServiceAdapter()
+       
 
     @property
     def llm(self):

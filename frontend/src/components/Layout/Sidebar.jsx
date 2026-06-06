@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   FolderKanban,
   Images,
-
+  Plus,
   LogOut,
   MessageSquarePlus,
   PanelLeftClose,

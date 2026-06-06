@@ -15,6 +15,7 @@ from backend.v1.app.assets.service.asset_service import AssetService
 from backend.v1.app.slice.dao.slice_dao import SliceDAO
 from backend.store.database.sync_database import get_db as get_sync_db
 import logging
+from backend.store.vector.factory import get_vector_db_client
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class VideoLibraryService:
     """视频素材库业务逻辑类"""
 
     def __init__(self):
-        self.obj_store = get_storage_client()
+        self.obj_store = get_vector_db_client("video")
         self.hot_report_fetcher = HotReportFetchProcessor()
 
     @staticmethod

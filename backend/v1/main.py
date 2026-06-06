@@ -13,15 +13,6 @@ from backend.v1.app.generate.controller.generation import router as generation_r
 from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.product.controller.product_controller import router as product_router
 from backend.v1.app.product.controller.product_category_controller import router as product_category_router
-<<<<<<< HEAD
-from backend.v1.app.assets.controller.asset_controller import router as asset_router
-from backend.v1.app.slice.controller.slice_controller import router as slice_router
-=======
-# TODO: rag 模块已移除，后续重新集成
-# from backend.v1.app.rag.controller.asset_controller import router as asset_router
-# TODO: slice 模块依赖 rag，暂时注释
-# from backend.v1.app.slice.controller.slice_controller import router as slice_router
->>>>>>> ef2cd102a639b877b80fed22c991ce46b6da0f7b
 from backend.v1.app.video.controller.video import router as video_router
 from backend.v1.app.merge.controller.merge import router as merge_router
 from backend.v1.app.admin.rag_trace.controller.trace_controller import router as agent_trace_router
@@ -31,6 +22,8 @@ from backend.v1.app.admin.inspiration_template.controller.inspiration_controller
 # 推送模块路由
 from backend.v1.app.push.controller.websocket_controller import router as ws_router
 from backend.v1.app.push.controller.message_controller import router as message_router
+from backend.v1.app.slice.controller.slice_controller import router as slice_router
+from backend.v1.app.assets.controller.asset_controller import router as asset_router
 
 logger = logging.getLogger(__name__)
 
