@@ -1,51 +1,27 @@
-"""生成任务进度模型。"""
-import datetime
-
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Integer, JSON, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
+from sqlalchemy import BigInteger, Column, DateTime, Integer, String, Text
+from sqlalchemy.sql import func
 from backend.store.database.async_database import Base
 
 
 class GenerationTask(Base):
+    """生成任务表（阶段级追踪）。"""
+
     __tablename__ = "generation_tasks"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    project_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    celery_task_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
-    task_type: Mapped[str] = mapped_column(String(30), nullable=False)
-    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="queued")
-    progress: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    current_step: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    current_frame_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    retry_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    error_code: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    trace_id: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime, server_default=func.now())
-    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-
-    steps = relationship("GenerationTaskStep", back_populates="task", cascade="all, delete-orphan")
-
-
-class GenerationTaskStep(Base):
-    __tablename__ = "generation_task_steps"
-
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
-    task_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("generation_tasks.id", ondelete="CASCADE"), nullable=False, index=True
-    )
-    step_name: Mapped[str] = mapped_column(String(80), nullable=False)
-    frame_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True, index=True)
-    status: Mapped[str] = mapped_column(String(30), nullable=False, server_default="running")
-    progress: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
-    input_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    output_snapshot: Mapped[dict | None] = mapped_column(JSON, nullable=True)
-    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    started_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, server_default=func.now())
-    finished_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
-
-    task = relationship("GenerationTask", back_populates="steps")
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    task_id = Column(String(80), unique=True, nullable=False, index=True, comment="任务ID")
+    project_id = Column(BigInteger, nullable=False, index=True, comment="项目ID")
+    task_type = Column(String(50), nullable=False, comment="任务类型")
+    status = Column(String(30), nullable=False, default="queued", index=True, comment="状态")
+    current_stage = Column(String(50), comment="当前阶段")
+    progress = Column(Integer, default=0, comment="进度 0-100")
+    retry_count = Column(Integer, default=0, comment="重试次数")
+    max_retries = Column(Integer, default=3, comment="最大重试次数")
+    error_code = Column(String(100), comment="错误码")
+    error_message = Column(Text, comment="错误信息")
+    trigger_source = Column(String(50), default="manual", comment="触发来源")
+    celery_task_id = Column(String(255), comment="Celery任务ID")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    started_at = Column(DateTime(timezone=True), comment="开始时间")
+    finished_at = Column(DateTime(timezone=True), comment="完成时间")
