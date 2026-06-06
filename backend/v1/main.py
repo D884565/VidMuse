@@ -19,6 +19,11 @@ from backend.v1.app.generate.controller.generation import router as generation_r
 from backend.v1.app.generate.controller.retry import router as retry_router
 from backend.v1.app.merge.controller.merge import router as merge_router
 from backend.v1.app.product.controller.product_category_controller import router as product_category_router
+from backend.v1.app.product.controller.product_controller import router as product_router
+from backend.v1.app.push.controller.message_controller import router as message_router
+from backend.v1.app.push.controller.websocket_controller import router as ws_router
+from backend.v1.app.slice.controller.slice_controller import router as slice_router
+from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.video.controller.video import router as video_router
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -64,7 +69,6 @@ app.include_router(trace_management_router, prefix="/v1")
 app.include_router(inspiration_template_router, prefix="/v1")
 app.include_router(ws_router, prefix="/v1")
 app.include_router(message_router, prefix="/v1")
-
 
 security = HTTPBearer()
 
