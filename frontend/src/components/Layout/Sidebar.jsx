@@ -8,6 +8,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Film,
+  Plus,
   Sparkles,
   User,
   Settings,
@@ -24,6 +25,8 @@ export default function Sidebar() {
   const setActiveView = useAppStore((state) => state.setActiveView)
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
   const toggleSidebar = useAppStore((state) => state.toggleSidebar)
+  const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
+  const clearDraftConversation = useAppStore((state) => state.clearDraftConversation)
   const isAdmin = useAppStore((state) => state.isAdmin())
 
   const storeLogout = useAppStore((state) => state.logout)

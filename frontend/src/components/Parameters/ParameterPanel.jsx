@@ -1,4 +1,5 @@
 import { useAppStore } from '../../store/appStore.js'
+import { formatVideoStyle } from '../../utils/videoStyle.js'
 import DurationSlider from './DurationSlider.jsx'
 
 const styles = ['cinematic', 'product', 'anime', 'realistic']
@@ -22,18 +23,18 @@ export default function ParameterPanel() {
       <div className="mt-5">
         <p className="mb-3 text-xs text-[var(--text-muted)]">风格</p>
         <div className="flex flex-wrap gap-2">
-          {styles.map((s) => (
+          {styles.map((style) => (
             <button
-              key={s}
+              key={style}
               className={`rounded-lg border px-3 py-2 text-sm ${
-                parameters.style === s
+                parameters.style === style
                   ? 'border-[#7c3aed] bg-[rgba(124,58,237,0.18)] text-white shadow-[0_0_18px_rgba(124,58,237,0.22)]'
                   : 'border-[var(--border-soft)] text-[var(--text-muted)] hover:border-[rgba(124,58,237,0.45)] hover:text-white'
               }`}
               type="button"
-              onClick={() => updateParameters({ style: s })}
+              onClick={() => updateParameters({ style })}
             >
-              {s}
+              {formatVideoStyle(style)}
             </button>
           ))}
         </div>

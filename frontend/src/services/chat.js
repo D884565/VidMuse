@@ -10,11 +10,11 @@ export async function sendChatMessage(projectId, content, frameId = null) {
 
 // 发送聊天消息（SSE 流式）
 export async function sendChatMessageStream(projectId, content, frameId, callbacks) {
-  return sendSseChat(`/api/generate/v1/projects/${projectId}/chat/stream`, { content, frame_id: frameId }, callbacks)
+  return sendSseChat(`/api/v1/projects/${projectId}/chat/stream`, { content, frame_id: frameId }, callbacks)
 }
 
 export async function sendEntryChatMessageStream(content, callbacks) {
-  return sendSseChat('/api/generate/v1/chat/entry/stream', { content }, callbacks)
+  return sendSseChat('/api/v1/chat/entry/stream', { content }, callbacks)
 }
 
 async function sendSseChat(url, payload, callbacks) {

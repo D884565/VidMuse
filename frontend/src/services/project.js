@@ -33,31 +33,31 @@ export async function getGenerationTaskSteps(taskId) {
 }
 
 export async function getProjectDetail(projectId) {
-  return api.get(`/generate/v1/projects/${projectId}`)
+  return api.get(`/v1/projects/${projectId}`)
 }
 
 export async function getProjects(params = {}) {
-  return api.get('/generate/v1/projects', { params })
+  return api.get('/v1/projects', { params })
 }
 
 export async function updateProject(projectId, data) {
-  return api.put(`/generate/v1/projects/${projectId}`, data)
+  return api.put(`/v1/projects/${projectId}`, data)
 }
 
 export async function deleteProject(projectId) {
-  return api.delete(`/generate/v1/projects/${projectId}`)
+  return api.delete(`/v1/projects/${projectId}`)
 }
 
 export async function getProjectScripts(projectId) {
-  return api.get(`/generate/v1/projects/${projectId}/scripts`)
+  return api.get(`/v1/projects/${projectId}/scripts`)
 }
 
 export async function getProjectScript(projectId, scriptId) {
-  return api.get(`/generate/v1/projects/${projectId}/scripts/${scriptId}`)
+  return api.get(`/v1/projects/${projectId}/scripts/${scriptId}`)
 }
 
 export async function downloadProjectVideo(projectId) {
-  const response = await api.get(`/generate/v1/projects/${projectId}/export/download`, {
+  const response = await api.get(`/v1/projects/${projectId}/export/download`, {
     responseType: 'blob',
   })
 
@@ -90,13 +90,13 @@ export async function downloadProjectVideo(projectId) {
 }
 
 export async function bindProjectAsset(projectId, payload) {
-  return api.post(`/generate/v1/projects/${projectId}/assets`, payload)
+  return api.post(`/v1/projects/${projectId}/assets`, payload)
 }
 
 export async function confirmPendingAction(projectId, pendingActionId) {
-  return api.post(`/generate/v1/projects/${projectId}/pending-actions/${pendingActionId}/confirm`)
+  return api.post(`/v1/projects/${projectId}/pending-actions/${pendingActionId}/confirm`)
 }
 
 export async function cancelPendingAction(projectId, pendingActionId) {
-  return api.post(`/generate/v1/projects/${projectId}/pending-actions/${pendingActionId}/cancel`)
+  return api.post(`/v1/projects/${projectId}/pending-actions/${pendingActionId}/cancel`)
 }

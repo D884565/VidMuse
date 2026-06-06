@@ -61,6 +61,15 @@ SYSTEM_PROMPT_TEMPLATE = """你是「带货视频生成系统」的 AI 助手。
   "confidence": 0.95
 }}"""
 
+SYSTEM_PROMPT_TEMPLATE += """
+
+Project regeneration actions:
+- REGENERATE_PROJECT_ALL: regenerate script, images, and video from scratch.
+- REGENERATE_IMAGES_AND_VIDEO: keep the script unchanged, regenerate all images and video.
+- REGENERATE_VIDEO_ONLY: keep script and images unchanged, regenerate video only.
+Use needs_confirmation=true for all three regeneration actions unless the user is explicitly confirming a pending action.
+"""
+
 VALID_ACTIONS = {
     "GENERATE_SCRIPT",
     "GENERATE_IMAGES",
@@ -69,6 +78,9 @@ VALID_ACTIONS = {
     "REGENERATE_FRAME_IMAGE",
     "REGENERATE_FRAME_VIDEO",
     "REGENERATE_TTS",
+    "REGENERATE_PROJECT_ALL",
+    "REGENERATE_IMAGES_AND_VIDEO",
+    "REGENERATE_VIDEO_ONLY",
     "CONFIRM_AND_ADVANCE",
     "CHANGE_BGM",
     "CONVERSE",
@@ -272,6 +284,9 @@ class LLMAgentService:
             "REGENERATE_FRAME_IMAGE": "image",
             "REGENERATE_FRAME_VIDEO": "video",
             "REGENERATE_TTS": "video",
+            "REGENERATE_PROJECT_ALL": "script",
+            "REGENERATE_IMAGES_AND_VIDEO": "image",
+            "REGENERATE_VIDEO_ONLY": "video",
             "CONFIRM_AND_ADVANCE": "",  # 由调用方根据当前阶段决定
             "CONVERSE": "",
             "ASK_CLARIFYING": "",
@@ -287,6 +302,9 @@ class LLMAgentService:
             "GENERATE_IMAGES",
             "GENERATE_VIDEO",
             "REGENERATE_TTS",
+            "REGENERATE_PROJECT_ALL",
+            "REGENERATE_IMAGES_AND_VIDEO",
+            "REGENERATE_VIDEO_ONLY",
         }
         return "high" if action in high_cost else "low"
 

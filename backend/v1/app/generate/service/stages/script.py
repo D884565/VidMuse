@@ -2,6 +2,7 @@
 import json
 import asyncio
 import logging
+import os
 from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -25,6 +26,32 @@ SCENE_TYPE_MAP = {
     "price": 1,
     "cta": 4,
 }
+
+# ========== 资源文件加载 ==========
+_RESOURCE_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../../../../resources/template/resolve")
+)
+_PROMPT_DIR = os.path.join(_RESOURCE_DIR, "prompts")
+_MOCK_SCENES_PATH = os.path.join(_RESOURCE_DIR, "valid_template", "script_mock_scenes.json")
+
+_prompt_cache: dict[str, str] = {}
+
+
+def _load_prompt(name: str) -> str:
+    """从 prompts/ 目录加载 .txt 提示词文件（带缓存）"""
+    if name in _prompt_cache:
+        return _prompt_cache[name]
+    path = os.path.join(_PROMPT_DIR, f"{name}.txt")
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    _prompt_cache[name] = content
+    return content
+
+
+def _load_mock_scenes() -> list[dict]:
+    """加载 Mock 场景配置 JSON"""
+    with open(_MOCK_SCENES_PATH, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 
 class ScriptGenerationService:
@@ -273,7 +300,8 @@ class ScriptGenerationService:
             if not sections:
                 return ""
 
-            return "## 参考资料（仅供参考借鉴，不要照搬）\n\n" + "\n\n".join(sections)
+            rag_header = _load_prompt("script_rag_header")
+            return f"{rag_header}\n\n" + "\n\n".join(sections)
 
         except Exception as e:
             logger.warning(f"[RAG] 检索整体异常，降级为无参考模式: {e}")
@@ -337,7 +365,8 @@ class ScriptGenerationService:
 
         # 用户提示词（最高优先级）
         if project.user_prompt:
-            core_sections.append(f"## 用户创作意图（必须严格遵循）\n{project.user_prompt}")
+            tpl = _load_prompt("script_user_intent")
+            core_sections.append(tpl.format(user_prompt=project.user_prompt))
 
         # 结构化字段
         structured = []
@@ -354,110 +383,46 @@ class ScriptGenerationService:
             if isinstance(avoid, list) and avoid:
                 structured.append(f"- 需要避免：{', '.join(avoid)}")
         if structured:
-            core_sections.append("## 补充要求\n" + "\n".join(structured))
+            tpl = _load_prompt("script_supplement")
+            core_sections.append(tpl.format(structured_fields="\n".join(structured)))
 
         # 商品信息
+        tpl = _load_prompt("script_product_info")
         core_sections.append(
-            f"## 商品信息\n"
-            f"- 商品标题：{project.title}\n"
-            f"- 商品描述：{project.description or '无'}\n"
-            f"{product_detail}"
+            tpl.format(
+                title=project.title,
+                description=project.description or '无',
+                product_detail=product_detail,
+            )
         )
 
         # 参考图片
         ref_images = project.reference_images
         if ref_images and isinstance(ref_images, list) and ref_images:
             imgs_text = "\n".join(f"- {url}" for url in ref_images)
-            core_sections.append(f"## 用户提供的参考图片\n{imgs_text}")
+            tpl = _load_prompt("script_reference_images")
+            core_sections.append(tpl.format(images_text=imgs_text))
 
         core_text = "\n\n".join(core_sections)
 
         # === 组装完整 prompt ===
-        prompt_parts = [
-            f"你是一个专业的带货视频编剧，擅长创作短视频带货剧本。请根据以下信息，生成一个约{target_duration}秒的带货短视频剧本。\n",
-            core_text,
-        ]
-
-        # 参考区（仅在有内容时添加）
-        if reference:
-            prompt_parts.append(reference)
-
-        # 输出格式约束
-        prompt_parts.append(self._output_format_section(target_duration))
-
-        return "\n\n".join(prompt_parts)
-
-    def _output_format_section(self, target_duration: int) -> str:
-        """输出格式约束"""
-        return (
-            f"## 输出要求\n"
-            f"请严格按照以下 JSON 格式输出，不要输出其他内容：\n"
-            f"```json\n"
-            f'{{\n'
-            f'  "video_meta": {{\n'
-            f'    "product_name": "商品名称",\n'
-            f'    "target_duration": {target_duration},\n'
-            f'    "style": "视频风格(fashion/tech/food/lifestyle)",\n'
-            f'    "aspect_ratio": "9:16",\n'
-            f'    "hook_line": "一句话开场金句，用于封面或字幕"\n'
-            f'  }},\n'
-            f'  "scenes": [\n'
-            f'    {{\n'
-            f'      "scene_id": 1,\n'
-            f'      "type": "hook",\n'
-            f'      "duration": 5,\n'
-            f'      "text": "配音文案（口语化，有感染力）",\n'
-            f'      "voice_style": "excited",\n'
-            f'      "visual": {{\n'
-            f'        "image_prompt": "图片生成提示词：详细描述画面内容，包括主体、背景、光线、色调、构图",\n'
-            f'        "video_prompt": "视频生成提示词：描述镜头运动和动态效果",\n'
-            f'        "camera": "镜头运动方式（push_in/pull_out/pan_left/pan_right/static/close_up/wide_shot）",\n'
-            f'        "mood": "画面氛围（warm/bright/dark/energetic/elegant）",\n'
-            f'        "overlay": {{\n'
-            f'          "text": "画面上叠加的关键文字，不超过10个字，不需要时留空",\n'
-            f'          "position": "文字位置（top/center/bottom）",\n'
-            f'          "style": "文字风格（highlight/price_tag/call_to_action/subtle）"\n'
-            f'        }}\n'
-            f'      }}\n'
-            f'    }}\n'
-            f'  ],\n'
-            f'  "audio": {{\n'
-            f'    "tts_voice": "zh_female_cancan_mars_bigtts",\n'
-            f'    "bgm": "背景音乐风格描述",\n'
-            f'    "bgm_volume": 0.3\n'
-            f'  }}\n'
-            f'}}\n'
-            f'```\n\n'
-            f"## 场景类型说明\n"
-            f"- hook: 开场，前3秒抓住注意力（3-5秒）\n"
-            f"- selling_point: 卖点展示（4-8秒）\n"
-            f"- detail: 细节特写（3-6秒）\n"
-            f"- social_proof: 口碑背书（3-5秒）\n"
-            f"- price: 价格优惠（3-5秒）\n"
-            f"- cta: 行动号召（3-5秒）\n\n"
-            f"## 注意事项\n"
-            f"1. 总时长 12-20 秒，scenes 3-5 个，每个场景 3-8 秒\n"
-            f"2. image_prompt 要详细（主体、背景、光线、色调、构图）\n"
-            f"3. video_prompt 要描述镜头运动和画面变化\n"
-            f"4. 文案口语化、有感染力，适合短视频带货\n"
-            f"5. voice_style 可选：excited/confident/urgent/warm/professional\n"
-            f"6. 前3秒是黄金时间，hook 必须足够吸引人\n"
-            f"7. overlay.text 简短有力，不超过10个字"
+        template = _load_prompt("script_generation")
+        prompt = template.format(
+            target_duration=target_duration,
+            core_sections=core_text,
+            reference=reference or "",
         )
+
+        return prompt
 
     # ========== LLM 调用 ==========
 
     async def _call_llm(self, prompt: str) -> dict:
         """调用 LLM 生成剧本"""
+        system_prompt = _load_prompt("script_system")
         request = ChatRequest(
             messages=[
-                ChatMessage(role="system", content=(
-                    "你是一个专业的带货视频编剧，擅长创作短视频剧本。\n"
-                    "你的输出必须是严格的 JSON 格式，不要包含任何其他文字。\n"
-                    "image_prompt 要详细描述画面（主体、背景、光线、色调），用于 AI 图片生成。\n"
-                    "video_prompt 要描述镜头运动和动态效果，用于 AI 视频生成。\n"
-                    "overlay 用于指定画面上叠加的关键文字，简短有力，不超过10个字，用于提高转化率。"
-                )),
+                ChatMessage(role="system", content=system_prompt),
                 ChatMessage(role="user", content=prompt),
             ],
             temperature=0.7,
@@ -493,40 +458,27 @@ class ScriptGenerationService:
 
     def _mock_generate(self, project: Project, target_duration: int) -> dict:
         """Mock 剧本生成（作为 LLM 调用失败的 fallback）"""
+        scene_configs = _load_mock_scenes()
         scenes = []
         total_sec = 0
-        scene_configs = [
-            ("hook", "excited", "一位年轻女性手持木吉他坐在窗边，温暖的阳光洒在吉他面板上，背景是简约的白色墙壁，暖色调，竖屏构图",
-             "镜头从吉他全景缓慢推近至面板特写，阳光光斑微微晃动",
-             {"text": project.title, "position": "bottom", "style": "highlight"}),
-            ("selling_point", "confident", "吉他面板木纹特写，云杉木纹理清晰可见，浅景深，柔和的侧光照明，专业产品摄影风格",
-             "镜头从左向右缓慢平移，展示木纹质感，微距效果",
-             {"text": "云杉木面板", "position": "bottom", "style": "highlight"}),
-            ("detail", "professional", "吉他弦钮和琴头特写，金属弦钮反射光线，背景虚化，高端产品摄影风格",
-             "镜头环绕琴头旋转，弦钮金属光泽闪烁",
-             {"text": "好评率98%", "position": "top", "style": "subtle"}),
-            ("price", "urgent", "吉他搭配全套配件展示：调音器、琴包、拨片、备用琴弦，整齐摆放在桌面上，促销氛围灯光",
-             "镜头从配件全景快速推近至价格标签，动感效果",
-             {"text": "限时特惠 ¥649", "position": "center", "style": "price_tag"}),
-            ("cta", "warm", "女性微笑弹奏吉他，自然光，温馨的家庭环境，竖屏构图，幸福感氛围",
-             "镜头缓慢拉远，展示完整弹奏画面，温暖色调",
-             {"text": "点击下单", "position": "bottom", "style": "call_to_action"}),
-        ]
 
-        for i, (scene_type, voice, img_prompt, vid_prompt, overlay) in enumerate(scene_configs):
+        for i, config in enumerate(scene_configs):
             remaining = target_duration - total_sec
             if remaining < 4:
                 break
             duration = min(8, remaining)
+            overlay = config["overlay"].copy()
+            if "{title}" in overlay.get("text", ""):
+                overlay["text"] = overlay["text"].replace("{title}", project.title)
             scenes.append({
                 "scene_id": i + 1,
-                "type": scene_type,
+                "type": config["type"],
                 "duration": duration,
                 "text": f"{project.title}的第{i+1}个卖点，详细讲解产品优势和使用场景。",
-                "voice_style": voice,
+                "voice_style": config["voice_style"],
                 "visual": {
-                    "image_prompt": img_prompt,
-                    "video_prompt": vid_prompt,
+                    "image_prompt": config["image_prompt"],
+                    "video_prompt": config["video_prompt"],
                     "camera": "push_in" if i % 2 == 0 else "pan_left",
                     "mood": "warm",
                     "overlay": overlay,

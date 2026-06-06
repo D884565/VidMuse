@@ -14,6 +14,7 @@ from backend.v1.app.assets.dao.asset_dao import AssetDAO
 from backend.v1.app.assets.service.asset_service import AssetService
 from backend.v1.app.slice.dao.slice_dao import SliceDAO
 from backend.store.database.sync_database import get_db as get_sync_db
+from backend.store import get_storage_client
 import logging
 
 logger = logging.getLogger(__name__)

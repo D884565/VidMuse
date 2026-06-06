@@ -1,0 +1,37 @@
+[
+  {
+    "type": "hook",
+    "voice_style": "excited",
+    "image_prompt": "一位年轻女性手持木吉他坐在窗边，温暖的阳光洒在吉他面板上，背景是简约的白色墙壁，暖色调，竖屏构图",
+    "video_prompt": "镜头从吉他全景缓慢推近至面板特写，阳光光斑微微晃动",
+    "overlay": {"text": "{title}", "position": "bottom", "style": "highlight"}
+  },
+  {
+    "type": "selling_point",
+    "voice_style": "confident",
+    "image_prompt": "吉他面板木纹特写，云杉木纹理清晰可见，浅景深，柔和的侧光照明，专业产品摄影风格",
+    "video_prompt": "镜头从左向右缓慢平移，展示木纹质感，微距效果",
+    "overlay": {"text": "云杉木面板", "position": "bottom", "style": "highlight"}
+  },
+  {
+    "type": "detail",
+    "voice_style": "professional",
+    "image_prompt": "吉他弦钮和琴头特写，金属弦钮反射光线，背景虚化，高端产品摄影风格",
+    "video_prompt": "镜头环绕琴头旋转，弦钮金属光泽闪烁",
+    "overlay": {"text": "好评率98%", "position": "top", "style": "subtle"}
+  },
+  {
+    "type": "price",
+    "voice_style": "urgent",
+    "image_prompt": "吉他搭配全套配件展示：调音器、琴包、拨片、备用琴弦，整齐摆放在桌面上，促销氛围灯光",
+    "video_prompt": "镜头从配件全景快速推近至价格标签，动感效果",
+    "overlay": {"text": "限时特惠 ¥649", "position": "center", "style": "price_tag"}
+  },
+  {
+    "type": "cta",
+    "voice_style": "warm",
+    "image_prompt": "女性微笑弹奏吉他，自然光，温馨的家庭环境，竖屏构图，幸福感氛围",
+    "video_prompt": "镜头缓慢拉远，展示完整弹奏画面，温暖色调",
+    "overlay": {"text": "点击下单", "position": "bottom", "style": "call_to_action"}
+  }
+]

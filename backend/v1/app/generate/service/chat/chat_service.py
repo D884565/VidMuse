@@ -32,6 +32,11 @@ from backend.v1.app.models.project import Project
 
 
 EDITABLE_FRAME_FIELDS = ("description", "narration", "image_prompt", "video_prompt")
+PROJECT_REGENERATION_ACTIONS = {
+    "REGENERATE_PROJECT_ALL",
+    "REGENERATE_IMAGES_AND_VIDEO",
+    "REGENERATE_VIDEO_ONLY",
+}
 
 
 def apply_frame_modifications(frame, modifications: dict) -> None:
@@ -197,6 +202,24 @@ class ChatService:
                     "Project TTS regeneration has been queued from chat.",
                 )
             ]
+        elif plan["action"] in PROJECT_REGENERATION_ACTIONS:
+            if plan.get("needs_confirmation", True):
+                pending_action = self._build_pending_action(plan, content, frame_id)
+                blocks = [build_confirmation_preview_block(
+                    plan["action"],
+                    plan["assistant_content"],
+                    target_frames=plan.get("affected_frame_ids", []),
+                    modifications=plan.get("modifications", {}),
+                    pending_action_id=pending_action["id"],
+                )]
+            else:
+                task_result = await self._submit_project_regeneration(db, project, project_id, plan["action"])
+                blocks = [build_progress_block(
+                    plan.get("affected_stage") or "video",
+                    "running",
+                    task_result.get("task_id"),
+                    "Project regeneration has been queued from chat.",
+                )]
         elif plan["action"] == "CONFIRM_SCRIPT_AND_GENERATE_IMAGES":
             generation_workflow_service.advance_stage(project, "script")
             await db.commit()
@@ -385,6 +408,15 @@ class ChatService:
         elif action == "REGENERATE_TTS":
             task_result = await self._submit_project_tts_regeneration_task(db, project, project_id)
             blocks = [build_progress_block("video", "running", task_result.get("task_id"), "TTS 重生成已排队。")]
+        elif action in PROJECT_REGENERATION_ACTIONS:
+            if plan.get("needs_confirmation", True):
+                pending_action = self._build_pending_action(plan, content, frame_id)
+                blocks = [build_confirmation_preview_block(action, plan["assistant_content"],
+                    target_frames=plan.get("affected_frame_ids", []), modifications=plan.get("modifications", {}),
+                    pending_action_id=pending_action["id"])]
+            else:
+                task_result = await self._submit_project_regeneration(db, project, project_id, action)
+                blocks = [build_progress_block(plan.get("affected_stage") or "video", "running", task_result.get("task_id"), "Project regeneration has been queued.")]
         elif action == "CONFIRM_SCRIPT_AND_GENERATE_IMAGES":
             generation_workflow_service.advance_stage(project, "script")
             await db.commit()
@@ -601,6 +633,9 @@ class ChatService:
         elif plan["action"] == "GENERATE_VIDEO":
             task_result = await video_generation_service.submit_generation_task(db, project_id)
             blocks = [build_progress_block("video", "running", task_result.get("task_id"))]
+        elif plan["action"] in PROJECT_REGENERATION_ACTIONS:
+            task_result = await self._submit_project_regeneration(db, project, project_id, plan["action"])
+            blocks = [build_progress_block(plan.get("affected_stage") or "video", "running", task_result.get("task_id"))]
         else:
             raise ValueError(f"unsupported pending action: {plan['action']}")
         return task_result, updated_frames, blocks
@@ -826,6 +861,69 @@ class ChatService:
         sent = celery_app.send_task("generate_project_tts_task", args=[project_id, task.id])
         await generation_task_service.set_celery_task_id(db, task.id, sent.id)
         return {"task_id": task.id, "status": "queued"}
+
+    async def _submit_project_regeneration(
+        self,
+        db: AsyncSession,
+        project: Project,
+        project_id: int,
+        action: str,
+    ) -> dict:
+        if project.stage_status == "running":
+            return {
+                "task_id": project.last_task_id,
+                "status": "running",
+                "message": "generation already in progress",
+            }
+
+        if action == "REGENERATE_PROJECT_ALL":
+            await script_generation_service.generate_script(db, project_id, force=True)
+            project = await self._get_project(db, project_id)
+            frames = await self._get_frames(db, project_id)
+            for frame in frames:
+                frame.image_url = None
+                frame.video_url = None
+                frame.status = 0
+                frame.dirty = 1
+            project_workflow_state.mark_project_stage_review(project, "script", project.last_task_id)
+            await db.commit()
+            return await video_generation_service.submit_generation_task(
+                db,
+                project_id,
+                require_ready_images=False,
+                trigger_source="chat_regenerate_project_all",
+            )
+
+        frames = await self._get_frames(db, project_id)
+        for frame in frames:
+            if action == "REGENERATE_IMAGES_AND_VIDEO":
+                frame.image_url = None
+                frame.video_url = None
+                frame.status = 0
+            elif action == "REGENERATE_VIDEO_ONLY":
+                frame.video_url = None
+            else:
+                raise ValueError(f"unsupported project regeneration action: {action}")
+            frame.dirty = 1
+
+        if action == "REGENERATE_IMAGES_AND_VIDEO":
+            generation_workflow_service.invalidate_from(project, "image")
+            project_workflow_state.mark_project_stage_review(project, "script", project.last_task_id)
+            require_ready_images = False
+            trigger_source = "chat_regenerate_images_and_video"
+        else:
+            generation_workflow_service.invalidate_from(project, "video")
+            project_workflow_state.mark_project_stage_review(project, "image", project.last_task_id)
+            require_ready_images = True
+            trigger_source = "chat_regenerate_video_only"
+
+        await db.commit()
+        return await video_generation_service.submit_generation_task(
+            db,
+            project_id,
+            require_ready_images=require_ready_images,
+            trigger_source=trigger_source,
+        )
 
     async def regenerate_frame(
         self,

@@ -7,7 +7,10 @@ import ProjectManager from '../Project/ProjectManager.jsx'
 import Sidebar from './Sidebar.jsx'
 import { useAppStore } from '../../store/appStore.js'
 import { getUserInfo } from '../../services/user.js'
+import { restoreSession } from '../../services/sessionRestore.js'
 import Login from '../../pages/Login.jsx'
+
+const SESSION_RESTORE_TIMEOUT_MS = 8000
 
 export default function MainLayout() {
   const activeView = useAppStore((state) => state.activeView)
@@ -17,19 +20,38 @@ export default function MainLayout() {
   const setUser = useAppStore((state) => state.setUser)
   const setAuthLoading = useAppStore((state) => state.setAuthLoading)
 
-  // 页面刷新后恢复用户信息
   useEffect(() => {
+    let cancelled = false
+
     if (isLoggedIn && !user) {
       setAuthLoading(true)
-      getUserInfo()
-        .then((data) => setUser({ id: data.id, username: data.username, role: data.role }))
-        .catch(() => {
-          // token 已失效，清除登录状态
-          useAppStore.getState().logout()
+
+      restoreSession(getUserInfo, { timeoutMs: SESSION_RESTORE_TIMEOUT_MS })
+        .then((currentUser) => {
+          if (!cancelled) {
+            setUser(currentUser)
+          }
         })
-        .finally(() => setAuthLoading(false))
-    } else {
-      setAuthLoading(false)
+        .catch(() => {
+          if (!cancelled) {
+            useAppStore.getState().logout()
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setAuthLoading(false)
+          }
+        })
+
+      return () => {
+        cancelled = true
+      }
+    }
+
+    setAuthLoading(false)
+
+    return () => {
+      cancelled = true
     }
   }, [isLoggedIn, user, setUser, setAuthLoading])
 
@@ -41,7 +63,6 @@ export default function MainLayout() {
     )
   }
 
-  // 未登录时显示登录页
   if (!isLoggedIn) {
     return <Login />
   }

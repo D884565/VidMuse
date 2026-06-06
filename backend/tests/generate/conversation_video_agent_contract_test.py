@@ -66,12 +66,18 @@ def test_llm_agent_supports_stage_and_tts_actions():
     assert "GENERATE_IMAGES" in VALID_ACTIONS
     assert "GENERATE_VIDEO" in VALID_ACTIONS
     assert "REGENERATE_TTS" in VALID_ACTIONS
+    assert "REGENERATE_PROJECT_ALL" in VALID_ACTIONS
+    assert "REGENERATE_IMAGES_AND_VIDEO" in VALID_ACTIONS
+    assert "REGENERATE_VIDEO_ONLY" in VALID_ACTIONS
 
     service = LLMAgentService()
 
     assert service._infer_affected_stage("GENERATE_IMAGES") == "image"
     assert service._infer_affected_stage("GENERATE_VIDEO") == "video"
     assert service._infer_affected_stage("REGENERATE_TTS") == "video"
+    assert service._infer_affected_stage("REGENERATE_PROJECT_ALL") == "script"
+    assert service._infer_affected_stage("REGENERATE_IMAGES_AND_VIDEO") == "image"
+    assert service._infer_affected_stage("REGENERATE_VIDEO_ONLY") == "video"
 
 
 def test_chat_service_has_real_generation_action_branches():
@@ -80,6 +86,8 @@ def test_chat_service_has_real_generation_action_branches():
     assert 'plan["action"] == "GENERATE_IMAGES"' in source
     assert 'plan["action"] == "GENERATE_VIDEO"' in source
     assert 'plan["action"] == "REGENERATE_TTS"' in source
+    assert 'plan["action"] in PROJECT_REGENERATION_ACTIONS' in source
+    assert "def _submit_project_regeneration(" in source
     assert '"generate_frame_image_task"' in source
     assert '"generate_frame_video_task"' in source
 
@@ -160,6 +168,29 @@ def test_rule_agent_regenerates_tts_when_voice_or_narration_changes():
 
     assert plan["action"] == "REGENERATE_TTS"
     assert plan["affected_stage"] == "video"
+
+
+def test_rule_agent_detects_three_project_regeneration_modes():
+    project = SimpleNamespace(workflow_stage="completed", stage_status="confirmed")
+
+    all_plan = workflow_agent_service.plan(project, [], "这个项目全部重跑一遍，从剧本开始重新生成")
+    image_video_plan = workflow_agent_service.plan(project, [], "剧本不变，图片和视频重新生成")
+    video_only_plan = workflow_agent_service.plan(project, [], "剧本和图片都不变，只重新生成视频")
+
+    assert all_plan["action"] == "REGENERATE_PROJECT_ALL"
+    assert all_plan["requires_confirmation"] is True
+    assert image_video_plan["action"] == "REGENERATE_IMAGES_AND_VIDEO"
+    assert image_video_plan["requires_confirmation"] is True
+    assert video_only_plan["action"] == "REGENERATE_VIDEO_ONLY"
+    assert video_only_plan["requires_confirmation"] is True
+
+
+def test_project_regeneration_actions_are_confirmed_pending_actions():
+    chat_source = Path("backend/v1/app/generate/service/chat/chat_service.py").read_text(encoding="utf-8")
+
+    assert "PROJECT_REGENERATION_ACTIONS" in chat_source
+    assert "build_confirmation_preview_block(" in chat_source
+    assert "_submit_project_regeneration(db, project, project_id, plan[\"action\"])" in chat_source
 
 
 def test_rule_agent_regenerates_script_from_failed_script_stage():

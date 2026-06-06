@@ -29,6 +29,7 @@ class TraceConfig(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"
 
 
 trace_config = TraceConfig()

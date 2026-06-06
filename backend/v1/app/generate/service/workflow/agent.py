@@ -16,6 +16,27 @@ class WorkflowAgentService:
         text = (content or "").strip()
         stage = getattr(project, "workflow_stage", None) or "created"
         selected_frame_ids = self._resolve_frame_ids(frames, text, frame_id)
+        project_regeneration_action = None
+        if stage in {"image", "video", "completed"}:
+            project_regeneration_action = self._project_regeneration_action(text)
+        if project_regeneration_action:
+            stage_map = {
+                "REGENERATE_PROJECT_ALL": "script",
+                "REGENERATE_IMAGES_AND_VIDEO": "image",
+                "REGENERATE_VIDEO_ONLY": "video",
+            }
+            reply_map = {
+                "REGENERATE_PROJECT_ALL": "我理解你想把这个项目从剧本开始全部重跑。这个操作会重新生成剧本、图片和视频，可以继续吗？",
+                "REGENERATE_IMAGES_AND_VIDEO": "我理解你想保留剧本，只重新生成图片和视频。这个操作会替换现有首帧图和成片，可以继续吗？",
+                "REGENERATE_VIDEO_ONLY": "我理解你想保留剧本和图片，只重新生成视频成片。这个操作会重跑视频片段和最终合成，可以继续吗？",
+            }
+            return self._plan(
+                project_regeneration_action,
+                affected_stage=stage_map[project_regeneration_action],
+                next_stage=stage_map[project_regeneration_action],
+                requires_confirmation=True,
+                assistant_content=reply_map[project_regeneration_action],
+            )
 
         # 优先判断：用户想重生成某张图片
         if self._wants_image_regeneration(text, selected_frame_ids):
@@ -151,6 +172,28 @@ class WorkflowAgentService:
     def _has_confirm_intent(self, text: str) -> bool:
         """判断用户是否表达确认意图。"""
         return any(word in text for word in ("确认", "可以", "没问题", "下一步", "继续", "通过"))
+
+    def _project_regeneration_action(self, text: str) -> str | None:
+        """Detect project-level rerun modes from natural Chinese instructions."""
+        if not any(word in text for word in ("重跑", "重做", "重新生成", "重生成", "重新来", "再生成")):
+            return None
+
+        if any(word in text for word in ("全部", "全流程", "从头", "从剧本", "剧本开始", "整个项目")):
+            return "REGENERATE_PROJECT_ALL"
+
+        keeps_script = any(word in text for word in ("剧本不变", "剧本和图片", "保留剧本", "脚本不变", "文案不变"))
+        keeps_image = any(word in text for word in ("图片不变", "图片都不变", "图不变", "首帧不变", "保留图片", "保留首帧"))
+        mentions_image = any(word in text for word in ("图片", "首帧", "画面"))
+        mentions_video = any(word in text for word in ("视频", "成片", "片段"))
+
+        if keeps_script and keeps_image:
+            return "REGENERATE_VIDEO_ONLY"
+        if keeps_script and mentions_image and mentions_video:
+            return "REGENERATE_IMAGES_AND_VIDEO"
+        if mentions_video and not mentions_image:
+            return "REGENERATE_VIDEO_ONLY"
+
+        return None
 
     def _mentions_image_or_next(self, text: str) -> bool:
         """判断用户是否提及图片或推进下一步。"""

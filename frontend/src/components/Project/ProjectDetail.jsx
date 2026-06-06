@@ -6,6 +6,7 @@ import {
   downloadProjectVideo,
   getProjectDetail,
 } from '../../services/project.js'
+import { formatVideoStyle } from '../../utils/videoStyle.js'
 
 export default function ProjectDetail({ project, onClose }) {
   const [scriptDetail, setScriptDetail] = useState(null)
@@ -77,6 +78,7 @@ export default function ProjectDetail({ project, onClose }) {
   const scriptContent = scriptDetail?.content || {}
   const scenes = scriptContent.scenes || []
   const videoMeta = scriptContent.video_meta || {}
+  const videoStyleLabel = formatVideoStyle(videoMeta.style)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
@@ -127,10 +129,10 @@ export default function ProjectDetail({ project, onClose }) {
             </div>
           ) : (
             <div className="space-y-6">
-              {videoMeta.style && (
+              {videoStyleLabel && (
                 <div className="rounded-lg border border-[var(--border-soft)] bg-[rgba(26,26,46,0.5)] p-4">
                   <p className="m-0 mb-2 text-xs font-medium text-[var(--text-muted)]">视频风格</p>
-                  <p className="m-0 text-sm">{videoMeta.style}</p>
+                  <p className="m-0 text-sm">{videoStyleLabel}</p>
                   {videoMeta.hook_line && (
                     <p className="m-0 mt-2 text-sm text-[#a78bfa]">"{videoMeta.hook_line}"</p>
                   )}

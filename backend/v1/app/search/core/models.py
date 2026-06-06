@@ -4,6 +4,18 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 @dataclass
+class Document:
+    """检索文档对象"""
+    id: str
+    content: str = ""
+    score: float = 0.0
+    source: str = ""
+    source_type: str = ""
+    title: Optional[str] = None
+    url: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+@dataclass
 class SearchQuery:
     """检索查询对象"""
     query_text: str  # 查询文本
