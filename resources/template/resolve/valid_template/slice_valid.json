@@ -6,33 +6,122 @@
   "properties": {
     "片段模板": {
       "type": "object",
-      "required": ["模板名称", "模板类型", "创作要素", "关键帧时间戳"],
+      "required": ["模板名称", "模板类型", "机制", "总结", "创作要素"],
       "properties": {
         "模板名称": { "type": "string" },
         "模板类型": {
           "type": "string",
-          "enum": ["HOOK", "PAIN_POINT", "PRODUCT_SHOW", "TRUST_BUILD", "CTA"]
+          "enum": ["HOOK", "PAIN_POINT", "PRODUCT_SHOW", "TRUST_BUILD", "CTA", "REVERSE"]
         },
         "机制": { "type": "string" },
         "总结": { "type": "string" },
 
         "创作要素": {
           "type": "object",
-          "required": ["画面", "动作", "台词", "运镜", "时长"],
+          "required": ["音频域", "画面视觉域", "情绪心理域", "文案话术域", "商品营销域"],
           "properties": {
-            "画面": { "type": "string" },
-            "动作": { "type": "string" },
-            "台词": { "type": "string" },
-            "运镜": { "type": "string" },
-            "时长": { "type": "string" },
-            "情绪评分": {
-              "type": ["string", "number"],
-              "minimum": 0,
-              "maximum": 1
+            "音频域": {
+              "type": "object",
+              "required": ["背景音乐风格", "背景音乐速度", "人声语速", "是否有音效", "音频情绪"],
+              "properties": {
+                "背景音乐风格": {
+                  "type": "string",
+                  "enum": ["悬疑", "轻快", "激昂", "治愈", "市井", "无"]
+                },
+                "背景音乐速度": {
+                  "type": "string",
+                  "enum": ["快", "中", "慢"]
+                },
+                "人声语速": {
+                  "type": "string",
+                  "enum": ["快", "中", "慢"]
+                },
+                "是否有音效": {
+                  "type": "string",
+                  "enum": ["有", "无"]
+                },
+                "音频情绪": {
+                  "type": "string",
+                  "enum": ["紧张", "轻松", "煽情", "亢奋", "平静"]
+                }
+              },
+              "additionalProperties": true
             },
-            "视觉标签": {
-              "type": "array",
-              "items": { "type": "string" }
+
+            "画面视觉域": {
+              "type": "object",
+              "required": ["场景", "镜头类型", "色彩风格", "字幕样式"],
+              "properties": {
+                "场景": {
+                  "type": "string",
+                  "enum": ["居家", "厨房", "办公室", "户外", "棚拍", "实验室"]
+                },
+                "镜头类型": {
+                  "type": "string",
+                  "enum": ["特写", "全景", "近景", "手持第一视角"]
+                },
+                "色彩风格": {
+                  "type": "string",
+                  "enum": ["暖黄", "冷色", "高饱和", "写实"]
+                },
+                "字幕样式": {
+                  "type": "string",
+                  "enum": ["大字弹窗", "底部小字", "动态弹跳", "无"]
+                }
+              },
+              "additionalProperties": true
+            },
+
+            "情绪心理域": {
+              "type": "object",
+              "required": ["创作者情绪", "观众情绪"],
+              "properties": {
+                "创作者情绪": {
+                  "type": "string",
+                  "enum": ["吐槽", "自信", "悬念", "夸张", "共情"]
+                },
+                "观众情绪": {
+                  "type": "string",
+                  "enum": ["焦虑", "猎奇", "省钱快感", "治愈", "避雷"]
+                }
+              },
+              "additionalProperties": true
+            },
+
+            "文案话术域": {
+              "type": "object",
+              "required": ["开场风格", "话术风格", "关键词"],
+              "properties": {
+                "开场风格": {
+                  "type": "string",
+                  "enum": ["痛点提问", "报价", "亲身经历", "悬念"]
+                },
+                "话术风格": {
+                  "type": "string",
+                  "enum": ["科普", "比价", "逼单", "种草"]
+                },
+                "关键词": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              },
+              "additionalProperties": true
+            },
+
+            "商品营销域": {
+              "type": "object",
+              "required": ["商品品类", "促销方式"],
+              "properties": {
+                "商品品类": {
+                  "type": "string",
+                  "enum": ["家居", "美妆", "食品", "小家电", "服饰"]
+                },
+                "促销方式": {
+                  "type": "string",
+                  "enum": ["直降", "买一送一", "限时", "平替", "专柜同款"]
+                }
+              },
+              "additionalProperties": true
             }
           },
           "additionalProperties": true

@@ -1,13 +1,11 @@
 from typing import List, Optional
 
-from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor
+from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor, constants
 from backend.v1.app.pipeline.processors import (
     SchemaValidationProcessor,
-    VideoAggregationProcessor,
-    VideoOverallUnderstandingProcessor,
-    VideoGenerateProcessor,
-    VectorizationProcessor,
 )
+from backend.v1.app.pipeline.processors.video import VideoAggregationProcessor, VideoOverallUnderstandingProcessor, \
+    VideoGenerateProcessor, VectorizationProcessor
 
 
 class VideoOverallParsingPipeline(BasePipeline):
@@ -36,19 +34,19 @@ class VideoOverallParsingPipeline(BasePipeline):
             if video_schema_path:
                 video_validator = SchemaValidationProcessor(
                     schema_path=video_schema_path,
-                    data_key="video_data",
-                    valid_key="valid_video",
-                    invalid_key="invalid_video",
-                    summary_key="video_validation_summary",
-                    id_field="video_id"
+                    data_key=constants.VIDEO_DATA,
+                    valid_key=constants.VALID_VIDEO,
+                    invalid_key=constants.INVALID_VIDEO,
+                    summary_key=constants.VIDEO_VALIDATION_SUMMARY,
+                    id_field=constants.VIDEO_ID
                 )
             else:
                 # 使用默认video模板，自定义参数
                 video_validator = SchemaValidationProcessor.for_video(
-                    valid_key="valid_video",
-                    invalid_key="invalid_video",
-                    summary_key="video_validation_summary",
-                    id_field="video_id"
+                    valid_key=constants.VALID_VIDEO,
+                    invalid_key=constants.INVALID_VIDEO,
+                    summary_key=constants.VIDEO_VALIDATION_SUMMARY,
+                    id_field=constants.VIDEO_ID
                 )
 
             # 默认处理器顺序
@@ -68,9 +66,9 @@ class VideoOverallParsingPipeline(BasePipeline):
                 processors.extend([
                     # 视频整体向量化：存入video知识库
                     VectorizationProcessor(
-                        data_key="embed_video",
+                        data_key=constants.EMBED_VIDEO,
                         store_type="video",  # 视频类型，存入video_knowledge集合
-                        id_key="video_id",
+                        id_key=constants.VIDEO_ID,
                         image_key=None  # 整体向量化不需要处理图片
                     ),
                 ])

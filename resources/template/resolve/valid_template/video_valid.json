@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "VideoTemplateSchema",
   "type": "object",
-  "required": ["基本信息", "片段索引列表", "片段间关系"],
+  "required": ["基本信息", "策略框架"],
   "properties": {
     "基本信息": {
       "type": "object",
@@ -12,6 +12,193 @@
         "剧本": { "type": "string" },
         "模板": { "type": "string" },
         "摘要": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+
+    "策略框架": {
+      "type": "object",
+      "required": [
+        "核心模板",
+        "钩子策略",
+        "叙事流程",
+        "情绪流动曲线",
+        "节奏策略",
+        "张力策略",
+        "转化安排",
+        "片段间关系"
+      ],
+      "properties": {
+        "核心模板": {
+          "type": "string",
+          "enum": [
+            "痛点前置",
+            "悬念开场",
+            "反差反转",
+            "开箱演示",
+            "效果对比",
+            "教程步骤",
+            "剧情种草",
+            "测评打假"
+          ]
+        },
+
+        "钩子策略": {
+          "type": "object",
+          "required": ["钩子类型", "钩子情绪", "钩子时长"],
+          "properties": {
+            "钩子类型": {
+              "type": "string",
+              "enum": [
+                "痛点提问",
+                "利益直给",
+                "反常识",
+                "视觉冲击",
+                "悬念留白",
+                "场景共鸣"
+              ]
+            },
+            "钩子情绪": {
+              "type": "string",
+              "enum": ["焦虑", "好奇", "惊讶", "共情", "疑惑", "爽感"]
+            },
+            "钩子时长": {
+              "type": "string",
+              "enum": ["极短(0-2s)", "常规(2-4s)", "慢铺垫(4s+)"]
+            }
+          },
+          "additionalProperties": true
+        },
+
+        "叙事流程": {
+          "type": "object",
+          "required": ["结构类型", "步骤序列"],
+          "properties": {
+            "结构类型": {
+              "type": "string",
+              "enum": [
+                "线性递进",
+                "先抑后扬",
+                "先扬后抑",
+                "多次反转",
+                "对比穿插"
+              ]
+            },
+            "步骤序列": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            }
+          },
+          "additionalProperties": true
+        },
+
+        "情绪流动曲线": {
+          "type": "object",
+          "required": [
+            "开篇阶段情绪",
+            "中间阶段情绪",
+            "收尾阶段情绪",
+            "情绪变化类型"
+          ],
+          "properties": {
+            "开篇阶段情绪": {
+              "type": "string",
+              "enum": ["平淡", "压抑", "疑惑", "焦虑"]
+            },
+            "中间阶段情绪": {
+              "type": "string",
+              "enum": ["解惑", "惊讶", "轻松", "亢奋"]
+            },
+            "收尾阶段情绪": {
+              "type": "string",
+              "enum": ["满足", "种草", "安心", "冲动"]
+            },
+            "情绪变化类型": {
+              "type": "string",
+              "enum": [
+                "单一直升",
+                "起伏波动",
+                "先低后高",
+                "高开低走",
+                "平稳无波动"
+              ]
+            }
+          },
+          "additionalProperties": true
+        },
+
+        "节奏策略": {
+          "type": "object",
+          "required": ["整体速度", "剪辑频率", "节奏变化"],
+          "properties": {
+            "整体速度": {
+              "type": "string",
+              "enum": ["快", "中", "慢"]
+            },
+            "剪辑频率": {
+              "type": "string",
+              "enum": ["高切镜", "中等切镜", "少切镜", "固定长镜头"]
+            },
+            "节奏变化": {
+              "type": "string",
+              "enum": ["全程匀速", "前慢后快", "前快后慢", "快慢交替"]
+            }
+          },
+          "additionalProperties": true
+        },
+
+        "张力策略": {
+          "type": "object",
+          "required": ["张力构建方式", "高潮位置"],
+          "properties": {
+            "张力构建方式": {
+              "type": "string",
+              "enum": ["铺垫积累", "直接爆发", "多次小高潮", "无张力"]
+            },
+            "高潮位置": {
+              "type": "string",
+              "enum": ["前段", "中段", "后段", "全程平稳"]
+            }
+          },
+          "additionalProperties": true
+        },
+
+        "转化安排": {
+          "type": "object",
+          "required": ["卖点出现方式", "引导策略"],
+          "properties": {
+            "卖点出现方式": {
+              "type": "string",
+              "enum": ["前置密集", "中段集中", "尾部集中", "均匀分布"]
+            },
+            "引导策略": {
+              "type": "string",
+              "enum": ["软种草", "硬逼单", "价值收尾", "无引导"]
+            }
+          },
+          "additionalProperties": true
+        },
+
+        "片段间关系": {
+          "type": "object",
+          "required": ["转场序列", "情绪曲线", "视觉节奏", "背景音乐节奏匹配"],
+          "properties": {
+            "转场序列": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            },
+            "情绪曲线": {
+              "type": "array",
+              "items": { "type": "string" },
+              "minItems": 1
+            },
+            "视觉节奏": { "type": "string" },
+            "背景音乐节奏匹配": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
       },
       "additionalProperties": true
     },
@@ -38,18 +225,6 @@
         },
         "additionalProperties": true
       }
-    },
-
-    "片段间关系": {
-      "type": "object",
-      "required": ["转场序列", "情绪曲线", "视觉节奏", "BGM节奏匹配"],
-      "properties": {
-        "转场序列": { "type": "array", "items": { "type": "string" } },
-        "情绪曲线": { "type": "array", "items": { "type": "string" } },
-        "视觉节奏": { "type": "string" },
-        "BGM节奏匹配": { "type": "string" }
-      },
-      "additionalProperties": true
     }
   },
   "additionalProperties": true

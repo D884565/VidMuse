@@ -4,7 +4,7 @@ import json
 import sys
 from datetime import datetime
 
-from .trace_context import get_request_id, span_stack_var
+from backend.framework.trace.context import span_stack_var, get_trace_id, get_user_id
 
 
 class TraceFormatter(logging.Formatter):
@@ -14,13 +14,14 @@ class TraceFormatter(logging.Formatter):
         log_data = {
             "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "level": record.levelname,
-            "request_id": get_request_id(),
+            "request_id": get_trace_id(),
+            "user_id": get_user_id(),
             "logger": record.name,
             "message": record.getMessage(),
         }
 
         # 附带当前调用链路径
-        stack = span_stack_var.get()
+        stack = span_stack_var.get([])
         if stack:
             log_data["trace"] = " > ".join(s.name for s in stack)
 

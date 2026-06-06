@@ -680,6 +680,10 @@ class VolcanoLLM(LLMBase):
 
             # 构造响应
             choice = response.choices[0]
+
+            if not choice.message.content:
+                raise BaseAppException(AI_GENERATE_FAILED, message="响应中未找到消息内容")
+
             usage = ChatUsage(
                 prompt_tokens=response.usage.prompt_tokens,
                 completion_tokens=response.usage.completion_tokens,

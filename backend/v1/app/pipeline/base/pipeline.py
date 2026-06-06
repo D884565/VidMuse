@@ -2,15 +2,142 @@ import logging
 import time
 import traceback
 from abc import ABC
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
+
+from backend.framework.trace.decorator import _sync_push
 from .processor import BaseProcessor
 from .context import PipelineContext
 from ..dao.pipeline_execution_dao import PipelineExecutionDAO
 from backend.v1.app.models.pipeline_execution import PipelineExecutionStatus
 from backend.store.database.sync_database import get_db
+from backend.framework.trace import trace, PushConfig
 
 logger = logging.getLogger(__name__)
+
+
+# ==================== Trace推送配置 ====================
+def _get_pipeline_user_id(*args, **kwargs) -> int:
+    """从流水线输入参数中获取user_id"""
+    if args and len(args) >= 1 and isinstance(args[0], dict):
+        return args[0].get("user_id", 0)
+    return kwargs.get("user_id", 0)
+
+
+def _pipeline_start_msg(func, args, kwargs) -> Tuple[str, str, Dict]:
+    """流水线开始执行消息"""
+    input_data = args[0] if args else kwargs
+    pipeline_type = getattr(func.__self__, 'pipeline_type', 'unknown') if hasattr(func, '__self__') else 'unknown'
+    return (
+        "pipeline_progress",
+        f"{pipeline_type}流水线开始执行",
+        {
+            "pipeline_type": pipeline_type,
+            "status": "running",
+            "progress": 0,
+            "total_processors": len(getattr(func.__self__, 'processors', [])),
+            "video_id": input_data.get("video_id"),
+            "product_id": input_data.get("product_id"),
+            "asset_id": input_data.get("asset_id")
+        }
+    )
+
+
+def _pipeline_end_msg(func, result) -> Tuple[str, str, Dict]:
+    """流水线执行成功消息"""
+    pipeline_type = getattr(func.__self__, 'pipeline_type', 'unknown') if hasattr(func, '__self__') else 'unknown'
+    return (
+        "pipeline_progress",
+        f"{pipeline_type}流水线执行完成",
+        {
+            "pipeline_type": pipeline_type,
+            "status": "completed",
+            "progress": 100,
+            "success": result.get("success", False),
+            "execution_id": result.get("execution_id")
+        }
+    )
+
+
+def _pipeline_error_msg(func, exception) -> Tuple[str, str, Dict]:
+    """流水线执行失败消息"""
+    pipeline_type = getattr(func.__self__, 'pipeline_type', 'unknown') if hasattr(func, '__self__') else 'unknown'
+    return (
+        "pipeline_progress",
+        f"{pipeline_type}流水线执行失败",
+        {
+            "pipeline_type": pipeline_type,
+            "status": "failed",
+            "error": str(exception),
+            "progress": 0
+        },
+        "error"
+    )
+
+
+def _get_resume_user_id(*args, **kwargs) -> int:
+    """从恢复执行的参数中获取user_id（通过查询execution记录）"""
+    if args and len(args) >= 2 and isinstance(args[1], str):
+        execution_id = args[1]
+        try:
+            from backend.store.database.sync_database import get_db
+            from backend.v1.app.pipeline.dao.pipeline_execution_dao import PipelineExecutionDAO
+            db = next(get_db())
+            execution = PipelineExecutionDAO.get_execution_by_id(db, execution_id)
+            db.close()
+            if execution and execution.input_params:
+                return execution.input_params.get("user_id", 0)
+        except Exception as e:
+            logger.warning(f"Failed to get user_id from execution: {e}")
+    return 0
+
+
+def _resume_start_msg(func, args, kwargs) -> Tuple[str, str, Dict]:
+    """流水线恢复执行开始消息"""
+    execution_id = args[1] if len(args) >= 2 else "unknown"
+    pipeline_type = getattr(func.__self__, 'pipeline_type', 'unknown') if hasattr(func, '__self__') else 'unknown'
+    return (
+        "pipeline_progress",
+        f"{pipeline_type}流水线恢复执行",
+        {
+            "pipeline_type": pipeline_type,
+            "status": "running",
+            "execution_id": execution_id,
+            "progress": 0
+        }
+    )
+
+
+def _resume_end_msg(func, result) -> Tuple[str, str, Dict]:
+    """流水线恢复执行成功消息"""
+    pipeline_type = getattr(func.__self__, 'pipeline_type', 'unknown') if hasattr(func, '__self__') else 'unknown'
+    return (
+        "pipeline_progress",
+        f"{pipeline_type}流水线恢复执行完成",
+        {
+            "pipeline_type": pipeline_type,
+            "status": "completed",
+            "progress": 100,
+            "success": result.get("success", False),
+            "execution_id": result.get("execution_id")
+        }
+    )
+
+
+def _resume_error_msg(func, exception) -> Tuple[str, str, Dict]:
+    """流水线恢复执行失败消息"""
+    pipeline_type = getattr(func.__self__, 'pipeline_type', 'unknown') if hasattr(func, '__self__') else 'unknown'
+    return (
+        "pipeline_progress",
+        f"{pipeline_type}流水线恢复执行失败",
+        {
+            "pipeline_type": pipeline_type,
+            "status": "failed",
+            "error": str(exception),
+            "progress": 0
+        },
+        "error"
+    )
 
 
 class BasePipeline:
@@ -38,6 +165,18 @@ class BasePipeline:
         self.persist_after_each_processor = persist_after_each_processor
         self.persist_on_error = persist_on_error
         self.pipeline_type = pipeline_type or self.__class__.__name__
+
+        # 初始化trace推送配置（与run_with_persistence的装饰器配置保持一致）
+        self._push_config = PushConfig(
+            enable_push=True,
+            user_id_getter=_get_pipeline_user_id,
+            push_on_start=True,
+            push_on_end=True,
+            push_on_error=True,
+            start_message_generator=_pipeline_start_msg,
+            end_message_generator=_pipeline_end_msg,
+            error_message_generator=_pipeline_error_msg
+        )
 
     def run(self, input_data: Dict[str, Any], start_from_index: int = 0) -> Dict[str, Any]:
         """
@@ -76,7 +215,7 @@ class BasePipeline:
             context = PipelineContext(input_data)
 
         start_time = time.time()
-        current_index = start_from_index - 1  # 初始化为start_from_index的前一个，因为循环中会先+1
+        current_index = start_from_index - 1  # 初始化为start_from_index的前一个，表示还未开始执行当前批次的处理器
 
         try:
             for i in range(start_from_index, len(self.processors)):
@@ -104,6 +243,33 @@ class BasePipeline:
                     if execution_id and db_session and self.persist_after_each_processor:
                         self._persist_progress(db_session, execution_id, current_index, context)
 
+                    # 推送进度更新
+                    try:
+                        user_id = _get_pipeline_user_id(input_data)
+                        if user_id > 0:
+                            # 计算进度百分比
+                            progress = int((current_index + 1) / len(self.processors) * 100)
+                            # 使用trace包的同步推送方法
+                            _sync_push(
+                                self._push_config,
+                                user_id,
+                                lambda *args: (
+                                    "pipeline_progress",
+                                    f"{self.pipeline_type}流水线处理中",
+                                    {
+                                        "pipeline_type": self.pipeline_type,
+                                        "status": "running",
+                                        "progress": progress,
+                                        "current_processor": processor_name,
+                                        "current_index": current_index + 1,
+                                        "total_processors": len(self.processors),
+                                        "execution_id": execution_id
+                                    }
+                                )
+                            )
+                    except Exception as e:
+                        logger.warning(f"Failed to push pipeline progress: {e}")
+
                 except Exception as e:
                     processor_duration = time.time() - processor_start_time
                     error_msg = f"处理器 {processor_name} 执行失败，耗时: {processor_duration:.2f}s，错误: {str(e)}"
@@ -126,6 +292,10 @@ class BasePipeline:
             if execution_id and db_session:
                 result = self._build_result(context)
                 if success:
+                    # 所有处理器执行成功，更新current_processor_index为总处理器数量，表示全部完成
+                    if not context.has_errors() and current_index == len(self.processors) - 1:
+                        self._persist_progress(db_session, execution_id, len(self.processors), context)
+
                     PipelineExecutionDAO.update_execution_status(
                         db_session, execution_id, PipelineExecutionStatus.COMPLETED
                     )
@@ -192,6 +362,18 @@ class BasePipeline:
             logger.error(f"持久化执行进度失败: {str(e)}", exc_info=True)
             # 持久化失败不影响流水线执行，只记录日志
 
+    @trace(
+        push_config=PushConfig(
+            enable_push=True,
+            user_id_getter=_get_pipeline_user_id,
+            push_on_start=True,
+            push_on_end=True,
+            push_on_error=True,
+            start_message_generator=_pipeline_start_msg,
+            end_message_generator=_pipeline_end_msg,
+            error_message_generator=_pipeline_error_msg
+        )
+    )
     def run_with_persistence(self, input_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         执行流水线并开启持久化，支持断点续跑
@@ -254,6 +436,18 @@ class BasePipeline:
         finally:
             db.close()
 
+    @trace(
+        push_config=PushConfig(
+            enable_push=True,
+            user_id_getter=_get_resume_user_id,
+            push_on_start=True,
+            push_on_end=True,
+            push_on_error=True,
+            start_message_generator=_resume_start_msg,
+            end_message_generator=_resume_end_msg,
+            error_message_generator=_resume_error_msg
+        )
+    )
     def resume_execution(self, execution_id: str) -> Dict[str, Any]:
         """
         从断点恢复执行流水线

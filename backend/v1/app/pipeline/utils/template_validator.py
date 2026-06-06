@@ -8,13 +8,15 @@ from jsonschema import Draft7Validator
 TEMPLATE_TYPE_MAP = {
     "video": "video_valid.json",
     "slice": "slice_valid.json",
-    "product": "product_valid.json"
+    "product": "product_valid.json",
+    "factor": "factor_schema.json",
+    "strategy": "strategy_schema.json"
 }
 
 # 模板文件根目录（相对于当前文件的路径）
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 # 向上导航到项目根目录，然后定位到模板目录
-PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "../../../../../../../"))
+PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR, "../../../../../"))
 VALID_TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve", "valid_template")
 TEMPLATE_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve")
 PROMPT_DIR = os.path.join(PROJECT_ROOT, "resources", "template", "resolve", "prompts")
@@ -25,9 +27,12 @@ _template_cache: Dict[str, Dict[str, Any]] = {}
 _general_json_cache: Dict[str, Any] = {}
 # 提示词类型与对应文件的映射
 PROMPT_TYPE_MAP = {
-    "slice_understanding": "slice_understanding.json",
-    "video_overall_understanding": "video_overall_understanding.json",
-    "product_understanding": "product_understanding.json"
+    "slice_understanding": "slice_understanding.txt",
+    "video_overall_understanding": "video_overall_understanding.txt",
+    "product_understanding": "product_understanding.txt",
+    "extract_common_factors": "extract_common_factors.txt",
+    "generate_strategy": "generate_strategy.txt",
+    "extract_video_common_features": "extract_video_common_features.txt"
 }
 # 提示词缓存
 _prompt_cache: Dict[str, Dict[str, Any]] = {}
@@ -203,7 +208,7 @@ def get_supported_template_types() -> list[str]:
     return list(TEMPLATE_TYPE_MAP.keys())
 
 
-def load_prompt(prompt_type: str) -> Dict[str, Any]:
+def load_prompt(prompt_type: str) -> str:
     """
     加载指定类型的提示词模板
 
@@ -211,7 +216,7 @@ def load_prompt(prompt_type: str) -> Dict[str, Any]:
         prompt_type: 提示词类型，可选值：slice_understanding, video_overall_understanding, product_understanding
 
     Returns:
-        加载成功返回提示词字典，包含 name, description, template, placeholders, output_schema, output_structure 等字段
+        加载成功返回提示词文本内容，包含占位符
 
     Raises:
         ValueError: 不支持的提示词类型
@@ -224,10 +229,20 @@ def load_prompt(prompt_type: str) -> Dict[str, Any]:
         return _prompt_cache[prompt_type]
 
     prompt_file = os.path.join(PROMPT_DIR, PROMPT_TYPE_MAP[prompt_type])
-    prompt = load_json_file(prompt_file, validate_schema=False)
 
-    _prompt_cache[prompt_type] = prompt
-    return prompt
+    # 读取TXT格式的提示词文件
+    abs_path = os.path.abspath(prompt_file)
+    if not os.path.exists(abs_path):
+        raise FileNotFoundError(f"提示词文件不存在: {abs_path}")
+
+    try:
+        with open(abs_path, "r", encoding="utf-8") as f:
+            prompt_content = f.read()
+    except Exception as e:
+        raise RuntimeError(f"加载提示词文件失败: {abs_path}, 错误: {str(e)}")
+
+    _prompt_cache[prompt_type] = prompt_content
+    return prompt_content
 
 
 def get_supported_prompt_types() -> list[str]:

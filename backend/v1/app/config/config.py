@@ -26,7 +26,7 @@ class Settings(BaseSettings):
         if self.DATABASE_URL:
             return self.DATABASE_URL
         return (
-            f"mysql+aiomysql://{self.MYSQL_USER}:{self.MYSQL_PASSWORD}"
+            f"mysql+aiomysql://{self.MYSQL_ROOT}:{self.MYSQL_ROOT_PASSWORD}"
             f"@{self.MYSQL_HOST}:{self.MYSQL_PORT}/{self.MYSQL_DATABASE}"
             "?charset=utf8mb4"
         )
@@ -68,16 +68,14 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
 
     # 向量数据库配置
-    VECTOR_DB_TYPE: str = "chromadb"  # 可选值: chromadb, milvus
+    VECTOR_DB_TYPE: str = "qdrant"  # 可选值: chromadb, milvus , qdrant
 
     # ChromaDB
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8001
-    CHROMADB_PRODUCT_COLLECTION: str = "product_knowledge"
     CHROMADB_SLICE_COLLECTION: str = "slice_knowledge"
     CHROMADB_VIDEO_COLLECTION: str = "video_knowledge"
-    CHROMADB_IMAGE_COLLECTION: str = "img_knowledge"
-    CHROMADB_AUDIO_COLLECTION: str = "audio_knowledge"
+
 
 
     # Milvus配置
@@ -85,12 +83,27 @@ class Settings(BaseSettings):
     MILVUS_PORT: int = 19530
     MILVUS_USERNAME: str = ""
     MILVUS_PASSWORD: str = ""
-    MILVUS_PRODUCT_COLLECTION: str = "product_knowledge"
     MILVUS_SLICE_COLLECTION: str = "slice_knowledge"
     MILVUS_VIDEO_COLLECTION: str = "video_knowledge"
-    MILVUS_IMG_COLLECTION: str = "img_knowledge"
-    MILVUS_AUDIO_COLLECTION: str = "audio_knowledge"
     MILVUS_VECTOR_DIMENSION: int = 1536  # 默认OpenAI embedding维度
+
+    # Qdrant配置
+    QDRANT_HOST: str = "localhost"
+    QDRANT_PORT: int = 6333  # HTTP端口
+    QDRANT_GRPC_PORT: int = 6334  # gRPC端口
+    QDRANT_API_KEY: str = "123456"
+    QDRANT_PREFER_GRPC: bool = False
+    QDRANT_COLLECTION: str = "video_knowledge"  # 默认集合
+
+    # 这两个向量是生产者
+    # slice包含视觉 + 动作 等域信息也就是因子
+    QDRANT_SLICE_COLLECTION: str = "slice_knowledge"
+    # video包含完整的骨架信息也就是策略
+    QDRANT_VIDEO_COLLECTION: str = "video_knowledge"
+
+
+
+    QDRANT_VECTOR_DIMENSION: int = 1536  # 默认OpenAI embedding维度
 
     # OpenAI
     OPENAI_API_KEY: str = ""
@@ -121,6 +134,12 @@ class Settings(BaseSettings):
 
     # 火山引擎图片生成 (Seedream 4.5)
     IMAGE_API_KEY: str = ""
+
+    # 火山引擎语音识别
+    VOLC_ENGINE_ACCESS_KEY: str = os.getenv('VOLC_ENGINE_ACCESS_KEY', '')
+    VOLC_ENGINE_SECRET_KEY: str = os.getenv('VOLC_ENGINE_SECRET_KEY', '')
+    VOLC_ENGINE_ASR_ENDPOINT: str = os.getenv('VOLC_ENGINE_ASR_ENDPOINT', 'https://openspeech.bytedance.com/api/v1/asr')
+    VOLC_ENGINE_AUDIO_CLASSIFICATION_ENDPOINT: str = os.getenv('VOLC_ENGINE_AUDIO_CLASSIFICATION_ENDPOINT', 'https://openspeech.bytedance.com/api/v1/audio/classification')
 
     # FFmpeg 视频处理
     FFMPEG_PATH: str = ""

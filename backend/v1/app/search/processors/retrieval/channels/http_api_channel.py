@@ -1,68 +1,128 @@
-from typing import Dict, Any, Optional, List
-import asyncio
-from backend.v1.app.search.core import BaseDataSourceChannel, DataSourceError, Document
+# backend/v1/app/search/processors/retrieval/channels/http_api_channel.py
+from typing import List, Optional, Dict, Any
+import logging
+import aiohttp
+from ....core.interfaces import SearchChannel
+from ....core.models import SearchQuery, SearchResult
 
-class HttpAPIChannel(BaseDataSourceChannel):
-    """通用HTTP API通道"""
+logger = logging.getLogger(__name__)
 
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        self.config = config or {}
-        self.base_url = self.config.get("base_url", "")
-        self.api_key = self.config.get("api_key", "")
-        self.timeout = self.config.get("timeout", 10)
-        self._session = None
+class HttpApiChannel(SearchChannel):
+    """外部HTTP API检索渠道"""
 
-    def connect(self) -> None:
-        """初始化HTTP会话"""
+    def __init__(self, config: Dict[str, Any]):
+        """
+        初始化HTTP API渠道
+        :param config: 渠道配置
+        """
+        self.config = config
+        self.endpoint = config["endpoint"]
+        self.api_key = config.get("api_key")
+        self.timeout = config.get("timeout", 15)
+        self.weight = config.get("weight", 0.7)
+
+    @property
+    def channel_name(self) -> str:
+        return "http_api"
+
+    @property
+    def channel_type(self) -> str:
+        return "http_api"
+
+    def search(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> List[SearchResult]:
+        """同步检索（使用requests）"""
         try:
-            # 实际实现需要导入aiohttp
-            # import aiohttp
-            # self._session = aiohttp.ClientSession()
-            self._session = "mock_http_session"
+            import requests
+            headers = self._build_headers()
+            payload = self._build_payload(query)
+
+            response = requests.post(
+                self.endpoint,
+                json=payload,
+                headers=headers,
+                timeout=self.timeout
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            return self._convert_to_search_results(data)
         except Exception as e:
-            raise DataSourceError(f"Failed to create HTTP session: {str(e)}") from e
+            logger.error(f"HTTP API检索失败: {str(e)}", exc_info=True)
+            return []
 
-    def disconnect(self) -> None:
-        """关闭HTTP会话"""
-        if self._session:
-            # 实际实现需要关闭会话
-            # await self._session.close()
-            self._session = None
+    async def asearch(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> List[SearchResult]:
+        """异步检索（推荐）"""
+        try:
+            headers = self._build_headers()
+            payload = self._build_payload(query)
 
-    def is_connected(self) -> bool:
-        """检查会话是否可用"""
-        return self._session is not None
+            timeout = aiohttp.ClientTimeout(total=self.timeout)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(
+                    self.endpoint,
+                    json=payload,
+                    headers=headers
+                ) as response:
+                    response.raise_for_status()
+                    data = await response.json()
 
-    async def request(
-        self,
-        endpoint: str,
-        method: str = "GET",
-        params: Optional[Dict[str, Any]] = None,
-        json_data: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None
-    ) -> List[Document]:
-        """发送HTTP请求"""
-        if not self.is_connected():
-            raise DataSourceError("HTTP session not initialized")
+                    return self._convert_to_search_results(data)
+        except Exception as e:
+            logger.error(f"HTTP API异步检索失败: {str(e)}", exc_info=True)
+            return []
 
-        # 构建请求头
-        request_headers = headers or {}
+    def health_check(self) -> bool:
+        """健康检查"""
+        try:
+            import requests
+            # 简单的GET请求检查服务是否可用
+            response = requests.get(self.endpoint.replace("/search", "/health"), timeout=5)
+            return response.status_code == 200
+        except Exception as e:
+            logger.warning(f"HTTP API健康检查失败: {str(e)}")
+            return False
+
+    def _build_headers(self) -> Dict[str, str]:
+        """构建请求头"""
+        headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "VidMuse-Search-Engine/1.0"
+        }
         if self.api_key:
-            request_headers["Authorization"] = f"Bearer {self.api_key}"
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
 
-        url = f"{self.base_url.rstrip('/')}/{endpoint.lstrip('/')}"
+    def _build_payload(self, query: SearchQuery) -> Dict[str, Any]:
+        """构建请求参数"""
+        return {
+            "query": query.query_text,
+            "limit": query.top_k,
+            "filters": query.filters,
+            "metadata": query.metadata
+        }
 
-        # 实际实现需要发送HTTP请求并处理响应
+    def _convert_to_search_results(self, response_data: Dict) -> List[SearchResult]:
+        """
+        将API响应转换为统一的SearchResult格式
+        :param response_data: API返回的JSON数据
+        :return: SearchResult列表
+        """
+        results = []
+        try:
+            raw_results = response_data.get("results", [])
+            for item in raw_results:
+                score = float(item.get("score", 0.5)) * self.weight
 
-        mock_results = []
-        for i in range(3):
-            mock_results.append(Document(
-                id=f"api_{i}",
-                content=f"API response from {url}: result {i}",
-                score=0.8,
-                source="api",
-                source_type="http_api",
-                metadata={"url": url, "method": method}
-            ))
+                result = SearchResult(
+                    result_id=str(item.get("id", "")),
+                    content=str(item.get("content", "")),
+                    score=score,
+                    source=self.channel_name,
+                    source_type=item.get("type", "external"),
+                    metadata=item
+                )
+                results.append(result)
+        except Exception as e:
+            logger.error(f"解析API响应失败: {str(e)}", exc_info=True)
 
-        return mock_results
+        return results

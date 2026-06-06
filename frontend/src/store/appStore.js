@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export const useAppStore = create((set) => ({
+export const useAppStore = create((set, get) => ({
   activeView: 'chat',
   sidebarCollapsed: false,
   activeProjectId: null,
@@ -45,4 +45,26 @@ export const useAppStore = create((set) => ({
   },
   updateParameters: (patch) =>
     set((state) => ({ parameters: { ...state.parameters, ...patch } })),
+
+  // 管理员权限判断
+  isAdmin: () => {
+    const user = get().user
+    return user?.role === 'admin'
+  },
+
+  // 管理员相关状态
+  adminStats: null,
+  setAdminStats: (stats) => set({ adminStats: stats }),
+
+  userList: [],
+  setUserList: (users) => set({ userList: users }),
+
+  contentList: [],
+  setContentList: (content) => set({ contentList: content }),
+
+  systemStats: null,
+  setSystemStats: (stats) => set({ systemStats: stats }),
+
+  templateList: [],
+  setTemplateList: (templates) => set({ templateList: templates }),
 }))

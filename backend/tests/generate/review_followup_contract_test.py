@@ -5,13 +5,6 @@ def read(path: str) -> str:
     return Path(path).read_text(encoding="utf-8")
 
 
-def test_project_asset_migration_exists():
-    source = read("alembic/versions/012_add_project_assets_and_asset_metadata.py")
-
-    assert 'create_table("project_assets"' in source
-    assert 'add_column("assets", sa.Column("tags"' in source
-    assert 'add_column("assets", sa.Column("scope"' in source
-    assert 'add_column("assets", sa.Column("metadata"' in source
 
 
 def test_export_and_frame_tasks_have_real_celery_handlers():

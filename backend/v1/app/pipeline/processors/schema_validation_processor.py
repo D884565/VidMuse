@@ -1,6 +1,6 @@
 import os
 from typing import Dict, List, Tuple, Optional
-from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
+from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext, constants
 from backend.v1.app.pipeline.utils.template_validator import (
     load_json_file,
     validate_with_schema,
@@ -17,11 +17,11 @@ class SchemaValidationProcessor(BaseProcessor):
 
     def __init__(self, schema_path: str = None,
                  template_type: str = None,
-                 data_key: str = "slice_data",
-                 valid_key: str = "valid_slices",
-                 invalid_key: str = "invalid_slices",
+                 data_key: str = constants.SLICE_DATA,
+                 valid_key: str = constants.VALID_SLICES,
+                 invalid_key: str = constants.INVALID_SLICES,
                  summary_key: str = "validation_summary",
-                 id_field: str = "slice_id"):
+                 id_field: str = constants.SLICE_ID):
         """
         初始化结构校验处理器
 
@@ -114,9 +114,10 @@ class SchemaValidationProcessor(BaseProcessor):
         """
         config = {
             "template_type": "video",
-            "data_key": "video_data",
-            "valid_key": "valid_videos",
-            "invalid_key": "invalid_videos"
+            "data_key": constants.VIDEO_DATA,
+            "valid_key": constants.VALID_VIDEO,
+            "invalid_key": constants.INVALID_VIDEO,
+            "id_field": constants.VIDEO_ID
         }
         config.update(kwargs)
         return cls(**config)

@@ -2,23 +2,14 @@
 from .base import PipelineContext, BaseProcessor, BasePipeline
 
 # 导出处理器
-from .processors import (
-    VideoSplitProcessor,
-    VideoUnderstandingProcessor,
-    SchemaValidationProcessor,
-    ProductUnderstandingProcessor,
-    ProductGenerateProcessor,
-    VectorizationProcessor,
-    VideoOverallUnderstandingProcessor,
-    VideoGenerateProcessor,
-    VideoAggregationProcessor
-)
 
 # 导出流水线
 from .pipelines import (
     VideoParsingPipeline,
+    VideoParsingABPipeline,
     ProductParsingPipeline,
-    VideoOverallParsingPipeline
+    VideoOverallParsingPipeline,
+    AudioParsingPipeline
 )
 
 # 导出持久化相关
@@ -31,24 +22,17 @@ __all__ = [
     "BaseProcessor",
     "BasePipeline",
 
-    # 处理器
-    "VideoSplitProcessor",
-    "VideoUnderstandingProcessor",
-    "SchemaValidationProcessor",
-    "ProductUnderstandingProcessor",
-    "ProductGenerateProcessor",
-    "VectorizationProcessor",
-    "VideoOverallUnderstandingProcessor",
-    "VideoGenerateProcessor",
-    "VideoAggregationProcessor",
-
     # 流水线
     "VideoParsingPipeline",
+    "VideoParsingABPipeline",
     "ProductParsingPipeline",
     "VideoOverallParsingPipeline",
+    "AudioParsingPipeline",
 
     # 持久化相关
     "PipelineExecutionDAO",
     "PipelineExecution",
     "PipelineExecutionStatus"
 ]
+
+

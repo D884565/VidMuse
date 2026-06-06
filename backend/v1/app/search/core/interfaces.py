@@ -1,71 +1,93 @@
+# backend/v1/app/search/core/interfaces.py
 from abc import ABC, abstractmethod
-from typing import List, Optional
-from .models import Query, Document, SearchContext
-from .exceptions import SearchBaseException
+from typing import List, Dict, Any, Optional
+from .models import SearchQuery, SearchResult
 
-class BaseQueryEnhancer(ABC):
-    """问题增强处理器抽象基类"""
+class SearchChannel(ABC):
+    """检索渠道接口"""
 
+    @property
     @abstractmethod
-    def enhance(self, query: Query, context: Optional[SearchContext] = None) -> Query:
-        """
-        增强用户查询
-
-        :param query: 原始查询对象
-        :param context: 检索上下文
-        :return: 增强后的查询对象
-        :raises QueryEnhancementError: 问题增强处理失败时抛出
-        """
+    def channel_name(self) -> str:
+        """渠道名称，唯一标识"""
         pass
 
-class BaseRetriever(ABC):
-    """检索器抽象基类"""
+    @property
+    @abstractmethod
+    def channel_type(self) -> str:
+        """渠道类型：vector_db, mysql, http_api等"""
+        pass
 
     @abstractmethod
-    def retrieve(self, query: Query, top_k: int = 10) -> List[Document]:
+    def search(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> List[SearchResult]:
         """
         执行检索
-
-        :param query: 查询对象
-        :param top_k: 返回结果数量
-        :return: 检索到的文档列表
-        :raises RetrievalError: 检索执行失败时抛出
-        """
-        pass
-
-class BasePostProcessor(ABC):
-    """后处理器抽象基类"""
-
-    @abstractmethod
-    def process(self, documents: List[Document], query: Query) -> List[Document]:
-        """
-        处理检索结果
-
-        :param documents: 原始检索结果列表
-        :param query: 查询对象
-        :return: 处理后的文档列表
-        :raises PostProcessingError: 后处理失败时抛出
-        """
-        pass
-
-class BaseDataSourceChannel(ABC):
-    """数据源通道抽象基类"""
-
-    @abstractmethod
-    def connect(self) -> None:
-        """
-        连接到数据源
-
-        :raises DataSourceError: 连接失败时抛出
+        :param query: 检索查询对象
+        :param context: 上下文信息
+        :return: 检索结果列表
         """
         pass
 
     @abstractmethod
-    def disconnect(self) -> None:
-        """断开与数据源的连接"""
+    async def asearch(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> List[SearchResult]:
+        """
+        异步执行检索
+        :param query: 检索查询对象
+        :param context: 上下文信息
+        :return: 检索结果列表
+        """
         pass
 
     @abstractmethod
-    def is_connected(self) -> bool:
-        """检查是否已连接到数据源"""
+    def health_check(self) -> bool:
+        """健康检查"""
+        pass
+
+class BaseProcessor(ABC):
+    """处理器基类"""
+
+    @property
+    @abstractmethod
+    def processor_name(self) -> str:
+        """处理器名称"""
+        pass
+
+    @abstractmethod
+    def process(self, data: Any, context: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        处理数据
+        :param data: 输入数据（查询或结果）
+        :param context: 上下文信息
+        :return: 处理后的数据
+        """
+        pass
+
+    @abstractmethod
+    async def aprocess(self, data: Any, context: Optional[Dict[str, Any]] = None) -> Any:
+        """
+        异步处理数据
+        :param data: 输入数据（查询或结果）
+        :param context: 上下文信息
+        :return: 处理后的数据
+        """
+        pass
+
+class QueryEnhancementProcessor(BaseProcessor, ABC):
+    """查询增强处理器基类"""
+    @abstractmethod
+    def process(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> SearchQuery:
+        pass
+
+    @abstractmethod
+    async def aprocess(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> SearchQuery:
+        pass
+
+class PostProcessingProcessor(BaseProcessor, ABC):
+    """结果后处理器基类"""
+    @abstractmethod
+    def process(self, results: List[SearchResult], context: Optional[Dict[str, Any]] = None) -> List[SearchResult]:
+        pass
+
+    @abstractmethod
+    async def aprocess(self, results: List[SearchResult], context: Optional[Dict[str, Any]] = None) -> List[SearchResult]:
         pass

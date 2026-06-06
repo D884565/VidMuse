@@ -1,5 +1,5 @@
-import MainLayout from './components/Layout/MainLayout.jsx'
+import { Outlet } from 'react-router-dom'
 
 export default function App() {
-  return <MainLayout />
+  return <Outlet />
 }

@@ -1,61 +1,80 @@
-from typing import Dict, Any, List
+# backend/v1/app/search/config.py
+from typing import Dict, Any, List, Optional
+from dataclasses import dataclass, field
+from backend.v1.app.config.config import settings
 
-# 数据源配置
-DATA_SOURCE_CONFIG: Dict[str, Dict[str, Any]] = {
-    "milvus": {
-        "host": "localhost",
-        "port": 19530,
-        "default_collection": "documents"
-    },
-    "elasticsearch": {
-        "host": "localhost",
-        "port": 9200,
-        "default_index": "documents"
-    },
-    "mysql": {
-        "host": "localhost",
-        "port": 3306,
-        "user": "root",
-        "password": "",
-        "database": "vidmuse"
-    },
-    "chromadb": {
-        "persist_directory": "./chroma_db",
-        "default_collection": "documents"
-    }
-}
+@dataclass
+class SearchConfig:
+    """检索模块配置"""
 
-# 检索配置
-RETRIEVAL_CONFIG: Dict[str, Any] = {
-    "default_top_k": 10,
-    "min_score_threshold": 0.6,  # 最低相似度阈值
-    "max_query_length": 512,     # 查询最大长度
-    "parallel_retrieval": True,  # 是否并行检索多个数据源
-    "retrieval_timeout": 10      # 检索超时时间（秒）
-}
+    # 全局配置
+    DEFAULT_TOP_K: int = 10
+    DEFAULT_TIMEOUT: int = 30
+    FAIL_FAST: bool = False  # 是否快速失败，False表示部分失败也继续
 
-# 问题增强配置
-QUERY_ENHANCEMENT_CONFIG: Dict[str, Any] = {
-    "enable_context_processing": True,
-    "enable_intent_recognition": True,
-    "enable_query_rewrite": True,
-    "enable_query_expansion": True,
-    "max_history_turns": 5  # 最多使用的历史对话轮数
-}
+    # 启用的检索渠道
+    ENABLED_CHANNELS: List[str] = field(default_factory=lambda: ["vector_db", "mysql", "http_api"])
 
-# 后处理配置
-POST_PROCESSING_CONFIG: Dict[str, Any] = {
-    "enable_deduplication": True,
-    "enable_filtering": True,
-    "enable_merging": True,
-    "enable_reranking": True,
-    "deduplication_field": "id",  # 去重字段
-    "rerank_top_k": 20,  # 重排序的候选数量
-    "final_top_k": 10    # 最终返回结果数量
-}
+    # 各渠道配置
+    CHANNEL_CONFIG: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
+        "mysql": {
+            "enabled": True,
+            "timeout": 5,
+            "table": "product_info",
+            "search_fields": ["name", "description"],
+            "source_type": "product",
+            "weight": 0.8
+        },
+        "http_api": {
+            "enabled": False,  # 默认不启用
+            "timeout": 15,
+            "endpoint": "",
+            "api_key": "",
+            "weight": 0.7
+        }
+    })
 
-# 支持的数据源类型
-SUPPORTED_SOURCES: List[str] = ["vector", "keyword", "sql", "api"]
+    # 启用的查询增强处理器（按执行顺序）
+    ENABLED_QUERY_PROCESSORS: List[str] = field(default_factory=lambda: [
+        "context_processor",
+        "query_rewriter",
+        "intent_recognizer"
+    ])
 
-# 支持的检索方式
-SUPPORTED_RETRIEVAL_TYPES: List[str] = ["semantic", "keyword", "hybrid", "sql"]
+    # 启用的后处理器（按执行顺序）
+    ENABLED_POST_PROCESSORS: List[str] = field(default_factory=lambda: [
+        "result_filter",
+        "deduplicator",
+        "result_merger",
+        "reranker"
+    ])
+
+    # 后处理器配置
+    POST_PROCESSOR_CONFIG: Dict[str, Dict[str, Any]] = field(default_factory=lambda: {
+        "result_filter": {
+            "min_score": 0.3,
+            "filter_rules": {}
+        },
+        "deduplicator": {
+            "similarity_threshold": 0.95
+        },
+        "reranker": {
+            "top_k": 10
+        }
+    })
+
+    @classmethod
+    def from_dict(cls, config_dict: Dict[str, Any]) -> "SearchConfig":
+        """从字典创建配置实例"""
+        config = cls()
+        for key, value in config_dict.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+        return config
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典格式"""
+        return {
+            key: value for key, value in self.__dict__.items()
+            if not key.startswith("_")
+        }

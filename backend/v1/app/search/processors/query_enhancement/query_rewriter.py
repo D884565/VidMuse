@@ -1,46 +1,46 @@
-from typing import Optional
-from .base import BaseQueryEnhancerImpl
-from backend.v1.app.search.core import Query, SearchContext
-from backend.v1.app.search.config import QUERY_ENHANCEMENT_CONFIG
+# backend/v1/app/search/processors/query_enhancement/query_rewriter.py
+from typing import Dict, Any
+import logging
+from .base import BaseQueryProcessor
+from ...core.models import SearchQuery
 
-class QueryRewriter(BaseQueryEnhancerImpl):
-    """
-    Query重写器
-    优化用户查询表述，提高检索准确率
-    """
+logger = logging.getLogger(__name__)
 
-    def __init__(self, config: Optional[dict] = None):
-        super().__init__(config or QUERY_ENHANCEMENT_CONFIG)
+class QueryRewriter(BaseQueryProcessor):
+    """查询重写处理器，优化查询表述"""
 
-        # 常见的查询优化规则，实际场景可以用LLM进行更智能的重写
-        self.rewrite_rules = [
-            # 去掉冗余的语气词
-            (r"请问|麻烦问下|我想知道|能不能告诉我", ""),
-            # 统一术语
-            (r"AI|人工智能", "人工智能"),
-            (r"大模型|LLM|大语言模型", "大语言模型"),
-            (r"向量数据库|Milvus|Chroma|Pinecone", "向量数据库"),
+    @property
+    def processor_name(self) -> str:
+        return "query_rewriter"
+
+    async def _aprocess(self, query: SearchQuery, context: Dict[str, Any]) -> SearchQuery:
+        """
+        异步重写查询
+        示例实现：简单的关键词替换和优化，实际项目中可接入LLM进行智能重写
+        """
+        original_query = query.query_text
+        rewritten_query = original_query
+
+        # 简单的重写规则示例
+        rewrite_rules = [
+            ("我忘记密码了", "如何重置密码"),
+            ("密码忘记了", "如何重置密码"),
+            ("密码忘了", "如何重置密码"),
+            ("怎么改密码", "如何修改密码"),
+            ("怎么用", "使用方法"),
+            ("多少钱", "价格是多少"),
         ]
 
-    def _enhance(self, query: Query, context: Optional[SearchContext] = None) -> Query:
-        import re
+        for old, new in rewrite_rules:
+            if old in rewritten_query:
+                rewritten_query = rewritten_query.replace(old, new)
 
-        original_text = query.text
-        rewritten_text = original_text
+        # 如果查询太短，添加通用关键词
+        if len(rewritten_query) < 5:
+            rewritten_query = f"{rewritten_query} 怎么用 说明"
 
-        # 应用重写规则
-        for pattern, replacement in self.rewrite_rules:
-            rewritten_text = re.sub(pattern, replacement, rewritten_text)
-
-        # 去除多余的空白字符
-        rewritten_text = ' '.join(rewritten_text.split())
-
-        # 如果重写后的文本和原始不同，更新查询
-        if rewritten_text != original_text:
-            query.enhanced_text = rewritten_text
-            query.metadata["original_query"] = original_text
-            query.metadata["rewritten"] = True
-        else:
-            query.metadata["rewritten"] = False
+        if rewritten_query != original_query:
+            logger.debug(f"查询重写: '{original_query}' -> '{rewritten_query}'")
+            query.query_text = rewritten_query
 
         return query

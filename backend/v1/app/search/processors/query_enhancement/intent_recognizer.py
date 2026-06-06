@@ -1,71 +1,47 @@
-from typing import Optional, Dict, List
-from .base import BaseQueryEnhancerImpl
-from backend.v1.app.search.core import Query, SearchContext
-from backend.v1.app.search.config import QUERY_ENHANCEMENT_CONFIG, SUPPORTED_RETRIEVAL_TYPES
+# backend/v1/app/search/processors/query_enhancement/intent_recognizer.py
+from typing import Dict, Any
+import logging
+from .base import BaseQueryProcessor
+from ...core.models import SearchQuery
 
-class IntentRecognizer(BaseQueryEnhancerImpl):
-    """
-    查询意图识别器
-    识别用户查询的意图，确定最合适的检索方式和数据源
-    """
+logger = logging.getLogger(__name__)
 
-    def __init__(self, config: Optional[dict] = None):
-        super().__init__(config or QUERY_ENHANCEMENT_CONFIG)
+class IntentRecognizer(BaseQueryProcessor):
+    """意图识别处理器，识别用户查询意图"""
 
-        # 意图关键词映射，实际场景可以用LLM或训练好的分类模型
-        self.intent_keywords: Dict[str, List[str]] = {
-            "semantic_search": [
-                "什么是", "怎么", "如何", "为什么", "解释", "介绍", "详细说明",
-                "概念", "定义", "原理", "方法", "步骤", "教程"
-            ],
-            "keyword_search": [
-                "找", "搜索", "查询", "查找", "有没有", "哪些", "列表", "所有",
-                "包含", "包括", "有关", "相关"
-            ],
-            "sql_query": [
-                "统计", "总数", "多少个", "平均值", "最大值", "最小值", "总和",
-                "排名", "排序", "分组", "筛选", "条件"
-            ],
-            "api_call": [
-                "调用", "接口", "API", "服务", "第三方", "外部"
-            ]
+    @property
+    def processor_name(self) -> str:
+        return "intent_recognizer"
+
+    async def _aprocess(self, query: SearchQuery, context: Dict[str, Any]) -> SearchQuery:
+        """
+        异步识别查询意图
+        示例实现：简单的关键词匹配，实际项目中可接入分类模型或LLM
+        """
+        query_text = query.query_text.lower()
+        intent = "general"
+
+        # 简单的意图规则示例
+        intent_rules = {
+            "password_reset": ["密码", "重置", "忘记", "找回"],
+            "price_query": ["价格", "多少钱", "售价", "费用"],
+            "usage_guide": ["怎么用", "使用", "操作", "教程", "说明"],
+            "troubleshooting": ["故障", "报错", "问题", "不工作", "坏了"],
+            "feature_query": ["功能", "支持", "有什么", "特性"],
         }
 
-        # 意图到检索类型的映射
-        self.intent_to_retrieval_type: Dict[str, str] = {
-            "semantic_search": "semantic",
-            "keyword_search": "keyword",
-            "sql_query": "sql",
-            "api_call": "api"
-        }
+        max_matches = 0
+        for intent_name, keywords in intent_rules.items():
+            matches = sum(1 for kw in keywords if kw in query_text)
+            if matches > max_matches:
+                max_matches = matches
+                intent = intent_name
 
-    def _enhance(self, query: Query, context: Optional[SearchContext] = None) -> Query:
-        # 如果已经指定了检索类型，不需要再识别
-        if query.retrieval_type and query.retrieval_type in SUPPORTED_RETRIEVAL_TYPES:
-            return query
+        logger.debug(f"识别查询意图: '{query_text}' -> {intent}")
+        query.metadata["intent"] = intent
 
-        query_text = query.text.lower()
-        intent_scores: Dict[str, int] = {}
-
-        # 关键词匹配得分
-        for intent, keywords in self.intent_keywords.items():
-            score = sum(1 for keyword in keywords if keyword in query_text)
-            if score > 0:
-                intent_scores[intent] = score
-
-        if intent_scores:
-            # 选择得分最高的意图
-            max_score = max(intent_scores.values())
-            top_intents = [intent for intent, score in intent_scores.items() if score == max_score]
-            primary_intent = top_intents[0]
-
-            query.intent = primary_intent
-            query.retrieval_type = self.intent_to_retrieval_type.get(primary_intent, "semantic")
-            query.metadata["intent_scores"] = intent_scores
-        else:
-            # 默认语义检索
-            query.intent = "semantic_search"
-            query.retrieval_type = "semantic"
-            query.metadata["intent_scores"] = {}
+        # 根据意图添加过滤条件
+        if intent == "password_reset":
+            query.filters["type"] = query.filters.get("type", []) + ["faq", "troubleshooting"]
 
         return query

@@ -4,9 +4,11 @@
 所有业务逻辑委托给 ProductService，自身不包含业务代码。
 所有接口都需要登录（通过 Bearer token 认证）。
 """
-from typing import Optional
-from fastapi import APIRouter, Depends, Header, BackgroundTasks
+import json
+from typing import Optional, List
+from fastapi import APIRouter, Depends, Header, BackgroundTasks, File, UploadFile, Form
 from sqlalchemy.orm import Session
+from pydantic import ValidationError
 
 from backend.framework.web.response import Response
 from backend.framework.exceptions.exceptions import BusinessException
@@ -15,6 +17,7 @@ from backend.store.database.sync_database import get_db
 from backend.v1.app.product.service.product_service import product_service
 from backend.v1.app.product.dao.schema import ProductCreateRequest, ProductUpdateRequest
 from backend.v1.app.user.service.user_service import user_service
+from backend.v1.app.assets.service.asset_service import AssetService
 from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
 
 router = APIRouter(prefix="/products", tags=["商品模块"])
@@ -191,3 +194,46 @@ def retry_product_parsing(
         },
         message="重试解析任务已提交"
     )
+
+
+@router.post("/upload", response_model=Response, summary="上传文件并创建商品")
+async def upload_product_files(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(..., description="上传的商品相关文件（图片/视频/音频）"),
+    product_info: str = Form(..., description="商品信息JSON字符串，对应ProductCreateRequest结构"),
+    asset_roles: Optional[str] = Form(None, description="资产角色映射JSON字符串，key为文件索引（从0开始），value为角色（main/image/video/audio）"),
+    current_user_id: int = Depends(_get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """上传文件并创建商品，支持同时上传多个文件并关联到商品
+    :param files: 上传的文件列表
+    :param product_info: 商品信息JSON字符串，符合ProductCreateRequest格式
+    :param asset_roles: 资产角色映射JSON，如{"0": "main", "1": "image"}
+    """
+    try:
+        # 解析商品信息
+        product_data = json.loads(product_info)
+    except json.JSONDecodeError:
+        raise BusinessException(PARAM_ERROR, "product_info格式错误，必须是合法JSON")
+
+    # 解析资产角色
+    roles = None
+    if asset_roles:
+        try:
+            roles = json.loads(asset_roles)
+            # 转换为int类型的key
+            roles = {int(k): v for k, v in roles.items()}
+        except json.JSONDecodeError:
+            raise BusinessException(PARAM_ERROR, "asset_roles格式错误，必须是合法JSON")
+
+    # 调用service层处理业务逻辑
+    product_result = await product_service.upload_and_create_product(
+        db=db,
+        background_tasks=background_tasks,
+        user_id=current_user_id,
+        files=files,
+        product_info=product_data,
+        asset_roles=roles
+    )
+
+    return Response.success(data=product_result, message="商品创建成功，文件已上传")

@@ -1,41 +1,56 @@
-from typing import Optional
-from .base import BaseQueryEnhancerImpl
-from backend.v1.app.search.core import Query, SearchContext
-from backend.v1.app.search.config import QUERY_ENHANCEMENT_CONFIG
+# backend/v1/app/search/processors/query_enhancement/context_processor.py
+from typing import Dict, Any, List
+import logging
+from .base import BaseQueryProcessor
+from ...core.models import SearchQuery
 
-class ContextProcessor(BaseQueryEnhancerImpl):
-    """
-    对话上下文处理器
-    结合历史对话信息，补全当前查询的语义
-    """
+logger = logging.getLogger(__name__)
 
-    def __init__(self, config: Optional[dict] = None):
-        super().__init__(config or QUERY_ENHANCEMENT_CONFIG)
-        self.max_history_turns = self.config.get("max_history_turns", 5)
+class ContextProcessor(BaseQueryProcessor):
+    """上下文处理器，结合会话历史补全查询"""
 
-    def _enhance(self, query: Query, context: Optional[SearchContext] = None) -> Query:
-        if not context or not context.conversation_history:
+    @property
+    def processor_name(self) -> str:
+        return "context_processor"
+
+    async def _aprocess(self, query: SearchQuery, context: Dict[str, Any]) -> SearchQuery:
+        """
+        异步处理上下文，补全查询
+        示例实现：简单的上下文补全，实际项目中可接入LLM进行上下文理解
+        """
+        session_context = query.metadata.get("session_context", [])
+        if not session_context:
             return query
 
-        # 截取最近的对话历史
-        recent_history = context.conversation_history[-self.max_history_turns:]
+        # 简单的上下文补全规则：如果查询包含指代，补充上文提到的实体
+        query_text = query.query_text
+        if any(pronoun in query_text for pronoun in ["它", "这个", "那个", "这款", "那款"]):
+            # 提取上文提到的实体（简单示例，只取最后一个用户问题）
+            last_user_message = next(
+                (msg["content"] for msg in reversed(session_context) if msg["role"] == "user"),
+                ""
+            )
 
-        # 构建上下文增强的查询文本
-        context_text = ""
-        for turn in recent_history:
-            role = turn.get("role", "")
-            content = turn.get("content", "")
-            if role and content:
-                context_text += f"{role}: {content}\n"
+            if last_user_message:
+                # 简单的实体提取（实际应该用NER）
+                entities = []
+                entity_keywords = ["手机", "电脑", "产品", "设备", "功能", "服务"]
+                for kw in entity_keywords:
+                    if kw in last_user_message:
+                        entities.append(kw)
 
-        # 将上下文信息添加到query的metadata中
-        query.metadata["conversation_context"] = context_text
-        query.metadata["history_turns_used"] = len(recent_history)
+                if entities:
+                    # 补充到查询中
+                    entity_str = " ".join(entities)
+                    original_query = query_text
+                    query_text = query_text.replace("它", entity_str)\
+                                         .replace("这个", entity_str)\
+                                         .replace("那个", entity_str)\
+                                         .replace("这款", entity_str)\
+                                         .replace("那款", entity_str)
 
-        # 简单的上下文补全：如果查询很简短，结合历史上下文生成更完整的查询
-        if len(query.text) < 10 and context_text:
-            # 这里是基础实现，实际场景可以用LLM进行更智能的上下文补全
-            enhanced_text = f"基于以下对话历史回答：{context_text}\n用户问题：{query.text}"
-            query.enhanced_text = enhanced_text
+                    if query_text != original_query:
+                        logger.debug(f"上下文补全: '{original_query}' -> '{query_text}'")
+                        query.query_text = query_text
 
         return query

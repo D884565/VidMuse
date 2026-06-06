@@ -1,30 +1,24 @@
-class SearchBaseException(Exception):
-    """检索系统基础异常"""
-    def __init__(self, message: str = "检索系统错误"):
-        self.message = message
-        super().__init__(self.message)
+# backend/v1/app/search/core/exceptions.py
+class SearchError(Exception):
+    """检索模块基础异常"""
+    pass
 
-class QueryEnhancementError(SearchBaseException):
-    """问题增强错误"""
-    def __init__(self, message: str = "问题增强处理失败"):
-        super().__init__(message)
+class ChannelError(SearchError):
+    """检索渠道异常"""
+    def __init__(self, channel_name: str, message: str):
+        self.channel_name = channel_name
+        super().__init__(f"渠道[{channel_name}]错误: {message}")
 
-class RetrievalError(SearchBaseException):
-    """检索错误"""
-    def __init__(self, message: str = "检索执行失败"):
-        super().__init__(message)
+class ChannelTimeoutError(ChannelError):
+    """检索渠道超时"""
+    pass
 
-class PostProcessingError(SearchBaseException):
-    """后处理错误"""
-    def __init__(self, message: str = "结果后处理失败"):
-        super().__init__(message)
+class ProcessorError(SearchError):
+    """处理器异常"""
+    def __init__(self, processor_name: str, message: str):
+        self.processor_name = processor_name
+        super().__init__(f"处理器[{processor_name}]错误: {message}")
 
-class ConfigurationError(SearchBaseException):
-    """配置错误"""
-    def __init__(self, message: str = "配置错误"):
-        super().__init__(message)
-
-class DataSourceError(SearchBaseException):
-    """数据源错误"""
-    def __init__(self, message: str = "数据源连接或查询错误"):
-        super().__init__(message)
+class QueryValidationError(SearchError):
+    """查询验证失败"""
+    pass

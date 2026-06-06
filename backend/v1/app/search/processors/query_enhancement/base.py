@@ -1,23 +1,51 @@
-from typing import Optional
-from backend.v1.app.search.core import BaseQueryEnhancer, Query, SearchContext, QueryEnhancementError
+# backend/v1/app/search/processors/query_enhancement/base.py
+from typing import Optional, Dict, Any
+import logging
+from ...core.interfaces import QueryEnhancementProcessor
+from ...core.models import SearchQuery
+from ...core.exceptions import ProcessorError
 
-class BaseQueryEnhancerImpl(BaseQueryEnhancer):
-    """问题增强处理器基类实现"""
+logger = logging.getLogger(__name__)
 
-    def __init__(self, config: Optional[dict] = None):
-        self.config = config or {}
+class BaseQueryProcessor(QueryEnhancementProcessor):
+    """查询增强处理器基类，提供通用功能"""
 
-    def enhance(self, query: Query, context: Optional[SearchContext] = None) -> Query:
+    @property
+    def processor_name(self) -> str:
+        pass
+
+    def process(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> SearchQuery:
         """
-        增强查询，子类需要实现_enhance方法
+        同步处理查询，子类重写_process方法实现具体逻辑
         """
         try:
-            return self._enhance(query, context)
+            logger.debug(f"执行查询处理器[{self.processor_name}]")
+            return self._process(query, context or {})
         except Exception as e:
-            raise QueryEnhancementError(f"{self.__class__.__name__} failed: {str(e)}") from e
+            logger.error(f"查询处理器[{self.processor_name}]执行失败: {str(e)}", exc_info=True)
+            raise ProcessorError(self.processor_name, str(e)) from e
 
-    def _enhance(self, query: Query, context: Optional[SearchContext] = None) -> Query:
+    async def aprocess(self, query: SearchQuery, context: Optional[Dict[str, Any]] = None) -> SearchQuery:
         """
-        实际的增强逻辑，子类必须实现此方法
+        异步处理查询，子类重写_aprocess方法实现具体逻辑
         """
-        raise NotImplementedError("Subclasses must implement _enhance method")
+        try:
+            logger.debug(f"异步执行查询处理器[{self.processor_name}]")
+            return await self._aprocess(query, context or {})
+        except Exception as e:
+            logger.error(f"异步查询处理器[{self.processor_name}]执行失败: {str(e)}", exc_info=True)
+            raise ProcessorError(self.processor_name, str(e)) from e
+
+    def _process(self, query: SearchQuery, context: Dict[str, Any]) -> SearchQuery:
+        """
+        同步处理逻辑，子类必须重写此方法或_process
+        """
+        # 默认实现调用异步方法（同步包装）
+        import asyncio
+        return asyncio.run(self._aprocess(query, context))
+
+    async def _aprocess(self, query: SearchQuery, context: Dict[str, Any]) -> SearchQuery:
+        """
+        异步处理逻辑，子类必须重写此方法或_process
+        """
+        raise NotImplementedError(f"处理器[{self.processor_name}]未实现_process或_aprocess方法")

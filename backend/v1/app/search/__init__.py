@@ -27,3 +27,6 @@ __all__ = [
     "AgentTraceService",
     "agent_trace_service",
 ]
+
+# 版本信息
+__version__ = "1.0.0"
