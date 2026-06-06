@@ -1,8 +1,7 @@
 from typing import Optional
 import logging
 
-from backend.v1.app.pipeline import PipelineContext
-from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor, constants
+from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor, constants, PipelineContext
 from backend.v1.app.pipeline.processors import SchemaValidationProcessor
 from backend.v1.app.pipeline.processors.common.content_router_processor import ContentRouterProcessor
 from backend.v1.app.pipeline.processors.common.asset_persist_processor import AssetPersistProcessor
