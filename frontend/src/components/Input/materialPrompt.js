@@ -60,17 +60,19 @@ export function buildProductPrompt(product) {
   return lines.join('\n')
 }
 
-export function buildChatSubmission({ content, selectedAssets = [], selectedProduct = null }) {
+export function buildChatSubmission({ content, selectedAssets = [], selectedProduct = null, localRefs = [] }) {
   const displayContent = (content || '').trim()
   const normalizedAssets = selectedAssets
     .filter((asset) => asset?.id != null)
     .map(normalizeSelectedAsset)
   const materialPrompt = buildReferenceMaterialsPrompt(normalizedAssets)
   const productPrompt = buildProductPrompt(selectedProduct)
+  const localRefPrompt = buildLocalReferencePrompt(localRefs)
 
   const parts = [displayContent]
   if (materialPrompt) parts.push(materialPrompt)
   if (productPrompt) parts.push(productPrompt)
+  if (localRefPrompt) parts.push(localRefPrompt)
 
   return {
     displayContent,
@@ -78,4 +80,21 @@ export function buildChatSubmission({ content, selectedAssets = [], selectedProd
     selectedAssets: normalizedAssets,
     selectedProduct: selectedProduct || null,
   }
+}
+
+export function buildLocalReferencePrompt(localRefs = []) {
+  const validRefs = localRefs.filter((ref) => ref && (ref.type === 'image' || ref.type === 'text'))
+  if (!validRefs.length) return ''
+
+  const parts = []
+  for (const ref of validRefs) {
+    if (ref.type === 'image' && ref.features?.reference_text) {
+      parts.push(`本地参考图片（${ref.title || '参考图'}）：\n${ref.features.reference_text}`)
+    } else if (ref.type === 'text' && ref.content) {
+      parts.push(`本地参考文本：\n${ref.content}`)
+    }
+  }
+
+  if (!parts.length) return ''
+  return '本地参考素材：\n\n' + parts.join('\n\n')
 }

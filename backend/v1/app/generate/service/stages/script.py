@@ -7,7 +7,10 @@ from typing import Optional
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.v1.app.generate.service.chat.parsed_material_prompt import format_material_prompt_section
+from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.project import Project
+from backend.v1.app.models.project_asset import ProjectAsset
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.script import Script
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
@@ -130,9 +133,10 @@ class ScriptGenerationService:
         # RAG 检索参考资料（带降级）
         rag_weight = float(project.rag_weight) if project.rag_weight else 0.3
         reference = await self._retrieve_references(project, rag_weight)
+        material_reference = await self._build_material_reference(db, project_id)
 
         # 构造 Prompt
-        prompt = self._build_prompt(project, target_duration, reference)
+        prompt = self._build_prompt(project, target_duration, reference, material_reference)
 
         # 调用 LLM 生成剧本
         try:
@@ -358,7 +362,34 @@ class ScriptGenerationService:
         except (json.JSONDecodeError, TypeError):
             return f"- 商品详情：{product_info_json}"
 
-    def _build_prompt(self, project: Project, target_duration: int, reference: str = "") -> str:
+    async def _build_material_reference(self, db: AsyncSession, project_id: int) -> str:
+        result = await db.execute(
+            select(Asset)
+            .join(ProjectAsset, ProjectAsset.asset_id == Asset.id)
+            .where(ProjectAsset.project_id == project_id)
+            .order_by(ProjectAsset.id.asc())
+        )
+        materials = []
+        for asset in result.scalars().all():
+            ai_features = asset.ai_features or {}
+            if not isinstance(ai_features, dict):
+                continue
+            prompt_summary = ai_features.get("prompt_summary", {}) or {}
+            if not prompt_summary:
+                continue
+            materials.append({
+                "title": asset.title or f"Asset {asset.id}",
+                "prompt_summary": prompt_summary,
+            })
+        return format_material_prompt_section(materials)
+
+    def _build_prompt(
+        self,
+        project: Project,
+        target_duration: int,
+        reference: str = "",
+        material_reference: str = "",
+    ) -> str:
         """构造 LLM 生成 Prompt（分区加权结构）"""
         product_detail = self._format_product_info(project.product_info)
 
@@ -404,6 +435,9 @@ class ScriptGenerationService:
             imgs_text = "\n".join(f"- {url}" for url in ref_images)
             tpl = _load_prompt("script_reference_images")
             core_sections.append(tpl.format(images_text=imgs_text))
+
+        if material_reference:
+            core_sections.append(material_reference)
 
         core_text = "\n\n".join(core_sections)
 

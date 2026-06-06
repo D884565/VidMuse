@@ -19,7 +19,6 @@ from backend.v1.app.generate.service.stages.video_workflow import video_generati
 from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
 from backend.v1.app.generate.service.chat.intent_service import intent_service
-from backend.v1.app.generate.service.chat.material_resolver import MaterialResolver
 from backend.v1.app.generate.service.workflow.blocks import (
     build_progress_block,
     build_script_stage_blocks,
@@ -27,7 +26,6 @@ from backend.v1.app.generate.service.workflow.blocks import (
     build_confirmation_preview_block,
 )
 from backend.v1.app.models.conversation import Conversation
-from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
 
@@ -88,7 +86,6 @@ class ChatService:
         metadata: dict | None = None,
     ) -> dict:
         project = await self._get_project(db, project_id)
-        await self._apply_selected_assets_to_project(db, project, metadata or {})
         db.add(Conversation(
             project_id=project_id,
             role="user",
@@ -285,7 +282,6 @@ class ChatService:
 
         # 1. 保存用户消息
         project = await self._get_project(db, project_id)
-        await self._apply_selected_assets_to_project(db, project, metadata or {})
         user_message = Conversation(
             project_id=project_id, role="user", content=content,
             frame_id=frame_id, message_type="text", stage=project.workflow_stage,
@@ -918,49 +914,6 @@ class ChatService:
         generation_workflow_service.invalidate_from(project, "image")
         await db.commit()
         return updated
-
-    async def _apply_selected_assets_to_project(
-        self,
-        db: AsyncSession,
-        project: Project,
-        metadata: dict,
-    ) -> None:
-        selected_assets = metadata.get("selected_assets") or []
-        if not selected_assets:
-            return
-
-        asset_ids = []
-        for item in selected_assets:
-            try:
-                asset_ids.append(int(item.get("id")))
-            except (TypeError, ValueError, AttributeError):
-                continue
-        if not asset_ids:
-            return
-
-        asset_result = await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))
-        assets = asset_result.scalars().all()
-        resolved_materials = MaterialResolver.resolve_selected_assets(selected_assets, assets)
-
-        changed = False
-        text_reference = resolved_materials["text_reference"]
-        if text_reference:
-            existing_description = (project.description or "").strip()
-            if text_reference not in existing_description:
-                project.description = (
-                    f"{existing_description}\n\n{text_reference}".strip()
-                    if existing_description else text_reference
-                )
-                changed = True
-
-        reference_images = list(project.reference_images or [])
-        for url in resolved_materials["reference_images"]:
-            if url and url not in reference_images:
-                reference_images.append(url)
-                changed = True
-        if changed:
-            project.reference_images = reference_images
-            await db.flush()
 
     async def _get_project(self, db: AsyncSession, project_id: int) -> Project:
         result = await db.execute(select(Project).where(Project.id == project_id))

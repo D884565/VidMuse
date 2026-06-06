@@ -15,3 +15,11 @@ export function updateProduct(productId, data) {
 export function deleteProduct(productId) {
   return api.delete(`/v1/products/${productId}`)
 }
+
+export function parseProduct(productId) {
+  return api.post(`/v1/products/${productId}/parse`)
+}
+
+export function getProductParsingProgress(productId) {
+  return api.get(`/v1/products/${productId}/parsing-progress`)
+}

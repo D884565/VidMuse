@@ -8,6 +8,14 @@ export async function sendChatMessage(projectId, payload, frameId = null) {
   return api.post(`/v1/projects/${projectId}/chat`, requestPayload)
 }
 
+export async function analyzeChatReference(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post('/v1/chat/analyze-reference', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  })
+}
+
 export async function sendChatMessageStream(projectId, payload, callbacks) {
   return sendSseChat(`/api/v1/projects/${projectId}/chat/stream`, payload, callbacks)
 }

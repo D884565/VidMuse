@@ -14,7 +14,7 @@ export default function ProductPickerModal({ open, selectedProduct, onClose, onC
     setKeyword('')
     setLoading(true)
     listProducts({ page: 1, page_size: 100 })
-      .then((res) => setProducts(res.data?.items ?? res.data ?? []))
+      .then((res) => setProducts(Array.isArray(res?.list) ? res.list : Array.isArray(res) ? res : []))
       .catch(() => setProducts([]))
       .finally(() => setLoading(false))
   }, [open, selectedProduct])

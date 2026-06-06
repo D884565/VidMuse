@@ -151,9 +151,9 @@ export default function MediaGrid() {
     setEditAsset(null)
   }
 
-  const handleEditDeleted = async (assetId) => {
+  const handleEditDeleted = (assetId) => {
     setEditAsset(null)
-    await handleDelete(assetId)
+    setAssets((prev) => prev.filter((asset) => asset.id !== assetId))
   }
 
   return (

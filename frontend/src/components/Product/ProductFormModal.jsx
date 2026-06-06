@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, useRef } from 'react'
+import { useEffect, useMemo, useState, useRef, useCallback } from 'react'
 import { normalizeProductPayload } from './productFormUtils.js'
 import { uploadAsset } from '../../services/asset.js'
+import { parseProduct, getProductParsingProgress } from '../../services/product.js'
 
 const EMPTY_FORM = {
   name: '',
@@ -34,6 +35,9 @@ export default function ProductFormModal({
   const [imagePreview, setImagePreview] = useState('')
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef(null)
+  const [aiGenerating, setAiGenerating] = useState(false)
+  const [aiProgress, setAiProgress] = useState('')
+  const pollingRef = useRef(null)
 
   useEffect(() => {
     if (!open) return
@@ -42,7 +46,78 @@ export default function ProductFormModal({
     setImagePreview(newForm.main_image_url || '')
     setSubmitting(false)
     setError('')
+    setAiGenerating(false)
+    setAiProgress('')
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current)
+      pollingRef.current = null
+    }
   }, [open, initialProduct])
+
+  // 清理轮询
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current)
+        pollingRef.current = null
+      }
+    }
+  }, [])
+
+  const handleAiGenerate = useCallback(async () => {
+    if (!initialProduct?.id) {
+      setError('请先保存商品后再使用 AI 生成')
+      return
+    }
+    try {
+      setAiGenerating(true)
+      setAiProgress('正在触发 AI 解析...')
+      setError('')
+      await parseProduct(initialProduct.id)
+
+      // 轮询解析进度
+      pollingRef.current = setInterval(async () => {
+        try {
+          const progress = await getProductParsingProgress(initialProduct.id)
+          const status = progress?.parsing_status
+          const desc = progress?.description
+
+          if (status === 'completed') {
+            clearInterval(pollingRef.current)
+            pollingRef.current = null
+            setAiGenerating(false)
+            setAiProgress('')
+            // 优先取 product.description，fallback 到 ai_features
+            const generated = desc
+              || progress?.ai_features?.basic_info?.description
+              || ''
+            if (generated) {
+              patchField('description', generated)
+            } else {
+              setError('AI 未生成出描述内容')
+            }
+          } else if (status === 'failed') {
+            clearInterval(pollingRef.current)
+            pollingRef.current = null
+            setAiGenerating(false)
+            setAiProgress('')
+            setError(progress?.parsing_error || 'AI 解析失败')
+          } else {
+            const detail = progress?.progress_detail
+            if (detail) {
+              setAiProgress(`解析中 ${detail.progress_percent || 0}%...`)
+            }
+          }
+        } catch {
+          // 轮询出错不中断，等下次重试
+        }
+      }, 2000)
+    } catch (e) {
+      setAiGenerating(false)
+      setAiProgress('')
+      setError(e.message || 'AI 解析触发失败')
+    }
+  }, [initialProduct])
 
   async function handleFileSelect(event) {
     const file = event.target.files?.[0]
@@ -212,7 +287,29 @@ export default function ProductFormModal({
           </div>
 
           <label className="block">
-            <span className="mb-2 block text-sm text-[var(--text-muted)]">商品描述</span>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="block text-sm text-[var(--text-muted)]">商品描述</span>
+              <button
+                type="button"
+                onClick={handleAiGenerate}
+                disabled={aiGenerating || !initialProduct?.id}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-[rgba(56,189,248,0.12)] px-3 py-1.5 text-xs font-medium text-[#7dd3fc] hover:bg-[rgba(56,189,248,0.2)] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {aiGenerating ? (
+                  <>
+                    <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-[#7dd3fc] border-t-transparent" />
+                    {aiProgress || '生成中...'}
+                  </>
+                ) : (
+                  <>
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                    </svg>
+                    AI 生成
+                  </>
+                )}
+              </button>
+            </div>
             <textarea
               value={form.description}
               onChange={(event) => patchField('description', event.target.value)}

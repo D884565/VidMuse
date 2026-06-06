@@ -115,16 +115,26 @@ export function useChat(options = {}) {
     const inputContent = typeof payload === 'string' ? payload : payload?.content || ''
     const selectedAssets = Array.isArray(payload?.selectedAssets) ? payload.selectedAssets : []
     const selectedProduct = payload?.selectedProduct || null
+    const localRefs = Array.isArray(payload?.localRefs) ? payload.localRefs : []
     const submission = buildChatSubmission({
       content: inputContent,
       selectedAssets,
       selectedProduct,
+      localRefs,
     })
     const trimmedContent = submission.displayContent.trim()
     if (!trimmedContent) return
 
     const clientUserId = crypto.randomUUID()
     const clientAssistantId = crypto.randomUUID()
+    const normalizedLocalRefs = localRefs.map((ref) => ({
+      id: ref.id,
+      type: ref.type,
+      url: ref.url || '',
+      title: ref.title || '',
+      content: ref.content || '',
+      features: ref.features || null,
+    }))
     const requestPayload = {
       content: submission.content,
       display_content: submission.displayContent,
@@ -137,6 +147,7 @@ export function useChat(options = {}) {
         description: submission.selectedProduct.description,
         main_image_url: submission.selectedProduct.main_image_url,
       } : null,
+      local_references: normalizedLocalRefs,
       client_id: clientUserId,
     }
 
@@ -155,6 +166,7 @@ export function useChat(options = {}) {
         display_content: trimmedContent,
         selected_assets: submission.selectedAssets,
         selected_product: submission.selectedProduct,
+        local_references: normalizedLocalRefs,
       },
     }
     const assistantMsgId = crypto.randomUUID()

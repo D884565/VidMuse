@@ -5,7 +5,7 @@ from typing import Any
 
 
 class MaterialResolver:
-    """Resolve selected chat assets into usable prompt text and reference images."""
+    """Resolve selected chat assets into parsed material prompt text."""
 
     @staticmethod
     def resolve_selected_assets(selected_assets: list[dict] | None, assets: Iterable[Any] | None) -> dict:
@@ -16,10 +16,9 @@ class MaterialResolver:
         }
 
         selected_asset_ids: list[int] = []
-        text_sections: list[str] = []
-        reference_images: list[str] = []
+        prompt_chunks: list[str] = []
 
-        for index, item in enumerate(selected_assets or [], 1):
+        for item in selected_assets or []:
             try:
                 asset_id = int(item.get("id"))
             except (TypeError, ValueError, AttributeError):
@@ -30,38 +29,13 @@ class MaterialResolver:
                 continue
 
             selected_asset_ids.append(asset_id)
-            asset_type = MaterialResolver._normalize_asset_type(item.get("type"), getattr(asset, "type", None))
-            title = (item.get("title") or getattr(asset, "title", "") or f"素材 {asset_id}").strip()
-
-            if asset_type == "text":
-                content_text = (getattr(asset, "content_text", None) or "").strip()
-                if content_text:
-                    text_sections.append(f"素材 {index}（{title}）：\n{content_text}")
-            elif asset_type == "image":
-                image_url = (getattr(asset, "url", None) or "").strip()
-                if image_url and image_url not in reference_images:
-                    reference_images.append(image_url)
-
-        text_reference = ""
-        if text_sections:
-            text_reference = "参考文本素材：\n" + "\n\n".join(text_sections)
+            ai_features = getattr(asset, "ai_features", None) or {}
+            prompt_summary = ai_features.get("prompt_summary", {}) if isinstance(ai_features, dict) else {}
+            reference_text = str(prompt_summary.get("reference_text", "") or "").strip()
+            if reference_text:
+                prompt_chunks.append(reference_text)
 
         return {
             "selected_asset_ids": selected_asset_ids,
-            "text_reference": text_reference,
-            "reference_images": reference_images,
+            "material_prompt_text": "\n\n".join(prompt_chunks),
         }
-
-    @staticmethod
-    def _normalize_asset_type(raw_type: Any, fallback_type: Any) -> str:
-        if isinstance(raw_type, str) and raw_type.strip():
-            return raw_type.strip().lower()
-        if fallback_type == 1:
-            return "image"
-        if fallback_type == 2:
-            return "video"
-        if fallback_type == 3:
-            return "audio"
-        if fallback_type == 4:
-            return "text"
-        return ""

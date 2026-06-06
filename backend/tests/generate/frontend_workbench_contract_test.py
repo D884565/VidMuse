@@ -198,14 +198,16 @@ def test_project_creation_for_entry_chat_forwards_selected_assets():
     assert "selected_assets: submission.selectedAssets" in use_chat
 
 
-def test_backend_material_resolver_is_used_for_project_creation_and_chat():
+def test_backend_material_flow_no_longer_injects_raw_material_text_or_image_urls():
     generation_source = Path("backend/v1/app/generate/controller/generation.py").read_text(encoding="utf-8")
     chat_service_source = Path("backend/v1/app/generate/service/chat/chat_service.py").read_text(encoding="utf-8")
     project_dao_source = Path("backend/v1/app/generate/dao/project.py").read_text(encoding="utf-8")
 
     assert "MaterialResolver" in generation_source
-    assert "MaterialResolver" in chat_service_source
     assert "selected_assets" in project_dao_source
+    assert "material_text_reference" not in generation_source
+    assert "material_reference_images" not in generation_source
+    assert "_apply_selected_assets_to_project" not in chat_service_source
 
 
 def test_project_card_displays_generation_suffix_without_mutating_project_title():

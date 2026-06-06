@@ -1,11 +1,12 @@
 """剧本生成 & 视频生成 API 路由"""
 import json
 import logging
+import uuid
 
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, Path, Query
+from fastapi import APIRouter, Body, Depends, File, Path, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -66,8 +67,6 @@ async def create_project(
     product_info_str = None
     selected_assets = project.selected_assets or []
     selected_asset_ids = []
-    material_text_reference = ""
-    material_reference_images = []
 
     if selected_assets:
         asset_ids = []
@@ -81,8 +80,6 @@ async def create_project(
             assets = asset_result.scalars().all()
             resolved_materials = MaterialResolver.resolve_selected_assets(selected_assets, assets)
             selected_asset_ids = resolved_materials["selected_asset_ids"]
-            material_text_reference = resolved_materials["text_reference"]
-            material_reference_images = resolved_materials["reference_images"]
 
     if project.product_url:
         try:
@@ -105,23 +102,14 @@ async def create_project(
     elif title:
         summary = title[:100].strip()
 
-    combined_user_prompt = project.user_prompt
-    if material_text_reference:
-        combined_user_prompt = f"{combined_user_prompt}\n\n{material_text_reference}" if combined_user_prompt else material_text_reference
-
-    reference_images = []
-    for url in (project.reference_images or []) + material_reference_images:
-        if url and url not in reference_images:
-            reference_images.append(url)
-
     p = Project(
         title=title,
         description=project.description,
         product_url=project.product_url,
         product_info=product_info_str,
         user_id=current_user_id,
-        user_prompt=combined_user_prompt,
-        reference_images=reference_images,
+        user_prompt=project.user_prompt,
+        reference_images=project.reference_images,
         style=project.style,
         target_audience=project.target_audience,
         key_points=project.key_points or [],
@@ -618,6 +606,7 @@ async def chat_refinement(
         metadata = {
             "display_content": req.get("display_content"),
             "selected_assets": req.get("selected_assets") or [],
+            "local_references": req.get("local_references") or [],
             "client_id": req.get("client_id"),
         }
         if not content:
@@ -644,6 +633,7 @@ async def chat_stream(
     metadata = {
         "display_content": req.get("display_content"),
         "selected_assets": req.get("selected_assets") or [],
+        "local_references": req.get("local_references") or [],
         "client_id": req.get("client_id"),
     }
     if not content:
@@ -669,6 +659,77 @@ async def chat_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/chat/analyze-reference", response_model=Response)
+async def analyze_chat_reference(
+    file: UploadFile = File(..., description="参考图片"),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    """上传参考图片并解析特征，用于对话中作为参考素材。"""
+    import uuid as _uuid
+    from backend.v1.app.pipeline import ProductParsingPipeline
+    from backend.store import get_storage_client
+    from backend.store.obj.local_client import get_local_storage_client
+
+    # 1. 上传图片到存储
+    ext = (file.filename or "jpg").rsplit(".", 1)[-1] if "." in (file.filename or "") else "jpg"
+    object_name = f"chat-ref/{_uuid.uuid4().hex}.{ext}"
+    stream = file.file
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    try:
+        url = get_storage_client().upload_fileobj(stream, object_name, file.content_type)
+    except Exception:
+        if hasattr(stream, "seek"):
+            stream.seek(0)
+        url = get_local_storage_client().upload_fileobj(stream, object_name, file.content_type)
+
+    # 2. 走 product pipeline 解析图片特征
+    features = {}
+    try:
+        pipeline = ProductParsingPipeline(enable_persistence=False, persist_to_asset=False)
+        result = pipeline.run({"images": [url]})
+        if result.get("success"):
+            product_data = result.get("data", {}).get("product_data", {}) or {}
+            basic_info = product_data.get("basic_info", {}) or {}
+            raw_tags = product_data.get("tags", []) or []
+            visual_features = raw_tags if isinstance(raw_tags, list) else [raw_tags]
+
+            selling_points = product_data.get("selling_points", []) or []
+            audience = basic_info.get("target_audience", "") or ""
+            scenarios = basic_info.get("scenarios", []) or []
+            keywords = product_data.get("keywords", []) or []
+
+            # 构建 reference_text
+            ref_lines = []
+            if selling_points:
+                ref_lines.append("Product selling point reference: " + "; ".join(str(s) for s in selling_points))
+            if visual_features:
+                ref_lines.append("Visual feature reference: " + "; ".join(str(v) for v in visual_features))
+            if audience:
+                ref_lines.append(f"Audience: {audience}")
+            if scenarios:
+                ref_lines.append("Scenarios: " + "; ".join(str(s) for s in scenarios))
+            if keywords:
+                ref_lines.append("Keywords: " + "; ".join(str(k) for k in keywords))
+
+            features = {
+                "selling_points": selling_points,
+                "visual_features": visual_features,
+                "audience": audience,
+                "scenarios": scenarios,
+                "keywords": keywords,
+                "reference_text": "\n".join(ref_lines),
+            }
+    except Exception as exc:
+        logger.warning("[analyze_chat_reference] image analysis failed: %s", exc)
+
+    return Response.success(data={
+        "id": uuid.uuid4().hex,
+        "url": url,
+        "features": features,
+    })
 
 
 @router.post("/chat/entry/stream")

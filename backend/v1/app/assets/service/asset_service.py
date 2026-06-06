@@ -12,6 +12,7 @@ from backend.framework.exceptions.error_codes import PARAM_ERROR
 from backend.framework.exceptions.exceptions import BusinessException
 from backend.store import get_storage_client
 from backend.store.obj.local_client import get_local_storage_client
+from backend.v1.app.assets.service.asset_analysis_orchestrator import AssetAnalysisOrchestrator
 from backend.v1.app.assets.core.upload_bitmap import UploadBitmapStore
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
 from backend.v1.app.assets.dao.asset_upload_session_dao import AssetUploadSessionDAO
@@ -27,6 +28,7 @@ class AssetService:
     }
 
     _bitmap_store = UploadBitmapStore()
+    _analysis_orchestrator = AssetAnalysisOrchestrator()
 
     @staticmethod
     def _library_owner_id() -> Optional[int]:
@@ -159,7 +161,8 @@ class AssetService:
                 "scope": "library",
             },
         )
-        return asset.to_dict()
+        AssetService._parse_asset_sync(db, asset.id, force=True)
+        return AssetDAO.get_asset_by_id(db, asset.id).to_dict()
 
     @staticmethod
     def update_text_asset(db: Session, asset_id: int, title: Optional[str], content_text: str) -> dict:
@@ -181,7 +184,8 @@ class AssetService:
             update_data["title"] = final_title
 
         updated_asset = AssetDAO.update_asset(db, asset_id, update_data)
-        return updated_asset.to_dict()
+        AssetService._parse_asset_sync(db, asset_id, force=True)
+        return AssetDAO.get_asset_by_id(db, asset_id).to_dict()
 
     @staticmethod
     def init_resumable_upload(
@@ -330,7 +334,8 @@ class AssetService:
         )
         AssetUploadSessionDAO.update_session(db, session_id, {"status": "completed", "asset_id": asset.id})
         AssetService._cleanup_session_files(session)
-        return asset.to_dict()
+        AssetService._parse_asset_sync(db, asset.id, force=True)
+        return AssetDAO.get_asset_by_id(db, asset.id).to_dict()
 
     @staticmethod
     def init_image_reupload(
@@ -428,7 +433,8 @@ class AssetService:
                 pass
 
         AssetService._cleanup_session_files(session)
-        return updated_asset.to_dict()
+        AssetService._parse_asset_sync(db, asset_id, force=True)
+        return AssetDAO.get_asset_by_id(db, asset_id).to_dict()
 
     @staticmethod
     async def reupload_image_asset(
@@ -472,7 +478,8 @@ class AssetService:
             except Exception:
                 pass
 
-        return updated_asset.to_dict()
+        AssetService._parse_asset_sync(db, asset_id, force=True)
+        return AssetDAO.get_asset_by_id(db, asset_id).to_dict()
 
     @staticmethod
     def _upload_asset_common(
@@ -509,6 +516,10 @@ class AssetService:
                 "scope": "library",
             },
         )
+        if type in [1, 2]:
+            AssetService._parse_asset_sync(db, asset.id, force=True)
+            refreshed = AssetDAO.get_asset_by_id(db, asset.id)
+            return refreshed.to_dict()
         return asset.to_dict()
 
     @staticmethod
@@ -663,18 +674,19 @@ class AssetService:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
+        updated_asset = AssetService._parse_asset_sync(db, asset_id, force=force)
         return {
-            "id": asset.id,
-            "type": asset.type,
-            "type_name": AssetService.TYPE_NAME.get(asset.type, "unknown"),
-            "title": asset.title,
-            "url": asset.url,
-            "duration": asset.duration,
-            "ai_features": asset.ai_features,
-            "parsing_status": asset.parsing_status,
-            "execution_id": asset.execution_id,
-            "parsing_error": asset.parsing_error,
-            "analysis_completed": asset.parsing_status == "completed",
+            "id": updated_asset.id,
+            "type": updated_asset.type,
+            "type_name": AssetService.TYPE_NAME.get(updated_asset.type, "unknown"),
+            "title": updated_asset.title,
+            "url": updated_asset.url,
+            "duration": updated_asset.duration,
+            "ai_features": updated_asset.ai_features,
+            "parsing_status": updated_asset.parsing_status,
+            "execution_id": updated_asset.execution_id,
+            "parsing_error": updated_asset.parsing_error,
+            "analysis_completed": updated_asset.parsing_status == "completed",
         }
 
     @staticmethod
@@ -693,6 +705,40 @@ class AssetService:
     @staticmethod
     async def retry_parsing(db: Session, asset_id: int) -> dict:
         return await AssetService.parse_asset(db=db, asset_id=asset_id, force=True)
+
+    @staticmethod
+    def _parse_asset_sync(db: Session, asset_id: int, force: bool = False):
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        if not asset:
+            raise BusinessException(PARAM_ERROR, "asset not found")
+        if asset.type not in [1, 2, 4]:
+            raise BusinessException(PARAM_ERROR, "asset type does not support parsing")
+        if asset.parsing_status == "completed" and not force and asset.ai_features:
+            return asset
+
+        AssetDAO.update_asset(db, asset_id, {"parsing_status": "running", "parsing_error": None})
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        try:
+            ai_features = AssetService._analysis_orchestrator.analyze_asset(asset)
+            return AssetDAO.update_asset(
+                db,
+                asset_id,
+                {
+                    "ai_features": ai_features,
+                    "parsing_status": "completed",
+                    "parsing_error": None,
+                },
+            )
+        except Exception as exc:
+            AssetDAO.update_asset(
+                db,
+                asset_id,
+                {
+                    "parsing_status": "failed",
+                    "parsing_error": str(exc),
+                },
+            )
+            raise
 
     @staticmethod
     def delete_asset(db: Session, asset_id: int) -> None:

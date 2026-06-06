@@ -78,6 +78,9 @@ class ProductService:
             "brand": product.brand,
             "category": product.category,
             "category_id": product.category_id,
+            "description": product.description,
+            "price": float(product.price) if product.price is not None else None,
+            "main_image_url": product.main_image_url,
             "user_id": product.user_id,
             "auto_parse": product.auto_parse,
             "asset_ids": asset_ids,
@@ -257,11 +260,18 @@ class ProductService:
 
         execution_id = result["execution_id"]
 
-        # 保存execution_id到商品表
-        ProductDAO.update_product(db, product_id, {
+        # 从解析结果中提取描述，回写到商品表（仅当商品描述为空时）
+        update_fields = {
             "execution_id": execution_id,
-            "parsing_status": "completed"  # 流水线执行完成直接标记为成功
-        })
+            "parsing_status": "completed",
+        }
+        if not product.description:
+            product_data = (result.get("data") or {}).get("product_data", {})
+            generated_desc = (product_data.get("basic_info") or {}).get("description", "")
+            if generated_desc and isinstance(generated_desc, str) and generated_desc.strip():
+                update_fields["description"] = generated_desc.strip()
+
+        ProductDAO.update_product(db, product_id, update_fields)
 
         return execution_id
 
@@ -287,6 +297,7 @@ class ProductService:
             "execution_id": product.execution_id,
             "parsing_error": product.parsing_error,
             "ai_features": product.ai_features,
+            "description": product.description,
             "updated_at": product.updated_at.isoformat() + "Z" if product.updated_at else None
         }
 
@@ -485,6 +496,7 @@ class ProductService:
                 "name": p.name,
                 "brand": p.brand,
                 "category": p.category,
+                "description": p.description,
                 "price": float(p.price) if p.price is not None else None,
                 "main_image_url": p.main_image_url,
                 "platform": p.platform,
