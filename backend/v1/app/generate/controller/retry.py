@@ -4,13 +4,15 @@ from typing import Optional
 
 from fastapi import APIRouter, Body, Depends, Path
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from backend.framework.exceptions import BusinessException
 from backend.framework.exceptions.error_codes import VIDEO_ERROR, RESOURCE_NOT_FOUND, UNAUTHORIZED
 from backend.framework.web import Response
 from backend.framework.web.auth import get_current_user_id
-from backend.store.database.async_database import get_db
+from backend.store.database.sync_database import get_db
+from backend.v1.app.models.project import Project
 from backend.v1.app.generate.service.generateUtils.retry_coordinator import retry_coordinator
 from backend.v1.app.generate.service.generateUtils.task_tracker import generation_task_tracker
 from backend.v1.app.generate.tasks.celery_app import celery_app
@@ -18,6 +20,14 @@ from backend.v1.app.generate.tasks.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["重试管理"])
+
+
+def _get_project_owner(db: Session, project_id: int) -> Optional[int]:
+    """获取项目所有者ID。"""
+    project = db.execute(
+        select(Project.user_id).where(Project.id == project_id)
+    ).scalar_one_or_none()
+    return project
 
 
 class RetryRequest(BaseModel):
@@ -34,17 +44,15 @@ class RegenerateFrameRequest(BaseModel):
 
 
 @router.post("/projects/{project_id}/retry", response_model=Response)
-async def retry_generation(
+def retry_generation(
     request: RetryRequest,
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """失败重试：从断点继续。"""
-    from backend.v1.app.generate.service.generateUtils.project import ProjectService
-
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
+    owner_id = _get_project_owner(db, project_id)
+    if owner_id != current_user_id:
         raise BusinessException(UNAUTHORIZED, "无权操作该项目")
 
     # 准备重试
@@ -67,7 +75,7 @@ async def retry_generation(
     elif stage == "video":
         celery_app.send_task("generate_video_task", args=[project_id, task_id, "resume"])
 
-    await db.commit()
+    db.commit()
 
     return Response.success(data={
         "task_id": task_id,
@@ -80,18 +88,16 @@ async def retry_generation(
 
 
 @router.post("/projects/{project_id}/frames/{frame_id}/regenerate-frame", response_model=Response)
-async def regenerate_frame_retry(
+def regenerate_frame_retry(
     request: RegenerateFrameRequest,
     project_id: int = Path(..., gt=0),
     frame_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """用户修改：重新生成指定帧。"""
-    from backend.v1.app.generate.service.generateUtils.project import ProjectService
-
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
+    owner_id = _get_project_owner(db, project_id)
+    if owner_id != current_user_id:
         raise BusinessException(UNAUTHORIZED, "无权操作该项目")
 
     # 准备重试
@@ -109,7 +115,7 @@ async def regenerate_frame_retry(
     else:
         raise BusinessException(VIDEO_ERROR, f"无效的类型: {request.type}")
 
-    await db.commit()
+    db.commit()
 
     return Response.success(data={
         "task_id": task_id,
@@ -119,16 +125,14 @@ async def regenerate_frame_retry(
 
 
 @router.get("/projects/{project_id}/generation-status", response_model=Response)
-async def get_generation_status(
+def get_generation_status(
     project_id: int = Path(..., gt=0),
     current_user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """查询任务状态。"""
-    from backend.v1.app.generate.service.generateUtils.project import ProjectService
-
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
+    owner_id = _get_project_owner(db, project_id)
+    if owner_id != current_user_id:
         raise BusinessException(UNAUTHORIZED, "无权访问该项目")
 
     status = retry_coordinator.get_generation_status(db, project_id)
@@ -136,17 +140,15 @@ async def get_generation_status(
 
 
 @router.get("/projects/{project_id}/generation-frames", response_model=Response)
-async def get_generation_frames(
+def get_generation_frames(
     project_id: int = Path(..., gt=0),
     stage: str = ...,
     current_user_id: int = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db),
+    db: Session = Depends(get_db),
 ):
     """查询帧级详情。"""
-    from backend.v1.app.generate.service.generateUtils.project import ProjectService
-
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
+    owner_id = _get_project_owner(db, project_id)
+    if owner_id != current_user_id:
         raise BusinessException(UNAUTHORIZED, "无权访问该项目")
 
     task = generation_task_tracker.get_latest_task(db, project_id)
