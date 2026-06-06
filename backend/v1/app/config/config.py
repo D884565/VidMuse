@@ -117,12 +117,14 @@ class Settings(BaseSettings):
     VOLC_EMBEDDING_DIMENSION: int = 2048
 
     # 存储配置
-    STORAGE_TYPE: str = "tos"  # 可选值: minio, tos
+    STORAGE_TYPE: str = "tos"  # 可选值: minio, tos, local
+    LOCAL_STORAGE_ROOT: str = "local_uploads"
+    LOCAL_STORAGE_URL_PREFIX: str = "/uploads"
 
     # 火山引擎对象存储 TOS
     TOS_ENDPOINT: str = "tos-cn-beijing.volces.com"
-    TOS_ACCESS_KEY: str = os.getenv('TOS_ACCESS_KEY')
-    TOS_SECRET_KEY: str = os.getenv('TOS_SECRET_KEY')
+    TOS_ACCESS_KEY: str = os.getenv('TOS_ACCESS_KEY', '')
+    TOS_SECRET_KEY: str = os.getenv('TOS_SECRET_KEY', '')
     TOS_BUCKET_NAME: str = "vidmuse"
     TOS_REGION: str = "cn-beijing"
     TOS_SECURE: bool = True

@@ -4,11 +4,8 @@ DROP TABLE IF EXISTS agent_traces;
 
 DROP TABLE IF EXISTS trace_log;
 DROP TABLE IF EXISTS conversations;
-DROP TABLE IF EXISTS generation_task_steps;
-DROP TABLE IF EXISTS generation_tasks;
 DROP TABLE IF EXISTS scripts;
 DROP TABLE IF EXISTS frames;
-DROP TABLE IF EXISTS merge_tasks;
 DROP TABLE IF EXISTS slices;
 DROP TABLE IF EXISTS project_assets;
 DROP TABLE IF EXISTS assets;
@@ -73,7 +70,7 @@ CREATE TABLE IF NOT EXISTS projects (
     summary         VARCHAR(200) COMMENT '对话摘要，用于侧边栏展示',
     workflow_stage  VARCHAR(30) NOT NULL DEFAULT 'created' COMMENT '工作流阶段: created/script/images/video/completed',
     stage_status    VARCHAR(30) NOT NULL DEFAULT 'idle' COMMENT '阶段状态: idle/running/done/failed',
-    last_task_id    BIGINT COMMENT '最近一次异步任务ID',
+    last_task_id    VARCHAR(80) COMMENT '最近一次异步任务ID',
     dirty_stage     VARCHAR(30) COMMENT '脏数据阶段标记',
     script_confirmed_at DATETIME COMMENT '剧本确认时间',
     images_confirmed_at DATETIME COMMENT '图片确认时间',
@@ -217,19 +214,7 @@ CREATE TABLE IF NOT EXISTS products (
 
 
 
-CREATE TABLE IF NOT EXISTS merge_tasks (
-    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
-    task_id         VARCHAR(50) NOT NULL COMMENT '任务ID',
-    task_type       VARCHAR(20) NOT NULL COMMENT '任务类型: audio_replace/bgm/mix',
-    video_id        BIGINT NOT NULL COMMENT '视频资产ID',
-    params          TEXT NOT NULL COMMENT '任务参数JSON',
-    status          VARCHAR(20) NOT NULL DEFAULT 'queued' COMMENT 'queued/processing/completed/failed/cancelled',
-    result          TEXT COMMENT '任务结果JSON',
-    error_message   TEXT COMMENT '错误信息',
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_task_id (task_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='音视频合成任务表';
+
 
 
 
@@ -242,7 +227,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     stage           VARCHAR(50) COMMENT '所属工作流阶段: script/images/video',
     blocks          JSON COMMENT '结构化内容块',
     action_type     VARCHAR(50) COMMENT '动作类型: confirm/regenerate/edit',
-    task_id         BIGINT COMMENT '关联的异步任务ID',
+    task_id         VARCHAR(80) COMMENT '关联的异步任务ID',
     metadata        JSON COMMENT '扩展元数据',
     frame_id        BIGINT COMMENT '关联帧ID',
     created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -277,48 +262,10 @@ CREATE TABLE IF NOT EXISTS scripts (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='剧本版本表';
 
 
-CREATE TABLE IF NOT EXISTS generation_tasks (
-    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '任务ID',
-    project_id      BIGINT NOT NULL COMMENT '所属项目ID',
-    task_type       VARCHAR(50) NOT NULL COMMENT '任务类型: script/image/video/tts',
-    status          VARCHAR(20) NOT NULL DEFAULT 'queued' COMMENT '状态: queued/running/completed/failed/cancelled',
-    celery_task_id  VARCHAR(200) COMMENT 'Celery异步任务ID',
-    progress        INT NOT NULL DEFAULT 0 COMMENT '任务进度百分比',
-    current_step    VARCHAR(80) COMMENT '当前执行步骤',
-    current_frame_id BIGINT COMMENT '当前处理分镜ID',
-    retry_count     INT NOT NULL DEFAULT 0 COMMENT '重试次数',
-    error_code      VARCHAR(80) COMMENT '错误码',
-    error_message   TEXT COMMENT '失败原因',
-    trace_id        VARCHAR(100) COMMENT '链路追踪ID',
-    result_data     JSON COMMENT '任务结果数据',
-    started_at      DATETIME COMMENT '开始时间',
-    finished_at     DATETIME COMMENT '结束时间',
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
-    INDEX idx_project_id (project_id),
-    INDEX idx_status (status),
-    INDEX idx_generation_tasks_celery (celery_task_id),
-    INDEX idx_generation_tasks_trace (trace_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='异步生成任务表';
 
 
-CREATE TABLE IF NOT EXISTS generation_task_steps (
-    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '任务步骤ID',
-    task_id         BIGINT NOT NULL COMMENT '所属任务ID',
-    step_name       VARCHAR(80) NOT NULL COMMENT '步骤名称',
-    frame_id        BIGINT COMMENT '关联分镜ID',
-    status          VARCHAR(30) NOT NULL DEFAULT 'running' COMMENT '步骤状态',
-    progress        INT NOT NULL DEFAULT 0 COMMENT '步骤进度百分比',
-    input_snapshot  JSON COMMENT '步骤输入快照',
-    output_snapshot JSON COMMENT '步骤输出快照',
-    error_message   TEXT COMMENT '错误信息',
-    started_at      DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '开始时间',
-    finished_at     DATETIME COMMENT '结束时间',
-    FOREIGN KEY (task_id) REFERENCES generation_tasks(id) ON DELETE CASCADE,
-    INDEX idx_generation_task_steps_task (task_id),
-    INDEX idx_generation_task_steps_frame (frame_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生成任务步骤表';
+
+
 
 
 CREATE TABLE IF NOT EXISTS trace_log (
@@ -538,11 +485,24 @@ CREATE TABLE IF NOT EXISTS push_messages (
     content JSON NOT NULL,
     level VARCHAR(20) DEFAULT 'info',
     trace_id VARCHAR(64),
+    business_type VARCHAR(50) COMMENT '业务类型',
+    task_id VARCHAR(80) COMMENT '任务ID',
+    task_domain VARCHAR(30) COMMENT '任务域',
+    task_type VARCHAR(50) COMMENT '任务类型',
+    project_id BIGINT COMMENT '项目ID',
+    asset_id BIGINT COMMENT '素材ID',
+    event_type VARCHAR(50) COMMENT '任务事件类型',
+    status VARCHAR(30) COMMENT '任务状态',
+    progress INT COMMENT '任务进度',
     extra JSON,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_message_id (message_id),
     INDEX idx_message_type (message_type),
     INDEX idx_trace_id (trace_id),
+    INDEX idx_task_id (task_id),
+    INDEX idx_project_task_created (project_id, created_at),
+    INDEX idx_task_domain_status (task_domain, status),
+    INDEX idx_event_type (event_type),
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='推送消息表';
 
@@ -560,6 +520,57 @@ CREATE TABLE IF NOT EXISTS user_messages (
     UNIQUE KEY uk_user_message (user_id, message_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户消息关联表';
 
+
+-- ----------------------------
+-- 生成任务追踪表（支持断点恢复）
+-- ----------------------------
+
+-- 生成任务表（阶段级追踪）
+CREATE TABLE IF NOT EXISTS generation_tasks (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    task_id VARCHAR(80) NOT NULL UNIQUE COMMENT '任务ID (gen_xxxxx)',
+    project_id BIGINT NOT NULL COMMENT '关联项目ID',
+    task_type VARCHAR(50) NOT NULL COMMENT '任务类型: render, image_retry, video_retry, frame_image, frame_video',
+    status VARCHAR(30) NOT NULL DEFAULT 'queued' COMMENT '状态: queued, running, succeeded, failed, cancelled',
+    current_stage VARCHAR(50) COMMENT '当前阶段: tts, image, video, audio_mix, bgm_mix, output',
+    progress INT DEFAULT 0 COMMENT '整体进度 0-100',
+    retry_count INT DEFAULT 0 COMMENT '重试次数',
+    max_retries INT DEFAULT 3 COMMENT '最大重试次数',
+    error_code VARCHAR(100) COMMENT '错误码',
+    error_message TEXT COMMENT '错误信息',
+    trigger_source VARCHAR(50) DEFAULT 'manual' COMMENT '触发来源: manual, resume, user_revision',
+    celery_task_id VARCHAR(255) COMMENT 'Celery任务ID',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    started_at DATETIME COMMENT '开始时间',
+    finished_at DATETIME COMMENT '完成时间',
+
+    INDEX idx_project_id (project_id),
+    INDEX idx_status (status),
+    INDEX idx_task_id (task_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='生成任务表（阶段级追踪）';
+
+-- 帧级生成进度表
+CREATE TABLE IF NOT EXISTS generation_frame_progress (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    task_id VARCHAR(80) NOT NULL COMMENT '关联任务ID',
+    project_id BIGINT NOT NULL COMMENT '关联项目ID',
+    frame_id BIGINT NOT NULL COMMENT '帧ID',
+    stage VARCHAR(50) NOT NULL COMMENT '阶段: image, video',
+    status VARCHAR(30) NOT NULL DEFAULT 'pending' COMMENT '状态: pending, running, succeeded, failed',
+    attempt_count INT DEFAULT 0 COMMENT '尝试次数',
+    error_message TEXT COMMENT '错误信息',
+    result_url VARCHAR(500) COMMENT '生成结果URL',
+    started_at DATETIME COMMENT '开始时间',
+    finished_at DATETIME COMMENT '完成时间',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+    UNIQUE KEY uk_task_frame_stage (task_id, frame_id, stage),
+    INDEX idx_task_id (task_id),
+    INDEX idx_project_stage (project_id, stage),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='帧级生成进度表';
 
 
 

@@ -11,14 +11,15 @@ def test_chat_service_executes_every_agent_action():
 
     for action in (
         "GENERATE_SCRIPT",
-        "CONFIRM_SCRIPT_AND_GENERATE_IMAGES",
+        "CONFIRM_AND_ADVANCE",
         "REGENERATE_FRAME_IMAGE",
-        "CONFIRM_IMAGES_AND_GENERATE_VIDEO",
-        "CONFIRM_VIDEO",
-        "UPDATE_SCRIPT_TEXT",
-        "ASK_CLARIFYING_QUESTION",
+        "REGENERATE_FRAME_VIDEO",
+        "REGENERATE_TTS",
+        "CHANGE_BGM",
+        "CONVERSE",
+        "ASK_CLARIFYING",
     ):
-        assert f'plan["action"] == "{action}"' in source
+        assert f'action == "{action}"' in source or f'plan["action"] == "{action}"' in source
 
 
 def test_workflow_advance_submits_image_task_without_inline_generation():

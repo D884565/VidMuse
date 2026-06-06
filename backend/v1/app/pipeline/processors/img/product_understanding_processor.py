@@ -1,6 +1,7 @@
 from typing import Dict, List, Union
 import asyncio
 import inspect
+import json
 
 from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
 from backend.v1.app.pipeline.utils import load_prompt
@@ -26,9 +27,8 @@ class ProductUnderstandingProcessor(BaseProcessor):
 
         :param llm_client: 大模型客户端，默认使用VolcanoLLM
         """
-        self.llm_client = llm_client or VolcanoLLM()
-        prompt_config = load_prompt("product_understanding")
-        self.prompt_template = prompt_config["template"]
+        self.llm_client = llm_client or VolcanoLLM(key=None, model_name=None)
+        self.prompt_template = load_prompt("product_understanding")
 
     def _run_async(self, coro):
         """
@@ -77,7 +77,7 @@ class ProductUnderstandingProcessor(BaseProcessor):
         prompt = f"{self.prompt_template}\n\n商品描述：{description}" if description else self.prompt_template
         request = ImageUnderstandingRequest(
             prompt=prompt,
-            image_url=images,
+            image_url=images[0] if isinstance(images, list) else images,
             max_tokens=1024,
             temperature=0.7,
             top_p=0.9,
@@ -92,7 +92,22 @@ class ProductUnderstandingProcessor(BaseProcessor):
         else:
             # 同步调用
             response = self.llm_client.image_understanding(request)
-        context.set("product_understanding", response)
+
+        try:
+            understanding_result = json.loads(response.content)
+        except json.JSONDecodeError:
+            content = response.content.strip()
+            if content.startswith("```json"):
+                content = content[7:]
+            if content.endswith("```"):
+                content = content[:-3]
+            start_idx = content.find("{")
+            end_idx = content.rfind("}")
+            if start_idx >= 0 and end_idx > start_idx:
+                content = content[start_idx:end_idx + 1]
+            understanding_result = json.loads(content)
+
+        context.set("product_understanding", understanding_result)
 
 
         return context

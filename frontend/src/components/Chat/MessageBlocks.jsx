@@ -1,5 +1,6 @@
 import { Play, RefreshCw } from 'lucide-react'
 import { useAppStore } from '../../store/appStore.js'
+import { formatVideoStyle } from '../../utils/videoStyle.js'
 
 export default function MessageBlocks({ blocks = [], onActionComplete }) {
   void onActionComplete
@@ -41,7 +42,7 @@ function ScriptSummary({ block }) {
       <div className="text-sm font-semibold text-[#7dd3fc]">{block.title || '剧本方案'}</div>
       <div className="mt-2 grid gap-2 text-xs text-slate-200 sm:grid-cols-2">
         <p className="m-0">主题：{block.theme}</p>
-        <p className="m-0">风格：{block.style}</p>
+        <p className="m-0">风格：{formatVideoStyle(block.style)}</p>
         <p className="m-0">分镜数：{block.frame_count}</p>
         <p className="m-0">总时长：{block.total_duration}s</p>
       </div>
@@ -115,7 +116,6 @@ function ProgressCard({ block }) {
         <RefreshCw size={15} />
         {block.message}
       </div>
-      <div className="mt-2 text-xs text-[var(--text-muted)]">阶段：{block.stage} · 状态：{block.status}</div>
     </div>
   )
 }
@@ -182,7 +182,7 @@ function FrameEditor({ block }) {
       </div>
       <div className="mt-4 rounded-lg border border-[#a78bfa]/20 bg-[#a78bfa]/10 px-3 py-2 text-xs leading-6 text-[#ddd6fe]">
         这个版本你想怎么调？
-        你可以直接回复比如“分镜 {block.sequence} 换成男生主角”、“旁白更口语一点”、
+        你可以直接回复比如“分镜 {block.sequence} 换成男生主角”、“旁白更口语一点”，
         “这张图重来，构图更自然一些”，我会继续按你的意思改。
       </div>
     </div>
@@ -199,7 +199,7 @@ function ConfirmationPreview({ block }) {
         </div>
       ) : null}
       <div className="mt-3 rounded-lg border border-[#f59e0b]/20 bg-[#f59e0b]/10 px-3 py-2 text-xs leading-6 text-[#fde68a]">
-        方向有没有要调的？
+        方向还有没有要调的？
         如果这个方案可以，直接回复“继续”或“好的”。
         如果还想改，也可以直接告诉我具体想调整哪一镜、卖点、节奏，或者画面感觉。
       </div>

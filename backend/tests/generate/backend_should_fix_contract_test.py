@@ -142,6 +142,12 @@ def test_generation_and_chat_paths_do_not_directly_assign_legacy_or_stage_status
     assert 'project.status = "rendering"' not in video_tasks_source
 
 
+def test_generation_controller_does_not_import_legacy_llm_agent_runtime():
+    generation_source = read("backend/v1/app/generate/controller/generation.py")
+
+    assert "workflow.llm_agent" not in generation_source
+
+
 def test_submit_generation_task_does_not_guard_on_legacy_status_strings():
     source = read("backend/v1/app/generate/service/stages/video_workflow.py")
 

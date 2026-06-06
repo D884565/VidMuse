@@ -127,6 +127,12 @@ class SchemaValidationProcessor(BaseProcessor):
         """
         创建商品数据校验处理器
         """
-        return cls(template_type="product", data_key="product_data",
-                   valid_key="valid_products", invalid_key="invalid_products",
-                   id_field="product_id", **kwargs)
+        config = {
+            "template_type": "product",
+            "data_key": "product_data",
+            "valid_key": "valid_products",
+            "invalid_key": "invalid_products",
+            "id_field": "product_id",
+        }
+        config.update(kwargs)
+        return cls(**config)

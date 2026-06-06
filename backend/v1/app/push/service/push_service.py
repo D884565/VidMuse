@@ -27,6 +27,15 @@ class PushService:
         level: str = "info",
         trace_id: Optional[str] = None,
         extra: Optional[dict] = None,
+        business_type: Optional[str] = None,
+        task_id: Optional[str] = None,
+        task_domain: Optional[str] = None,
+        task_type: Optional[str] = None,
+        project_id: Optional[int] = None,
+        asset_id: Optional[int] = None,
+        event_type: Optional[str] = None,
+        status: Optional[str] = None,
+        progress: Optional[int] = None,
         persist: bool = True
     ) -> bool:
         """
@@ -57,6 +66,15 @@ class PushService:
             content=content,
             level=level,
             trace_id=trace_id,
+            business_type=business_type,
+            task_id=task_id,
+            task_domain=task_domain,
+            task_type=task_type,
+            project_id=project_id,
+            asset_id=asset_id,
+            event_type=event_type,
+            status=status,
+            progress=progress,
             extra=extra
         )
 
@@ -72,6 +90,15 @@ class PushService:
                 "content": content,
                 "level": level,
                 "trace_id": trace_id,
+                "business_type": business_type,
+                "task_id": task_id,
+                "task_domain": task_domain,
+                "task_type": task_type,
+                "project_id": project_id,
+                "asset_id": asset_id,
+                "event_type": event_type,
+                "status": status,
+                "progress": progress,
                 "extra": extra,
                 "created_at": None  # 非持久化消息没有创建时间
             }

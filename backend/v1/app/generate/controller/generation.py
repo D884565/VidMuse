@@ -1,11 +1,12 @@
 """剧本生成 & 视频生成 API 路由"""
 import json
 import logging
+import uuid
 
 from typing import Optional
 from urllib.parse import quote
 
-from fastapi import APIRouter, Body, Depends, Path, Query
+from fastapi import APIRouter, Body, Depends, File, Path, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,12 +18,14 @@ from backend.v1.app.script.service.script_generation_service import script_gener
 from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
 from backend.v1.app.generate.service.chat.chat_service import chat_service
 from backend.v1.app.generate.service.chat.entry_intent import classify_no_project_message
+from backend.v1.app.generate.service.chat.intent_service import intent_service
 from backend.v1.app.generate.service.chat.project_title import build_video_project_title
-from backend.v1.app.generate.service.workflow.llm_agent import llm_agent_service
+from backend.v1.app.generate.service.chat.material_resolver import MaterialResolver
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
 from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
 from backend.v1.app.generate.service.chat.initial_message import project_initial_message_builder
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
+from backend.v1.app.push.service.task_event_service import task_event_service
 from backend.v1.app.generate.service.generateUtils.storyboard import storyboard_service
 from backend.v1.app.generate.service.workflow.blocks import build_script_stage_blocks
 from backend.v1.app.product.service.product_crawl_service import product_crawl_service
@@ -62,6 +65,21 @@ async def create_project(
     from backend.v1.app.models.project import Project
 
     product_info_str = None
+    selected_assets = project.selected_assets or []
+    selected_asset_ids = []
+
+    if selected_assets:
+        asset_ids = []
+        for item in selected_assets:
+            try:
+                asset_ids.append(int(item.get("id")))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        if asset_ids:
+            asset_result = await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+            assets = asset_result.scalars().all()
+            resolved_materials = MaterialResolver.resolve_selected_assets(selected_assets, assets)
+            selected_asset_ids = resolved_materials["selected_asset_ids"]
 
     if project.product_url:
         try:
@@ -91,7 +109,7 @@ async def create_project(
         product_info=product_info_str,
         user_id=current_user_id,
         user_prompt=project.user_prompt,
-        reference_images=project.reference_images or [],
+        reference_images=project.reference_images,
         style=project.style,
         target_audience=project.target_audience,
         key_points=project.key_points or [],
@@ -104,6 +122,11 @@ async def create_project(
     db.add(p)
     await db.commit()
     await db.refresh(p)
+
+    for asset_id in selected_asset_ids:
+        db.add(ProjectAsset(project_id=p.id, asset_id=asset_id, role="reference"))
+    if selected_asset_ids:
+        await db.commit()
 
     product_info_data = None
     if product_info_str:
@@ -446,13 +469,13 @@ async def bind_project_asset(
 
 @router.get("/tasks/{task_id}", response_model=Response)
 async def get_generation_task(
-    task_id: int = Path(..., gt=0),
+    task_id: str = Path(..., min_length=1),
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """查询生成任务状态。"""
     try:
-        result = await generation_task_service.get_task(db, task_id, current_user_id)
+        result = await task_event_service.get_task_snapshot(db, task_id)
         return Response.success(data=result)
     except PermissionError:
         raise BusinessException(UNAUTHORIZED, "无权访问该任务")
@@ -462,13 +485,13 @@ async def get_generation_task(
 
 @router.get("/tasks/{task_id}/steps", response_model=Response)
 async def get_generation_task_steps(
-    task_id: int = Path(..., gt=0),
+    task_id: str = Path(..., min_length=1),
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
     """查询生成任务步骤。"""
     try:
-        result = await generation_task_service.list_steps(db, task_id, current_user_id)
+        result = await task_event_service.get_task_steps(db, task_id)
         return Response.success(data=result)
     except PermissionError:
         raise BusinessException(UNAUTHORIZED, "无权访问该任务")
@@ -580,9 +603,15 @@ async def chat_refinement(
     try:
         content = req.get("content", "")
         frame_id = req.get("frame_id")
+        metadata = {
+            "display_content": req.get("display_content"),
+            "selected_assets": req.get("selected_assets") or [],
+            "local_references": req.get("local_references") or [],
+            "client_id": req.get("client_id"),
+        }
         if not content:
             raise BusinessException(VIDEO_ERROR, "content 不能为空")
-        result = await chat_service.handle_message(db, project_id, content, frame_id)
+        result = await chat_service.handle_message(db, project_id, content, frame_id, metadata=metadata)
         return Response.success(data=result)
     except ValueError as e:
         raise BusinessException(VIDEO_ERROR, str(e))
@@ -601,12 +630,24 @@ async def chat_stream(
         raise BusinessException(UNAUTHORIZED, "无权操作该项目")
     content = req.get("content", "")
     frame_id = req.get("frame_id")
+    metadata = {
+        "display_content": req.get("display_content"),
+        "selected_assets": req.get("selected_assets") or [],
+        "local_references": req.get("local_references") or [],
+        "client_id": req.get("client_id"),
+    }
     if not content:
         raise BusinessException(VIDEO_ERROR, "content 不能为空")
 
     async def stream_events():
         try:
-            async for event in chat_service.handle_message_stream(db, project_id, content, frame_id):
+            async for event in chat_service.handle_message_stream(
+                db,
+                project_id,
+                content,
+                frame_id,
+                metadata=metadata,
+            ):
                 yield event
         except Exception as exc:
             logger.exception("[chat_stream] stream failed project_id=%s", project_id)
@@ -618,6 +659,77 @@ async def chat_stream(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.post("/chat/analyze-reference", response_model=Response)
+async def analyze_chat_reference(
+    file: UploadFile = File(..., description="参考图片"),
+    current_user_id: int = Depends(get_current_user_id),
+):
+    """上传参考图片并解析特征，用于对话中作为参考素材。"""
+    import uuid as _uuid
+    from backend.v1.app.pipeline import ProductParsingPipeline
+    from backend.store import get_storage_client
+    from backend.store.obj.local_client import get_local_storage_client
+
+    # 1. 上传图片到存储
+    ext = (file.filename or "jpg").rsplit(".", 1)[-1] if "." in (file.filename or "") else "jpg"
+    object_name = f"chat-ref/{_uuid.uuid4().hex}.{ext}"
+    stream = file.file
+    if hasattr(stream, "seek"):
+        stream.seek(0)
+    try:
+        url = get_storage_client().upload_fileobj(stream, object_name, file.content_type)
+    except Exception:
+        if hasattr(stream, "seek"):
+            stream.seek(0)
+        url = get_local_storage_client().upload_fileobj(stream, object_name, file.content_type)
+
+    # 2. 走 product pipeline 解析图片特征
+    features = {}
+    try:
+        pipeline = ProductParsingPipeline(enable_persistence=False, persist_to_asset=False)
+        result = pipeline.run({"images": [url]})
+        if result.get("success"):
+            product_data = result.get("data", {}).get("product_data", {}) or {}
+            basic_info = product_data.get("basic_info", {}) or {}
+            raw_tags = product_data.get("tags", []) or []
+            visual_features = raw_tags if isinstance(raw_tags, list) else [raw_tags]
+
+            selling_points = product_data.get("selling_points", []) or []
+            audience = basic_info.get("target_audience", "") or ""
+            scenarios = basic_info.get("scenarios", []) or []
+            keywords = product_data.get("keywords", []) or []
+
+            # 构建 reference_text
+            ref_lines = []
+            if selling_points:
+                ref_lines.append("Product selling point reference: " + "; ".join(str(s) for s in selling_points))
+            if visual_features:
+                ref_lines.append("Visual feature reference: " + "; ".join(str(v) for v in visual_features))
+            if audience:
+                ref_lines.append(f"Audience: {audience}")
+            if scenarios:
+                ref_lines.append("Scenarios: " + "; ".join(str(s) for s in scenarios))
+            if keywords:
+                ref_lines.append("Keywords: " + "; ".join(str(k) for k in keywords))
+
+            features = {
+                "selling_points": selling_points,
+                "visual_features": visual_features,
+                "audience": audience,
+                "scenarios": scenarios,
+                "keywords": keywords,
+                "reference_text": "\n".join(ref_lines),
+            }
+    except Exception as exc:
+        logger.warning("[analyze_chat_reference] image analysis failed: %s", exc)
+
+    return Response.success(data={
+        "id": uuid.uuid4().hex,
+        "url": url,
+        "features": features,
+    })
 
 
 @router.post("/chat/entry/stream")
@@ -634,8 +746,17 @@ async def chat_entry_stream(
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     async def stream_events():
-        intent = classify_no_project_message(content)
-        yield sse("start", {"action": intent["action"], "should_create_project": intent["should_create_project"]})
+        # 使用LLM意图识别，失败时降级到硬编码规则
+        try:
+            intent = intent_service.classify_entry(content)
+            action = "CREATE_PROJECT" if intent["should_create_project"] else "CONVERSE"
+        except Exception as e:
+            logger.warning(f"LLM intent failed, fallback to rule: {e}")
+            fallback = classify_no_project_message(content)
+            intent = {"should_create_project": fallback["should_create_project"]}
+            action = fallback["action"]
+
+        yield sse("start", {"action": action, "should_create_project": intent["should_create_project"]})
         if intent["should_create_project"]:
             yield sse("done", {
                 "action": "CREATE_PROJECT",
@@ -645,7 +766,7 @@ async def chat_entry_stream(
             return
 
         try:
-            for chunk in llm_agent_service.stream_entry_converse(content):
+            for chunk in intent_service.stream_entry_converse(content):
                 yield sse("token", {"content": chunk})
         except Exception as exc:
             logger.warning("[chat_entry_stream] LLM converse fallback: %s", exc)

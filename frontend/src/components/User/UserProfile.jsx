@@ -1,8 +1,7 @@
-import { useState, useEffect } from 'react'
-import { Lock, LogOut, Loader2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Loader2, Lock, LogOut, Save } from 'lucide-react'
 import { useAppStore } from '../../store/appStore.js'
-import { getUserInfo, updateUserInfo, changePassword } from '../../services/user.js'
-import { logoutApi } from '../../services/user.js'
+import { changePassword, getUserInfo, logoutApi, updateUserInfo } from '../../services/user.js'
 
 export default function UserProfile() {
   const setUser = useAppStore((state) => state.setUser)
@@ -16,7 +15,6 @@ export default function UserProfile() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
-  // 密码修改
   const [showPasswordForm, setShowPasswordForm] = useState(false)
   const [oldPassword, setOldPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -26,29 +24,38 @@ export default function UserProfile() {
     getUserInfo()
       .then((data) => {
         setUserInfo(data)
-        setUsername(data.username)
+        setUsername(data.username || '')
         setUser(data)
       })
-      .catch((err) => console.warn('获取用户信息失败:', err.message))
+      .catch((err) => {
+        setError(err.message || '获取用户信息失败')
+      })
       .finally(() => setLoading(false))
   }, [setUser])
 
+  const resetMessageLater = (setter) => {
+    window.setTimeout(() => setter(''), 2200)
+  }
+
   const handleSaveUsername = async () => {
     if (!username.trim() || username.trim().length < 2) {
-      setError('用户名至少 2 个字符')
+      setError('用户名至少需要 2 个字符')
       return
     }
+
     setSaving(true)
     setError('')
+
     try {
       await updateUserInfo({ username: username.trim() })
-      setUserInfo((prev) => ({ ...prev, username: username.trim() }))
-      setUser({ ...userInfo, username: username.trim() })
+      const nextUser = { ...userInfo, username: username.trim() }
+      setUserInfo(nextUser)
+      setUser(nextUser)
       setEditing(false)
-      setSuccess('用户名已更新')
-      setTimeout(() => setSuccess(''), 2000)
+      setSuccess('个人信息已更新')
+      resetMessageLater(setSuccess)
     } catch (err) {
-      setError(err.message || '更新失败')
+      setError(err.message || '更新个人信息失败')
     } finally {
       setSaving(false)
     }
@@ -56,19 +63,22 @@ export default function UserProfile() {
 
   const handleChangePassword = async () => {
     setError('')
+
     if (!oldPassword || !newPassword) {
-      setError('请填写旧密码和新密码')
+      setError('请填写当前密码和新密码')
       return
     }
     if (newPassword.length < 8 || newPassword.length > 32) {
-      setError('新密码长度为 8-32 个字符')
+      setError('新密码长度需为 8 到 32 个字符')
       return
     }
     if (newPassword !== confirmPassword) {
-      setError('两次输入的密码不一致')
+      setError('两次输入的新密码不一致')
       return
     }
+
     setSaving(true)
+
     try {
       await changePassword(oldPassword, newPassword)
       setSuccess('密码修改成功')
@@ -76,7 +86,7 @@ export default function UserProfile() {
       setOldPassword('')
       setNewPassword('')
       setConfirmPassword('')
-      setTimeout(() => setSuccess(''), 2000)
+      resetMessageLater(setSuccess)
     } catch (err) {
       setError(err.message || '密码修改失败')
     } finally {
@@ -88,162 +98,222 @@ export default function UserProfile() {
     try {
       await logoutApi()
     } catch {
-      // 忽略退出接口错误，本地仍清除状态
+      // Ignore logout API errors and still clear the local session.
     }
     storeLogout()
   }
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8">
-        <Loader2 className="animate-spin text-[#7C3AED]" size={24} />
+      <div className="grid min-h-screen place-items-center bg-[var(--bg-main)]">
+        <Loader2 className="animate-spin text-[#7C3AED]" size={28} />
       </div>
     )
   }
 
+  const createdAtLabel = userInfo?.created_at
+    ? new Date(userInfo.created_at).toLocaleDateString('zh-CN')
+    : '暂无记录'
+
   return (
-    <section className="min-h-screen px-8 py-8">
-      <header className="mb-6">
-        <h1 className="m-0 text-lg font-semibold">个人信息</h1>
-        <p className="m-0 mt-1 text-sm text-[var(--text-muted)]">管理你的账户信息</p>
-      </header>
+    <section className="min-h-screen bg-[radial-gradient(circle_at_top,rgba(124,58,237,0.16),transparent_35%),var(--bg-main)] px-6 py-8 md:px-10">
+      <div className="mx-auto max-w-4xl">
+        <header className="mb-8">
+          <p className="m-0 text-xs uppercase tracking-[0.3em] text-[rgba(167,139,250,0.9)]">
+            Account
+          </p>
+          <h1 className="m-0 mt-3 text-3xl font-semibold text-white">个人信息</h1>
+          <p className="m-0 mt-2 text-sm text-[var(--text-muted)]">
+            在这里修改你的账户资料和登录密码。
+          </p>
+        </header>
 
-      {/* 成功/错误提示 */}
-      {success && (
-        <div className="mb-4 p-3 bg-green-500/10 border border-green-500/30 rounded-lg text-green-400 text-sm">
-          {success}
-        </div>
-      )}
-      {error && (
-        <div className="mb-4 p-3 bg-red-500/10 border border-red-500/30 rounded-lg text-red-400 text-sm">
-          {error}
-        </div>
-      )}
-
-      {/* 用户信息卡片 */}
-      <div className="max-w-lg rounded-xl border border-[var(--border-soft)] bg-[var(--bg-secondary)] p-6 mb-6">
-        <div className="flex items-center gap-4 mb-6">
-          <div className="grid h-16 w-16 shrink-0 place-items-center rounded-full bg-[rgba(124,58,237,0.24)] text-xl font-semibold">
-            {userInfo?.username?.[0]?.toUpperCase() || 'U'}
+        {(success || error) && (
+          <div
+            className={`mb-6 rounded-2xl border px-4 py-3 text-sm ${
+              success
+                ? 'border-green-500/30 bg-green-500/10 text-green-300'
+                : 'border-red-500/30 bg-red-500/10 text-red-300'
+            }`}
+          >
+            {success || error}
           </div>
-          <div>
-            <p className="text-base font-medium">{userInfo?.username}</p>
-            <p className="text-xs text-[var(--text-muted)]">{userInfo?.role_name || '用户'}</p>
-            {userInfo?.created_at && (
-              <p className="text-xs text-[var(--text-muted)]">
-                注册于 {new Date(userInfo.created_at).toLocaleDateString('zh-CN')}
+        )}
+
+        <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-[28px] border border-[var(--border-soft)] bg-[rgba(18,18,26,0.84)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
+            <div className="flex items-center gap-4">
+              <div className="grid h-20 w-20 shrink-0 place-items-center rounded-full bg-[linear-gradient(135deg,#7C3AED_0%,#A855F7_100%)] text-2xl font-semibold text-white shadow-[0_10px_30px_rgba(124,58,237,0.28)]">
+                {userInfo?.username?.[0]?.toUpperCase() || 'U'}
+              </div>
+              <div className="min-w-0">
+                <p className="m-0 truncate text-xl font-medium text-white">{userInfo?.username || '未登录'}</p>
+                <p className="m-0 mt-1 text-sm text-[var(--text-muted)]">
+                  {userInfo?.role_name || '用户'}
+                </p>
+                <p className="m-0 mt-2 text-xs text-[var(--text-muted)]">
+                  注册时间：{createdAtLabel}
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-8 rounded-2xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.02)] p-5">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="m-0 text-sm font-medium text-white">用户名</p>
+                  <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">
+                    用于展示在侧栏头像区域。
+                  </p>
+                </div>
+                {!editing && (
+                  <button
+                    className="rounded-full border border-[var(--border-soft)] px-3 py-1.5 text-xs text-[rgba(167,139,250,0.95)] transition hover:bg-[var(--brand-soft)] hover:text-white"
+                    type="button"
+                    onClick={() => {
+                      setEditing(true)
+                      setError('')
+                    }}
+                  >
+                    编辑
+                  </button>
+                )}
+              </div>
+
+              {editing ? (
+                <div className="mt-4 flex flex-col gap-3 md:flex-row">
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    minLength={2}
+                    maxLength={50}
+                    className="h-11 flex-1 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-main)] px-4 text-sm text-white outline-none transition focus:border-[#7C3AED]"
+                    placeholder="请输入用户名"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      className="inline-flex h-11 items-center gap-2 rounded-xl bg-[linear-gradient(135deg,#7C3AED_0%,#A855F7_100%)] px-4 text-sm font-medium text-white disabled:opacity-60"
+                      type="button"
+                      disabled={saving}
+                      onClick={handleSaveUsername}
+                    >
+                      <Save size={16} />
+                      {saving ? '保存中...' : '保存'}
+                    </button>
+                    <button
+                      className="h-11 rounded-xl border border-[var(--border-soft)] px-4 text-sm text-[var(--text-muted)] transition hover:bg-[rgba(255,255,255,0.05)] hover:text-white"
+                      type="button"
+                      onClick={() => {
+                        setEditing(false)
+                        setUsername(userInfo?.username || '')
+                        setError('')
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="m-0 mt-4 text-sm text-white">{userInfo?.username || '未设置'}</p>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="rounded-[28px] border border-[var(--border-soft)] bg-[rgba(18,18,26,0.84)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.18)]">
+              <div className="flex items-center gap-3">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[rgba(124,58,237,0.16)] text-[rgba(196,181,253,0.95)]">
+                  <Lock size={18} />
+                </div>
+                <div>
+                  <p className="m-0 text-sm font-medium text-white">密码与安全</p>
+                  <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">
+                    需要时可以修改你的登录密码。
+                  </p>
+                </div>
+              </div>
+
+              <button
+                className="mt-5 flex w-full items-center justify-center rounded-xl border border-[var(--border-soft)] px-4 py-3 text-sm text-[var(--text-muted)] transition hover:bg-[var(--brand-soft)] hover:text-white"
+                type="button"
+                onClick={() => {
+                  setShowPasswordForm((open) => !open)
+                  setError('')
+                }}
+              >
+                {showPasswordForm ? '收起密码表单' : '修改密码'}
+              </button>
+
+              {showPasswordForm && (
+                <div className="mt-5 space-y-3">
+                  <input
+                    type="password"
+                    value={oldPassword}
+                    onChange={(event) => setOldPassword(event.target.value)}
+                    className="h-11 w-full rounded-xl border border-[var(--border-soft)] bg-[var(--bg-main)] px-4 text-sm text-white outline-none transition focus:border-[#7C3AED]"
+                    placeholder="当前密码"
+                    autoComplete="current-password"
+                  />
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    className="h-11 w-full rounded-xl border border-[var(--border-soft)] bg-[var(--bg-main)] px-4 text-sm text-white outline-none transition focus:border-[#7C3AED]"
+                    placeholder="新密码（8-32 个字符）"
+                    autoComplete="new-password"
+                  />
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    className="h-11 w-full rounded-xl border border-[var(--border-soft)] bg-[var(--bg-main)] px-4 text-sm text-white outline-none transition focus:border-[#7C3AED]"
+                    placeholder="确认新密码"
+                    autoComplete="new-password"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      className="flex-1 rounded-xl bg-[linear-gradient(135deg,#7C3AED_0%,#A855F7_100%)] px-4 py-3 text-sm font-medium text-white disabled:opacity-60"
+                      type="button"
+                      disabled={saving}
+                      onClick={handleChangePassword}
+                    >
+                      {saving ? '提交中...' : '确认修改'}
+                    </button>
+                    <button
+                      className="rounded-xl border border-[var(--border-soft)] px-4 py-3 text-sm text-[var(--text-muted)] transition hover:bg-[rgba(255,255,255,0.05)] hover:text-white"
+                      type="button"
+                      onClick={() => {
+                        setShowPasswordForm(false)
+                        setOldPassword('')
+                        setNewPassword('')
+                        setConfirmPassword('')
+                        setError('')
+                      }}
+                    >
+                      取消
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-[28px] border border-red-500/20 bg-[rgba(40,14,22,0.68)] p-6 shadow-[0_24px_80px_rgba(0,0,0,0.16)]">
+              <p className="m-0 text-sm font-medium text-white">会话管理</p>
+              <p className="m-0 mt-2 text-xs leading-6 text-[var(--text-muted)]">
+                退出登录后会清除当前浏览器中的登录状态。
               </p>
-            )}
-          </div>
-        </div>
-
-        {/* 用户名编辑 */}
-        <div className="mb-4">
-          <label className="block text-sm text-gray-400 mb-1.5">用户名</label>
-          {editing ? (
-            <div className="flex gap-2">
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                className="flex-1 px-3 py-2 bg-[var(--bg-main)] border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#7C3AED]"
-                minLength={2}
-                maxLength={50}
-              />
               <button
-                onClick={handleSaveUsername}
-                disabled={saving}
-                className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-white rounded-lg text-sm"
+                className="mt-5 inline-flex items-center gap-2 rounded-xl border border-red-500/30 px-4 py-3 text-sm text-red-300 transition hover:bg-red-500/10"
+                type="button"
+                onClick={handleLogout}
               >
-                {saving ? '保存中...' : '保存'}
-              </button>
-              <button
-                onClick={() => { setEditing(false); setUsername(userInfo?.username || ''); setError('') }}
-                className="px-4 py-2 border border-gray-700 text-gray-300 hover:bg-gray-700/50 rounded-lg text-sm"
-              >
-                取消
-              </button>
-            </div>
-          ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-sm">{userInfo?.username}</span>
-              <button
-                onClick={() => setEditing(true)}
-                className="text-xs text-[#a78bfa] hover:text-white"
-              >
-                编辑
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 操作按钮 */}
-      <div className="max-w-lg space-y-3">
-        <button
-          onClick={() => { setShowPasswordForm(!showPasswordForm); setError('') }}
-          className="flex w-full items-center gap-3 rounded-lg border border-[var(--border-soft)] px-4 py-3 text-sm text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white transition-colors"
-        >
-          <Lock size={18} />
-          修改密码
-        </button>
-
-        <button
-          onClick={handleLogout}
-          className="flex w-full items-center gap-3 rounded-lg border border-red-500/30 px-4 py-3 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
-        >
-          <LogOut size={18} />
-          退出登录
-        </button>
-      </div>
-
-      {/* 密码修改表单 */}
-      {showPasswordForm && (
-        <div className="max-w-lg mt-4 rounded-xl border border-[var(--border-soft)] bg-[var(--bg-secondary)] p-6">
-          <h3 className="text-sm font-medium mb-4">修改密码</h3>
-          <div className="space-y-3">
-            <input
-              type="password"
-              value={oldPassword}
-              onChange={(e) => setOldPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--bg-main)] border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#7C3AED]"
-              placeholder="当前密码"
-              autoComplete="current-password"
-            />
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--bg-main)] border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#7C3AED]"
-              placeholder="新密码（8-32字符）"
-              autoComplete="new-password"
-            />
-            <input
-              type="password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-[var(--bg-main)] border border-gray-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#7C3AED]"
-              placeholder="确认新密码"
-              autoComplete="new-password"
-            />
-            <div className="flex gap-2 pt-1">
-              <button
-                onClick={handleChangePassword}
-                disabled={saving}
-                className="px-4 py-2 bg-[#7C3AED] hover:bg-[#6D28D9] disabled:opacity-50 text-white rounded-lg text-sm"
-              >
-                {saving ? '修改中...' : '确认修改'}
-              </button>
-              <button
-                onClick={() => { setShowPasswordForm(false); setOldPassword(''); setNewPassword(''); setConfirmPassword(''); setError('') }}
-                className="px-4 py-2 border border-gray-700 text-gray-300 hover:bg-gray-700/50 rounded-lg text-sm"
-              >
-                取消
+                <LogOut size={16} />
+                退出登录
               </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </section>
   )
 }

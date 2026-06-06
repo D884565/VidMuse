@@ -1,20 +1,27 @@
 import api from './api'
 
-// 发送聊天消息（非流式，保留向后兼容）
-export async function sendChatMessage(projectId, content, frameId = null) {
-  return api.post(`/v1/projects/${projectId}/chat`, {
-    content,
-    frame_id: frameId,
+export async function sendChatMessage(projectId, payload, frameId = null) {
+  const requestPayload = typeof payload === 'string'
+    ? { content: payload, frame_id: frameId }
+    : { ...payload, frame_id: payload?.frame_id ?? frameId }
+
+  return api.post(`/v1/projects/${projectId}/chat`, requestPayload)
+}
+
+export async function analyzeChatReference(file) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post('/v1/chat/analyze-reference', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
   })
 }
 
-// 发送聊天消息（SSE 流式）
-export async function sendChatMessageStream(projectId, content, frameId, callbacks) {
-  return sendSseChat(`/api/generate/v1/projects/${projectId}/chat/stream`, { content, frame_id: frameId }, callbacks)
+export async function sendChatMessageStream(projectId, payload, callbacks) {
+  return sendSseChat(`/api/v1/projects/${projectId}/chat/stream`, payload, callbacks)
 }
 
-export async function sendEntryChatMessageStream(content, callbacks) {
-  return sendSseChat('/api/generate/v1/chat/entry/stream', { content }, callbacks)
+export async function sendEntryChatMessageStream(payload, callbacks) {
+  return sendSseChat('/api/v1/chat/entry/stream', payload, callbacks)
 }
 
 async function sendSseChat(url, payload, callbacks) {
@@ -45,7 +52,7 @@ async function sendSseChat(url, payload, callbacks) {
 
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split('\n')
-      buffer = lines.pop() // 保留不完整的行
+      buffer = lines.pop()
 
       let eventType = ''
       for (const line of lines) {
@@ -65,7 +72,7 @@ async function sendSseChat(url, payload, callbacks) {
               return
             }
           } catch {
-            // 忽略解析错误
+            // Ignore malformed SSE payloads.
           }
         }
       }

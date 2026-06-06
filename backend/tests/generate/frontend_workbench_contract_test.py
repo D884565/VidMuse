@@ -175,6 +175,41 @@ def test_project_creation_keeps_draft_chat_visible_until_backend_history_catches
     assert "mergeFetchedMessages(existing, normalized, streamingMessageId)" in use_chat
 
 
+def test_project_creation_auto_triggers_script_generation_from_entry_chat():
+    use_chat = Path("frontend/src/hooks/useChat.js").read_text(encoding="utf-8")
+
+    assert "generateProjectScript" in use_chat
+    assert "await generateProjectScript(projectId)" in use_chat or "await generateProjectScript(project.id)" in use_chat
+
+
+def test_draft_chat_state_is_persisted_beyond_sidebar_title():
+    chat_state = Path("frontend/src/hooks/chatState.js").read_text(encoding="utf-8")
+    store_source = Path("frontend/src/store/appStore.js").read_text(encoding="utf-8")
+
+    assert "readPersistedDraftState" in chat_state
+    assert "writePersistedDraftState" in chat_state
+    assert "clearPersistedDraftState" in chat_state
+    assert "draftConversationMessages" in store_source
+
+
+def test_project_creation_for_entry_chat_forwards_selected_assets():
+    use_chat = Path("frontend/src/hooks/useChat.js").read_text(encoding="utf-8")
+
+    assert "selected_assets: submission.selectedAssets" in use_chat
+
+
+def test_backend_material_flow_no_longer_injects_raw_material_text_or_image_urls():
+    generation_source = Path("backend/v1/app/generate/controller/generation.py").read_text(encoding="utf-8")
+    chat_service_source = Path("backend/v1/app/generate/service/chat/chat_service.py").read_text(encoding="utf-8")
+    project_dao_source = Path("backend/v1/app/generate/dao/project.py").read_text(encoding="utf-8")
+
+    assert "MaterialResolver" in generation_source
+    assert "selected_assets" in project_dao_source
+    assert "material_text_reference" not in generation_source
+    assert "material_reference_images" not in generation_source
+    assert "_apply_selected_assets_to_project" not in chat_service_source
+
+
 def test_project_card_displays_generation_suffix_without_mutating_project_title():
     source = Path("frontend/src/components/Project/ProjectCard.jsx").read_text(encoding="utf-8")
 

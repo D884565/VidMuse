@@ -53,9 +53,11 @@ export default function ProjectList() {
   return (
     <div className="space-y-2 pl-2 max-[1024px]:hidden">
       {draftItem}
-      {projects.map((project) => (
-        <ProjectCard key={project.id} project={project} />
-      ))}
+      <div className="max-h-[calc(5*4.75rem)] space-y-2 overflow-y-auto pr-1">
+        {projects.map((project) => (
+          <ProjectCard key={project.id} project={project} />
+        ))}
+      </div>
     </div>
   )
 }

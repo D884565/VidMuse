@@ -26,9 +26,8 @@ class TextUnderstandingProcessor(BaseProcessor):
 
         :param llm_client: 大模型客户端，默认使用VolcanoLLM
         """
-        self.llm_client = llm_client or VolcanoLLM()
-        prompt_config = load_prompt("product_understanding")  # 复用商品理解的提示词模板
-        self.prompt_template = prompt_config["template"]
+        self.llm_client = llm_client or VolcanoLLM(key=None, model_name=None)
+        self.prompt_template = load_prompt("product_understanding")  # 复用商品理解的提示词模板
 
     def _run_async(self, coro):
         """

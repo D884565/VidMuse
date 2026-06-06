@@ -101,6 +101,7 @@ class PushClient {
    */
   onMessage(callback) {
     this.listeners.message.push(callback)
+    return () => this._removeListener('message', callback)
   }
 
   /**
@@ -113,6 +114,11 @@ class PushClient {
       this.listeners.messageType[messageType] = []
     }
     this.listeners.messageType[messageType].push(callback)
+    return () => this._removeMessageTypeListener(messageType, callback)
+  }
+
+  onTaskEvent(callback) {
+    return this.onMessageType('task_event', callback)
   }
 
   /**
@@ -121,6 +127,7 @@ class PushClient {
    */
   onError(callback) {
     this.listeners.error.push(callback)
+    return () => this._removeListener('error', callback)
   }
 
   /**
@@ -129,6 +136,7 @@ class PushClient {
    */
   onDisconnect(callback) {
     this.listeners.disconnect.push(callback)
+    return () => this._removeListener('disconnect', callback)
   }
 
   /**
@@ -137,6 +145,7 @@ class PushClient {
    */
   onReconnectAttempt(callback) {
     this.listeners.reconnectAttempt.push(callback)
+    return () => this._removeListener('reconnectAttempt', callback)
   }
 
   /**
@@ -145,6 +154,7 @@ class PushClient {
    */
   onReconnectSuccess(callback) {
     this.listeners.reconnectSuccess.push(callback)
+    return () => this._removeListener('reconnectSuccess', callback)
   }
 
   /**
@@ -153,6 +163,7 @@ class PushClient {
    */
   onConnect(callback) {
     this.listeners.connect.push(callback)
+    return () => this._removeListener('connect', callback)
   }
 
   /**
@@ -332,6 +343,25 @@ class PushClient {
           console.error(`Event listener error for ${eventName}:`, error)
         }
       })
+    }
+  }
+
+  _removeListener(eventName, callback) {
+    if (!this.listeners[eventName]) {
+      return
+    }
+    this.listeners[eventName] = this.listeners[eventName].filter(listener => listener !== callback)
+  }
+
+  _removeMessageTypeListener(messageType, callback) {
+    if (!this.listeners.messageType[messageType]) {
+      return
+    }
+    this.listeners.messageType[messageType] = this.listeners.messageType[messageType].filter(
+      listener => listener !== callback
+    )
+    if (!this.listeners.messageType[messageType].length) {
+      delete this.listeners.messageType[messageType]
     }
   }
 

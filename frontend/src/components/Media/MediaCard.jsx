@@ -1,41 +1,58 @@
-import { Image, Music, Play, Trash2 } from 'lucide-react'
+import { FileText, Image, Music, Play, Trash2 } from 'lucide-react'
 
 const iconMap = {
   video: Play,
   image: Image,
   audio: Music,
+  text: FileText,
 }
 
-export default function MediaCard({ item, onDelete }) {
+export default function MediaCard({ item, onClick, onDelete }) {
   const Icon = iconMap[item.type] || Image
 
   const handleDelete = (e) => {
     e.stopPropagation()
-    if (onDelete) onDelete(item.id)
+    onDelete?.(item.id)
+  }
+
+  const renderPreview = () => {
+    if (item.type === 'image' && item.url) {
+      return <img src={item.url} alt={item.name} className="h-full w-full object-contain p-2" />
+    }
+    return <Icon size={28} className="text-[#a78bfa]" />
   }
 
   return (
-    <article className="group overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[rgba(26,26,46,0.72)] transition hover:-translate-y-0.5 hover:border-[rgba(124,58,237,0.45)] hover:shadow-[0_4px_24px_rgba(124,58,237,0.15)]">
-      {/* 类型图标预览区域；若有 url 可展示缩略图 */}
-      <div className="grid aspect-video place-items-center bg-[rgba(255,255,255,0.04)]">
-        <Icon size={28} className="text-[#a78bfa]" />
-      </div>
-      <div className="p-3">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            <p className="m-0 truncate text-sm font-medium">{item.name}</p>
-            <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">{item.meta}</p>
-          </div>
-          <button
-            className="rounded-lg p-2 text-[var(--text-muted)] opacity-0 hover:bg-[rgba(255,255,255,0.08)] hover:text-white group-hover:opacity-100"
-            type="button"
+    <button
+      type="button"
+      onClick={() => onClick?.(item)}
+      className="group w-full overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[rgba(26,26,46,0.72)] text-left transition hover:-translate-y-0.5 hover:border-[rgba(124,58,237,0.45)] hover:shadow-[0_4px_24px_rgba(124,58,237,0.15)]"
+    >
+      <div className="relative grid aspect-video place-items-center overflow-hidden bg-[rgba(255,255,255,0.04)]">
+        {renderPreview()}
+        {/* Delete button on hover */}
+        <div className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100">
+          <span
+            role="button"
+            tabIndex={0}
+            className="grid h-8 w-8 place-items-center rounded-lg border border-white/15 bg-[rgba(15,23,42,0.86)] text-white transition hover:bg-red-500/80"
             aria-label="删除素材"
             onClick={handleDelete}
+            onKeyDown={(e) => e.key === 'Enter' && handleDelete(e)}
           >
-            <Trash2 size={15} />
-          </button>
+            <Trash2 size={14} />
+          </span>
         </div>
       </div>
-    </article>
+      <div className="p-3">
+        <p className="m-0 truncate text-sm font-medium text-white">{item.name}</p>
+        <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">{item.meta}</p>
+        {item.type === 'text' && item.content_text && (
+          <p className="m-0 mt-2 line-clamp-2 text-xs leading-4 text-[var(--text-muted)]">
+            {item.content_text}
+          </p>
+        )}
+      </div>
+    </button>
   )
 }
