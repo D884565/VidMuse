@@ -1,6 +1,6 @@
 """视频素材库业务逻辑层"""
 from typing import List, Dict, Any, Optional, Tuple
-from fastapi import UploadFile, HTTPException
+from fastapi import UploadFile, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.framework.exceptions import BusinessException
@@ -9,14 +9,12 @@ from backend.v1.app.product.dao.product_category_dao import ProductCategoryDAO
 from backend.v1.app.pipeline.processors.cluster.hot_report_fetch_processor import HotReportFetchProcessor
 from backend.v1.app.pipeline.base.context import PipelineContext
 from backend.v1.app.pipeline.pipelines.video_parsing_pipeline import VideoParsingPipeline
-from backend.store.obj.factory import get_storage_client
 from backend.framework.exceptions.error_codes import SYSTEM_ERROR, PARAM_ERROR
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
+from backend.v1.app.assets.service.asset_service import AssetService
 from backend.v1.app.slice.dao.slice_dao import SliceDAO
 from backend.store.database.sync_database import get_db as get_sync_db
 import logging
-import uuid
-import os
 
 logger = logging.getLogger(__name__)
 
@@ -63,34 +61,26 @@ class VideoLibraryService:
         tags: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """上传视频文件"""
-        # 生成文件名
-        ext = os.path.splitext(file.filename)[1].lower()
-        file_name = f"internal/video-library/{uuid.uuid4().hex}{ext}"
-
         try:
-            # 1. 上传到对象存储
-            content = await file.read()
-            url = await self.obj_store.put_object(file_name, content, file.content_type)
-            file_size = len(content)
-
-            # 获取同步数据库会话
+            # 1. 复用AssetService的内部上传逻辑，统一处理文件验证、存储、资产创建
             sync_db = next(get_sync_db())
 
-            # 2. 创建内部资产记录（user_id为Null表示系统内部资产，不属于任何用户）
-            asset_data = {
-                "title": title or file.filename,
-                "type": 2,  # 视频类型
-                "url": url,
-                "file_size": file_size,
-                "format": ext.lstrip("."),
-                "source_type": 0,  # 内部上传
-                "user_id": None,  # 系统内部资产
-                "parsing_status": "pending"
-            }
-            asset = AssetDAO.create_asset(sync_db, asset_data)
-            asset_dict = asset.to_dict()
+            # 检测文件类型（虽然应该是视频，但复用统一逻辑）
+            asset_type = AssetService.detect_asset_type(file)
+            if asset_type != 2:  # 确保是视频类型
+                raise BusinessException(PARAM_ERROR, "只能上传视频文件")
 
-            # 处理分类关联
+            # 上传内部资产，跳过自动解析，后面统一处理
+            asset_dict = await AssetService.upload_internal_asset(
+                db=sync_db,
+                file=file,
+                type=asset_type,
+                title=title or file.filename,
+                source_type=0,  # 内部上传
+                skip_ai_analysis=True  # 跳过自动解析，由视频库自己控制解析流程
+            )
+
+            # 2. 处理分类关联
             video_data = {
                 "title": asset_dict["title"],
                 "description": description,
@@ -106,8 +96,6 @@ class VideoLibraryService:
             }
 
             if category_id is not None:
-                # 获取同步数据库会话
-                sync_db = next(get_sync_db())
                 category_obj = ProductCategoryDAO.get_category_by_id(sync_db, category_id)
                 if not category_obj:
                     raise BusinessException(PARAM_ERROR, f"分类ID {category_id} 不存在")
@@ -124,15 +112,22 @@ class VideoLibraryService:
                 **video_data
             )
 
-            # 4. 直接调用视频解析流水线
+            # 4. 更新资产表的解析状态为pending
+            AssetDAO.update_asset(sync_db, asset_dict["id"], {
+                "parsing_status": "pending"
+            })
+
+            # 5. 直接调用视频解析流水线
             pipeline = VideoParsingPipeline(enable_persistence=True)
+            # 从asset的url中提取object_name
+            object_name = AssetService.get_path_after_baseurl(asset_dict["url"])
             pipeline_result = pipeline.run_with_persistence({
                 "video_id": asset_dict["id"],
                 "video_url": asset_dict["url"],
-                "object_name": file_name
+                "object_name": object_name
             })
 
-            # 5. 更新执行ID和状态
+            # 6. 更新执行ID和状态
             execution_id = pipeline_result.get("execution_id")
             update_data = {}
             if execution_id:

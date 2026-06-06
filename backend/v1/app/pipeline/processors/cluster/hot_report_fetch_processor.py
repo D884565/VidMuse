@@ -78,15 +78,11 @@ class HotReportFetchProcessor(BaseProcessor):
             for video_id in video_ids:
                 # 查询该视频的向量（每个视频对应一个整体向量）
                 try:
-                    # 使用空查询向量，只按video_id过滤，获取该视频的所有向量
-                    result = self.video_knowledge_dao.query_by_video_id(
-                        video_id=video_id,
-                        query_embeddings=[[]],  # 空向量，不进行相似度匹配
-                        n_results=1  # 每个视频只需要一个整体向量
-                    )
+                    # 直接获取该视频的整体向量
+                    embedding = self.video_knowledge_dao.get_video_embedding(video_id=video_id)
 
-                    if result and result.get("embeddings") and len(result["embeddings"]) > 0:
-                        embeddings.append(result["embeddings"][0])
+                    if embedding:
+                        embeddings.append(embedding)
                     else:
                         logger.warning(f"视频 {video_id} 未找到对应向量，跳过该报告")
                         # 移除对应的报告

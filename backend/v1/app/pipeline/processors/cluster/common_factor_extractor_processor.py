@@ -57,8 +57,15 @@ class CommonFactorExtractor(BaseProcessor):
                 # 转换为Factor模型并生成唯一ID
                 factors = []
                 for factor_data in factors_data:
-                    # 生成唯一因子ID
-                    factor_id = factor_data.get("factor_id", f"f_{uuid.uuid4().hex[:8]}")
+                    # 生成唯一因子ID，确保不会与已有ID冲突
+                    base_factor_id = factor_data.get("factor_id", f"f_{uuid.uuid4().hex[:8]}")
+                    factor_id = base_factor_id
+                    counter = 1
+                    # 确保ID唯一
+                    while factor_id in factor_index:
+                        factor_id = f"{base_factor_id}_{counter}"
+                        counter += 1
+
                     try:
                         factor = Factor(
                             factor_id=factor_id,

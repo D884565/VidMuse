@@ -396,3 +396,84 @@ CREATE TABLE IF NOT EXISTS `spans` (
     KEY `idx_span_name` (`name`),
     KEY `idx_span_created_at` (`created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='函数调用Span表';
+
+
+
+-- scripts/migrations/20260605_add_push_message_tables.sql
+-- 创建推送消息表
+CREATE TABLE IF NOT EXISTS push_messages (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    message_id VARCHAR(36) NOT NULL UNIQUE,
+    message_type VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    content JSON NOT NULL,
+    level VARCHAR(20) DEFAULT 'info',
+    trace_id VARCHAR(64),
+    extra JSON,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_message_id (message_id),
+    INDEX idx_message_type (message_type),
+    INDEX idx_trace_id (trace_id),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='推送消息表';
+
+-- 创建用户消息关联表
+CREATE TABLE IF NOT EXISTS user_messages (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    message_id VARCHAR(36) NOT NULL,
+    is_read TINYINT(1) DEFAULT 0,
+    read_at DATETIME NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    INDEX idx_message_id (message_id),
+    INDEX idx_user_read (user_id, is_read),
+    UNIQUE KEY uk_user_message (user_id, message_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户消息关联表';
+
+
+
+
+-- 创建内部视频素材库表
+CREATE TABLE IF NOT EXISTS video_library (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    title VARCHAR(200) NULL COMMENT '视频标题',
+    description TEXT NULL COMMENT '视频描述',
+    url VARCHAR(500) NOT NULL COMMENT '视频存储URL',
+    cover_url VARCHAR(500) NULL COMMENT '封面图URL',
+    file_size BIGINT NULL COMMENT '文件大小(字节)',
+    duration INT NULL COMMENT '视频时长(秒)',
+    format VARCHAR(20) NULL COMMENT '文件格式',
+    source_type INT NOT NULL DEFAULT 0 COMMENT '来源：0-内部上传, 1-爆款抓取, 2-人工录入, 3-其他',
+    hot_score INT NULL COMMENT '爆款分数(0-100)',
+    category VARCHAR(100) NULL COMMENT '视频分类/商品品类',
+    tags JSON NULL COMMENT '视频标签数组',
+    parsed_data JSON NULL COMMENT '结构化解析数据',
+    parsing_status VARCHAR(20) NULL DEFAULT 'pending' COMMENT '解析状态：pending/running/completed/failed',
+    execution_id VARCHAR(64) NULL COMMENT '流水线执行ID，用于断点续跑',
+    parsing_error TEXT NULL COMMENT '解析错误信息',
+    created_by BIGINT NOT NULL COMMENT '创建人ID(管理员ID)',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_category (category),
+    INDEX idx_hot_score (hot_score),
+    INDEX idx_source_type (source_type),
+    INDEX idx_created_at (created_at),
+    UNIQUE KEY uk_url (url)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='内部视频素材库表';
+
+
+
+-- 为video_library表添加与product_categories的关联字段
+ALTER TABLE video_library
+ADD COLUMN category_id BIGINT NULL COMMENT '关联分类ID，对应product_categories.id' AFTER category,
+ADD COLUMN category_path VARCHAR(200) NULL COMMENT '分类路径，冗余存储方便检索，如"/1/2/3/"' AFTER category_id,
+ADD INDEX idx_category_id (category_id),
+ADD CONSTRAINT fk_video_library_category_id FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL;
+
+
+-- 为video_library表增加asset_id字段，关联到assets表
+ALTER TABLE video_library
+ADD COLUMN asset_id BIGINT NULL COMMENT '关联的内部资产ID' AFTER parsing_error,
+ADD CONSTRAINT fk_video_library_asset_id FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+ADD INDEX idx_asset_id (asset_id);

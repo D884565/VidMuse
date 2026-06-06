@@ -34,18 +34,22 @@ class ProductDAO:
         return product
 
     @staticmethod
-    def get_product_by_id(db: Session, product_id: int, include_category: bool = False) -> Optional[Product]:
+    def get_product_by_id(db: Session, product_id: int, include_category: bool = False, include_assets: bool = False) -> Optional[Product]:
         """根据商品ID查询商品
 
         :param db: 数据库会话
         :param product_id: 商品ID
         :param include_category: 是否预加载关联的分类信息
+        :param include_assets: 是否预加载关联的资产信息
         :return: Product 对象，不存在返回 None
         """
         query = db.query(Product)
         if include_category:
             from sqlalchemy.orm import joinedload
-            query = query.options(joinedload(Product.category))
+            query = query.options(joinedload(Product.category_obj))
+        if include_assets:
+            from sqlalchemy.orm import joinedload
+            query = query.options(joinedload(Product.assets))
         return query.filter(Product.id == product_id).first()
 
     @staticmethod

@@ -29,6 +29,32 @@ class AssetService:
     }
 
     @staticmethod
+    def detect_asset_type(file: UploadFile) -> int:
+        """
+        根据文件自动检测资产类型
+        :param file: 上传的文件
+        :return: 资产类型 1-图片, 2-视频, 3-音频
+        :raises BusinessException: 不支持的文件类型
+        """
+        content_type = file.content_type or ""
+        if content_type.startswith("image/"):
+            return 1  # 图片
+        elif content_type.startswith("video/"):
+            return 2  # 视频
+        elif content_type.startswith("audio/"):
+            return 3  # 音频
+        else:
+            # 尝试通过文件扩展名判断
+            ext = file.filename.split(".")[-1].lower() if "." in (file.filename or "") else ""
+            if ext in ["jpg", "jpeg", "png", "gif", "bmp", "webp", "svg", "heic"]:
+                return 1
+            elif ext in ["mp4", "avi", "mov", "flv", "wmv", "webm", "mkv", "mov"]:
+                return 2
+            elif ext in ["mp3", "wav", "flac", "aac", "ogg", "wma", "m4a"]:
+                return 3
+            raise BusinessException(PARAM_ERROR, f"不支持的文件类型: {file.filename}")
+
+    @staticmethod
     def _validate_file(file: UploadFile, asset_type: int) -> str:
         """
         验证文件合法性

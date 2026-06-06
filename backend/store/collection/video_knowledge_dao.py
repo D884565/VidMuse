@@ -1,6 +1,9 @@
 from typing import List, Dict, Optional
+import logging
 from .base import CollectionDAO
 from backend.v1.app.config.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class VideoKnowledgeDAO(CollectionDAO):
@@ -33,6 +36,66 @@ class VideoKnowledgeDAO(CollectionDAO):
         :param video_id: 视频ID
         """
         self.delete_embeddings(where={"video_id": video_id})
+
+    def get_video_embedding(self, video_id: str) -> Optional[List[float]]:
+        """
+        获取指定视频的整体向量
+        :param video_id: 视频ID
+        :return: 向量列表，如果不存在则返回None
+        """
+        # 根据不同的向量客户端类型使用合适的方法获取向量
+        if hasattr(self._vector_client, 'collection'):
+            # ChromaDB
+            try:
+                results = self._vector_client.collection.get(
+                    where={"video_id": video_id},
+                    limit=1,
+                    include=["embeddings"]
+                )
+                if results and results.get("embeddings") and len(results["embeddings"]) > 0:
+                    return results["embeddings"][0]
+            except Exception as e:
+                logger.error(f"从ChromaDB获取视频向量失败: {str(e)}")
+        elif hasattr(self._vector_client, 'client') and hasattr(self._vector_client.client, 'scroll'):
+            # Qdrant
+            try:
+                from qdrant_client import models
+                results, _ = self._vector_client.client.scroll(
+                    collection_name=self._vector_client.collection_name,
+                    scroll_filter=models.Filter(
+                        must=[
+                            models.FieldCondition(
+                                key="video_id",
+                                match=models.MatchValue(value=video_id)
+                            )
+                        ]
+                    ),
+                    limit=1,
+                    with_vectors=True,
+                    with_payload=False
+                )
+                if results and len(results) > 0:
+                    return results[0].vector
+            except Exception as e:
+                logger.error(f"从Qdrant获取视频向量失败: {str(e)}")
+        elif hasattr(self._vector_client, 'client') and hasattr(self._vector_client.client, 'query'):
+            # Milvus
+            try:
+                from pymilvus import Collection
+                collection: Collection = self._vector_client.collection
+                collection.load()
+                expr = f'metadata["video_id"] == "{video_id}"'
+                results = collection.query(
+                    expr=expr,
+                    output_fields=["embedding"],
+                    limit=1
+                )
+                if results and len(results) > 0:
+                    return results[0]["embedding"]
+            except Exception as e:
+                logger.error(f"从Milvus获取视频向量失败: {str(e)}")
+
+        return None
 
     def query_by_category(self, category: str, query_embeddings: List[List[float]],
                          n_results: int = 10) -> Dict:

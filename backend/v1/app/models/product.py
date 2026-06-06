@@ -56,6 +56,9 @@ class Product(Base):
     # 关系：商品属于某个分类
     category_obj = relationship("ProductCategory", back_populates="products")
 
+    # 关系：商品关联的资产（多对多）
+    assets = relationship("Asset", secondary="product_assets", back_populates="products")
+
     def to_dict(self) -> dict:
         """转换为字典"""
         return {
