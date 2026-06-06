@@ -38,7 +38,7 @@ docs/superpowers/
 
 # Claude 配置
 .claude/
-.openspec/
+openspec/
 .superpowers/
 test_output/
 localTest/

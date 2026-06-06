@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from 'react'
 import { FileText, ImagePlus, Loader2, Plus } from 'lucide-react'
 import ConfirmDialog from '../Common/ConfirmDialog.jsx'
 import MediaCard from './MediaCard.jsx'
+import AssetEditModal from './AssetEditModal.jsx'
 import {
   createTextAsset,
   deleteAsset,
   listAssets,
-  reuploadImageAsset,
-  updateTextAsset,
   uploadAsset,
 } from '../../services/asset.js'
 
@@ -56,9 +55,8 @@ export default function MediaGrid() {
   const [textModalOpen, setTextModalOpen] = useState(false)
   const [textForm, setTextForm] = useState(DEFAULT_TEXT_FORM)
   const [confirmDelete, setConfirmDelete] = useState({ open: false, assetId: null, title: '' })
-  const [imageReuploadTarget, setImageReuploadTarget] = useState(null)
+  const [editAsset, setEditAsset] = useState(null)
   const fileInputRef = useRef(null)
-  const reuploadInputRef = useRef(null)
 
   const filteredAssets =
     activeTab === 'all' ? assets : assets.filter((asset) => asset.type === activeTab)
@@ -109,6 +107,7 @@ export default function MediaGrid() {
     try {
       await deleteAsset(assetId)
       setAssets((prev) => prev.filter((asset) => asset.id !== assetId))
+      if (editAsset?.id === assetId) setEditAsset(null)
     } catch (err) {
       console.error('删除素材失败:', err)
       alert('删除失败，请重试。')
@@ -117,15 +116,6 @@ export default function MediaGrid() {
 
   const openCreateTextModal = () => {
     setTextForm(DEFAULT_TEXT_FORM)
-    setTextModalOpen(true)
-  }
-
-  const openEditTextModal = (item) => {
-    setTextForm({
-      id: item.id,
-      title: item.name,
-      content_text: item.content_text || '',
-    })
     setTextModalOpen(true)
   }
 
@@ -138,51 +128,32 @@ export default function MediaGrid() {
 
     try {
       setTextSaving(true)
-      if (textForm.id) {
-        await updateTextAsset(textForm.id, {
-          title: textForm.title,
-          content_text: textForm.content_text,
-        })
-      } else {
-        await createTextAsset({
-          title: textForm.title,
-          content_text: textForm.content_text,
-        })
-      }
+      await createTextAsset({
+        title: textForm.title,
+        content_text: textForm.content_text,
+      })
       setTextModalOpen(false)
       await fetchAssets()
     } catch (err) {
-      console.error('保存文本素材失败:', err)
-      alert('保存失败，请重试。')
+      console.error('创建文本素材失败:', err)
+      alert('创建失败，请重试。')
     } finally {
       setTextSaving(false)
     }
   }
 
-  const handleReuploadImageClick = (item) => {
-    setImageReuploadTarget(item)
-    reuploadInputRef.current?.click()
+  const handleCardClick = (item) => {
+    setEditAsset(item)
   }
 
-  const handleReuploadImageChange = async (event) => {
-    const file = event.target.files?.[0]
-    if (!file || !imageReuploadTarget) return
+  const handleEditSaved = async () => {
+    await fetchAssets()
+    setEditAsset(null)
+  }
 
-    try {
-      setUploading(true)
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('title', imageReuploadTarget.name)
-      await reuploadImageAsset(imageReuploadTarget.id, formData)
-      await fetchAssets()
-    } catch (err) {
-      console.error('重新上传图片素材失败:', err)
-      alert('图片重新上传失败，请重试。')
-    } finally {
-      setUploading(false)
-      setImageReuploadTarget(null)
-      resetUploadInput(reuploadInputRef)
-    }
+  const handleEditDeleted = async (assetId) => {
+    setEditAsset(null)
+    await handleDelete(assetId)
   }
 
   return (
@@ -191,7 +162,7 @@ export default function MediaGrid() {
         <div>
           <h1 className="m-0 text-lg font-semibold">素材库</h1>
           <p className="m-0 mt-1 text-sm text-[var(--text-muted)]">
-            只管理文本素材和图片素材，支持文本编辑、图片重传与新增入库。
+            点击素材卡片可编辑名称、重新上传图片或修改文本内容。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -242,7 +213,7 @@ export default function MediaGrid() {
       <div className="mb-6 flex min-h-16 items-center justify-between rounded-xl border border-[var(--border-soft)] bg-[rgba(26,26,46,0.5)] px-4 py-3">
         <div>
           <p className="m-0 text-sm font-medium text-white">
-            {uploading ? '正在上传图片...' : '通过“新增素材”添加图片素材'}
+            {uploading ? '正在上传图片...' : '通过"新增素材"添加图片素材'}
           </p>
           <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">
             图片会直接上传到素材库，并作为新的素材记录展示。
@@ -255,13 +226,6 @@ export default function MediaGrid() {
           accept="image/*"
           className="hidden"
           onChange={handleFileChange}
-        />
-        <input
-          ref={reuploadInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={handleReuploadImageChange}
         />
       </div>
 
@@ -280,21 +244,21 @@ export default function MediaGrid() {
             <MediaCard
               key={item.id}
               item={item}
+              onClick={handleCardClick}
               onDelete={(assetId) => setConfirmDelete({ open: true, assetId, title: item.name })}
-              onEditText={openEditTextModal}
-              onReuploadImage={handleReuploadImageClick}
             />
           ))}
         </div>
       )}
 
+      {/* Text create/edit modal (legacy, kept for "新建文本" button) */}
       {textModalOpen && (
         <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
           <div className="w-full max-w-2xl rounded-2xl border border-[var(--border-soft)] bg-[rgba(15,15,26,0.98)] p-6 shadow-2xl">
             <div className="mb-5">
-              <h2 className="m-0 text-lg font-semibold">{textForm.id ? '编辑文本素材' : '新建文本素材'}</h2>
+              <h2 className="m-0 text-lg font-semibold">新建文本素材</h2>
               <p className="m-0 mt-1 text-sm text-[var(--text-muted)]">
-                文本内容会直接更新原有素材记录。
+                创建后可在素材卡片中点击编辑。
               </p>
             </div>
             <form onSubmit={handleSaveText} className="space-y-4">
@@ -340,10 +304,18 @@ export default function MediaGrid() {
         </div>
       )}
 
+      {/* Asset edit modal (new, click-to-edit) */}
+      <AssetEditModal
+        asset={editAsset}
+        onClose={() => setEditAsset(null)}
+        onSaved={handleEditSaved}
+        onDeleted={handleEditDeleted}
+      />
+
       <ConfirmDialog
         open={confirmDelete.open}
         title="删除素材"
-        message={`确定要删除“${confirmDelete.title || '该素材'}”吗？此操作不可撤销。`}
+        message={`确定要删除"${confirmDelete.title || '该素材'}"吗？此操作不可撤销。`}
         onCancel={() => setConfirmDelete({ open: false, assetId: null, title: '' })}
         onConfirm={async () => {
           const assetId = confirmDelete.assetId

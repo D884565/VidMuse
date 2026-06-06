@@ -1,21 +1,19 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
+  ChevronUp,
   FolderKanban,
   Images,
-
   LogOut,
   MessageSquarePlus,
+  Package,
   PanelLeftClose,
   PanelLeftOpen,
   Film,
-  Plus,
-  Sparkles,
-  User,
   Settings,
+  Sparkles,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import ProjectList from '../Project/ProjectList.jsx'
-import CreateProjectModal from '../Project/CreateProjectModal.jsx'
 import UserProfileMini from './UserProfile.jsx'
 import { useAppStore } from '../../store/appStore.js'
 import { logoutApi } from '../../services/user.js'
@@ -28,17 +26,47 @@ export default function Sidebar() {
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
   const clearDraftConversation = useAppStore((state) => state.clearDraftConversation)
   const isAdmin = useAppStore((state) => state.isAdmin())
-
   const storeLogout = useAppStore((state) => state.logout)
-  const [showCreateModal, setShowCreateModal] = useState(false)
+
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false)
+  const profileMenuRef = useRef(null)
+
+  useEffect(() => {
+    if (!profileMenuOpen) {
+      return undefined
+    }
+
+    function handlePointerDown(event) {
+      if (!profileMenuRef.current?.contains(event.target)) {
+        setProfileMenuOpen(false)
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        setProfileMenuOpen(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown)
+    document.addEventListener('keydown', handleEscape)
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [profileMenuOpen])
 
   const handleLogout = async () => {
-    try { await logoutApi() } catch { /* 忽略退出接口错误，本地仍清理登录态。 */ }
+    try {
+      await logoutApi()
+    } catch {
+      // Ignore logout API errors and still clear the local session.
+    }
     storeLogout()
   }
 
   return (
-    <>
     <aside
       className={`fixed inset-y-0 left-0 z-20 flex flex-col border-r border-[var(--border-soft)] bg-[var(--bg-sidebar)] transition-all duration-300 ${
         collapsed ? 'w-[72px]' : 'w-[260px]'
@@ -110,6 +138,19 @@ export default function Sidebar() {
 
         <button
           className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
+            activeView === 'products'
+              ? 'bg-[var(--brand-soft)] text-white'
+              : 'text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white'
+          }`}
+          type="button"
+          onClick={() => setActiveView('products')}
+        >
+          <Package size={18} />
+          <span className="max-[1024px]:hidden">商品</span>
+        </button>
+
+        <button
+          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
             activeView === 'projects'
               ? 'bg-[var(--brand-soft)] text-white'
               : 'text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white'
@@ -121,63 +162,64 @@ export default function Sidebar() {
           <span className="max-[1024px]:hidden">项目管理</span>
         </button>
 
-        <button
-          className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm ${
-            activeView === 'profile'
-              ? 'bg-[var(--brand-soft)] text-white'
-              : 'text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white'
-          }`}
-          type="button"
-          onClick={() => setActiveView('profile')}
-        >
-          <User size={18} />
-          <span className="max-[1024px]:hidden">个人信息</span>
-        </button>
-
         {isAdmin && (
           <Link
             to="/admin/dashboard"
             target="_blank"
-            className={`flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white`}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white"
           >
             <Settings size={18} />
             <span className="max-[1024px]:hidden">管理后台</span>
           </Link>
         )}
-
-        <div className="my-4 h-px bg-[var(--border-soft)]" />
-
-        <button
-          className="flex w-full items-center justify-center gap-2 rounded-lg bg-[linear-gradient(135deg,#7C3AED_0%,#A855F7_100%)] px-3 py-2.5 text-sm font-medium shadow-[0_4px_24px_rgba(124,58,237,0.15)] hover:shadow-[0_4px_30px_rgba(124,58,237,0.35)]"
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-        >
-          <Plus size={18} />
-          <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            新建项目
-          </span>
-        </button>
       </nav>
 
       <div className="border-t border-[var(--border-soft)] p-3">
-        <UserProfileMini collapsed={collapsed} />
-        <button
-          onClick={handleLogout}
-          className="mt-2 flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] hover:bg-red-500/10 hover:text-red-400"
-          type="button"
-        >
-          <LogOut size={18} />
-          <span className={`${collapsed ? 'hidden' : 'inline'} max-[1024px]:hidden`}>
-            退出登录
-          </span>
-        </button>
+        <div className="relative" ref={profileMenuRef}>
+          <button
+            className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition hover:bg-[rgba(255,255,255,0.05)]"
+            type="button"
+            onClick={() => setProfileMenuOpen((open) => !open)}
+          >
+            <UserProfileMini collapsed={collapsed} />
+            <ChevronUp
+              size={16}
+              className={`${collapsed ? 'hidden' : 'ml-auto'} max-[1024px]:hidden ${
+                profileMenuOpen ? 'rotate-180' : ''
+              } transition-transform`}
+            />
+          </button>
+
+          {profileMenuOpen && (
+            <div className="absolute bottom-full left-0 right-0 mb-2 overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[rgba(18,18,26,0.96)] p-2 shadow-[0_20px_50px_rgba(0,0,0,0.35)]">
+              <button
+                className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-[var(--text-muted)] transition hover:bg-[var(--brand-soft)] hover:text-white"
+                type="button"
+                onClick={() => {
+                  setActiveView('profile')
+                  setProfileMenuOpen(false)
+                }}
+              >
+                <span className="grid h-8 w-8 place-items-center rounded-full bg-[rgba(124,58,237,0.18)] text-xs font-semibold text-white">
+                  资料
+                </span>
+                <span>个人信息</span>
+              </button>
+
+              <button
+                className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-red-400 transition hover:bg-red-500/10"
+                type="button"
+                onClick={handleLogout}
+              >
+                <span className="grid h-8 w-8 place-items-center rounded-full bg-red-500/10">
+                  <LogOut size={15} />
+                </span>
+                <span>退出登录</span>
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </aside>
-
-      <CreateProjectModal
-        isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
-      />
-    </>
   )
 }

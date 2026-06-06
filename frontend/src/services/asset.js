@@ -50,6 +50,10 @@ export async function reuploadImageAsset(assetId, formData) {
   })
 }
 
+export async function updateAsset(assetId, data) {
+  return api.put(`/v1/assets/${assetId}`, data)
+}
+
 export async function deleteAsset(assetId) {
   return api.delete(`/v1/assets/${assetId}`)
 }

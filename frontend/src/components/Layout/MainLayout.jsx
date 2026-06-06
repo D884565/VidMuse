@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import WorkbenchView from '../Workbench/WorkbenchView.jsx'
 import FrameGrid from '../Keyframes/FrameGrid.jsx'
 import MediaGrid from '../Media/MediaGrid.jsx'
+import ProductManager from '../Product/ProductManager.jsx'
 import UserProfile from '../User/UserProfile.jsx'
 import ProjectManager from '../Project/ProjectManager.jsx'
 import Sidebar from './Sidebar.jsx'
@@ -73,6 +74,8 @@ export default function MainLayout() {
         return <FrameGrid />
       case 'media':
         return <MediaGrid />
+      case 'products':
+        return <ProductManager />
       case 'profile':
         return <UserProfile />
       case 'projects':

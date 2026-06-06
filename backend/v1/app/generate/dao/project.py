@@ -16,6 +16,7 @@ class ProjectCreate(ProjectBase):
     auto_render: bool = False
     user_prompt: str | None = None
     reference_images: list[str] = Field(default_factory=list, max_length=5)
+    selected_assets: list[dict] = Field(default_factory=list)
     style: str | None = None
     target_audience: str | None = None
     key_points: list[str] = Field(default_factory=list)

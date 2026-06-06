@@ -19,7 +19,7 @@ from backend.v1.app.generate.service.chat.chat_service import chat_service
 from backend.v1.app.generate.service.chat.entry_intent import classify_no_project_message
 from backend.v1.app.generate.service.chat.intent_service import intent_service
 from backend.v1.app.generate.service.chat.project_title import build_video_project_title
-from backend.v1.app.generate.service.workflow.llm_agent import llm_agent_service
+from backend.v1.app.generate.service.chat.material_resolver import MaterialResolver
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
 from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
 from backend.v1.app.generate.service.chat.initial_message import project_initial_message_builder
@@ -64,6 +64,25 @@ async def create_project(
     from backend.v1.app.models.project import Project
 
     product_info_str = None
+    selected_assets = project.selected_assets or []
+    selected_asset_ids = []
+    material_text_reference = ""
+    material_reference_images = []
+
+    if selected_assets:
+        asset_ids = []
+        for item in selected_assets:
+            try:
+                asset_ids.append(int(item.get("id")))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        if asset_ids:
+            asset_result = await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+            assets = asset_result.scalars().all()
+            resolved_materials = MaterialResolver.resolve_selected_assets(selected_assets, assets)
+            selected_asset_ids = resolved_materials["selected_asset_ids"]
+            material_text_reference = resolved_materials["text_reference"]
+            material_reference_images = resolved_materials["reference_images"]
 
     if project.product_url:
         try:
@@ -86,14 +105,23 @@ async def create_project(
     elif title:
         summary = title[:100].strip()
 
+    combined_user_prompt = project.user_prompt
+    if material_text_reference:
+        combined_user_prompt = f"{combined_user_prompt}\n\n{material_text_reference}" if combined_user_prompt else material_text_reference
+
+    reference_images = []
+    for url in (project.reference_images or []) + material_reference_images:
+        if url and url not in reference_images:
+            reference_images.append(url)
+
     p = Project(
         title=title,
         description=project.description,
         product_url=project.product_url,
         product_info=product_info_str,
         user_id=current_user_id,
-        user_prompt=project.user_prompt,
-        reference_images=project.reference_images or [],
+        user_prompt=combined_user_prompt,
+        reference_images=reference_images,
         style=project.style,
         target_audience=project.target_audience,
         key_points=project.key_points or [],
@@ -106,6 +134,11 @@ async def create_project(
     db.add(p)
     await db.commit()
     await db.refresh(p)
+
+    for asset_id in selected_asset_ids:
+        db.add(ProjectAsset(project_id=p.id, asset_id=asset_id, role="reference"))
+    if selected_asset_ids:
+        await db.commit()
 
     product_info_data = None
     if product_info_str:
@@ -582,9 +615,14 @@ async def chat_refinement(
     try:
         content = req.get("content", "")
         frame_id = req.get("frame_id")
+        metadata = {
+            "display_content": req.get("display_content"),
+            "selected_assets": req.get("selected_assets") or [],
+            "client_id": req.get("client_id"),
+        }
         if not content:
             raise BusinessException(VIDEO_ERROR, "content 不能为空")
-        result = await chat_service.handle_message(db, project_id, content, frame_id)
+        result = await chat_service.handle_message(db, project_id, content, frame_id, metadata=metadata)
         return Response.success(data=result)
     except ValueError as e:
         raise BusinessException(VIDEO_ERROR, str(e))
@@ -603,12 +641,23 @@ async def chat_stream(
         raise BusinessException(UNAUTHORIZED, "无权操作该项目")
     content = req.get("content", "")
     frame_id = req.get("frame_id")
+    metadata = {
+        "display_content": req.get("display_content"),
+        "selected_assets": req.get("selected_assets") or [],
+        "client_id": req.get("client_id"),
+    }
     if not content:
         raise BusinessException(VIDEO_ERROR, "content 不能为空")
 
     async def stream_events():
         try:
-            async for event in chat_service.handle_message_stream(db, project_id, content, frame_id):
+            async for event in chat_service.handle_message_stream(
+                db,
+                project_id,
+                content,
+                frame_id,
+                metadata=metadata,
+            ):
                 yield event
         except Exception as exc:
             logger.exception("[chat_stream] stream failed project_id=%s", project_id)

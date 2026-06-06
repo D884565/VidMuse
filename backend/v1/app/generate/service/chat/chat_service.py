@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import uuid
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.providers import VolcanoLLM
 # TODO: RAG 依赖已移除，后续单独集成
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
 from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
@@ -18,9 +18,8 @@ from backend.v1.app.generate.service.generateUtils.task_service import generatio
 from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
 from backend.v1.app.generate.tasks.celery_app import celery_app
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
-from backend.v1.app.generate.service.workflow.agent import workflow_agent_service
-from backend.v1.app.generate.service.workflow.llm_agent import llm_agent_service
 from backend.v1.app.generate.service.chat.intent_service import intent_service
+from backend.v1.app.generate.service.chat.material_resolver import MaterialResolver
 from backend.v1.app.generate.service.workflow.blocks import (
     build_progress_block,
     build_script_stage_blocks,
@@ -28,9 +27,11 @@ from backend.v1.app.generate.service.workflow.blocks import (
     build_confirmation_preview_block,
 )
 from backend.v1.app.models.conversation import Conversation
+from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
 
+logger = logging.getLogger(__name__)
 
 EDITABLE_FRAME_FIELDS = ("description", "narration", "image_prompt", "video_prompt")
 PROJECT_REGENERATION_ACTIONS = {
@@ -62,12 +63,12 @@ def apply_frame_modifications(frame, modifications: dict) -> None:
 class ChatService:
     """对话式项目调度服务。
 
-    这里不再把每条反馈都直接升级为整片重渲染，而是先让规则 Agent 判断动作。
+    使用 intent_service（LLM驱动）进行统一意图识别，
+    根据识别结果分发到不同的工作流动作。
     只有用户明确确认图片进入视频阶段时，才触发昂贵的视频生成。
     """
 
     def __init__(self, rag_service=None):
-        self._llm = None
         self.rag_service = rag_service
 
     @property
@@ -84,8 +85,10 @@ class ChatService:
         project_id: int,
         content: str,
         frame_id: int | None = None,
+        metadata: dict | None = None,
     ) -> dict:
         project = await self._get_project(db, project_id)
+        await self._apply_selected_assets_to_project(db, project, metadata or {})
         db.add(Conversation(
             project_id=project_id,
             role="user",
@@ -93,6 +96,7 @@ class ChatService:
             frame_id=frame_id,
             message_type="text",
             stage=project.workflow_stage,
+            metadata_=metadata or None,
         ))
         await db.commit()
 
@@ -101,18 +105,14 @@ class ChatService:
         # 获取最近对话历史作为 LLM context
         history = await self._get_recent_conversations(db, project_id)
 
-        # 统一意图识别（LLM驱动，失败时降级到规则）
-        try:
-            plan = intent_service.classify_project(
-                content=content,
-                workflow_stage=project.workflow_stage,
-                stage_status=project.stage_status,
-                frames=frames,
-                conversation_history=history,
-            )
-        except Exception as e:
-            logger.warning(f"Intent service failed, fallback to rule: {e}")
-            plan = workflow_agent_service.plan(project, frames, content, frame_id=frame_id)
+        # 统一意图识别（LLM驱动，失败时内部降级到极简规则）
+        plan = intent_service.classify_project(
+            content=content,
+            workflow_stage=project.workflow_stage,
+            stage_status=project.stage_status,
+            frames=frames,
+            conversation_history=history,
+        )
 
         task_result = None
         updated_frames = []
@@ -224,51 +224,10 @@ class ChatService:
                     task_result.get("task_id"),
                     "Project regeneration has been queued from chat.",
                 )]
-        elif plan["action"] == "CONFIRM_SCRIPT_AND_GENERATE_IMAGES":
-            generation_workflow_service.advance_stage(project, "script")
-            await db.commit()
-            task_result = await image_workflow_service.submit_image_task(db, project_id)
-            blocks = [build_progress_block("image", "running", task_result.get("task_id"), "已确认剧本，正在生成分镜图片。")]
-        elif plan["action"] == "REGENERATE_FRAME_IMAGE_LEGACY":
-            updated_frames = await self._mark_frames_for_image_regeneration(
-                db, project, plan["affected_frame_ids"], content
-            )
-            blocks = [
-                build_progress_block(
-                    "image",
-                    "awaiting_review",
-                    project.last_task_id,
-                    "已记录图片修改要求，请使用图片阶段操作重生成对应图片。",
-                )
-            ]
-        elif plan["action"] == "UPDATE_SCRIPT_TEXT":
-            generation_workflow_service.invalidate_from(project, "script")
-            blocks = [
-                build_progress_block(
-                    "script",
-                    "awaiting_review",
-                    project.last_task_id,
-                    "已记录剧本修改要求，图片和视频需要重新确认。",
-                )
-            ]
-            await db.commit()
-        elif plan["action"] == "CONFIRM_IMAGES_AND_GENERATE_VIDEO":
-            if project.workflow_stage == "image":
-                generation_workflow_service.advance_stage(project, "image")
-                await db.commit()
-            task_result = await video_generation_service.submit_generation_task(db, project_id)
-            blocks = [build_progress_block("video", "running", task_result.get("task_id"), "已确认图片，正在生成视频。")]
-        elif plan["action"] == "CONFIRM_VIDEO":
-            generation_workflow_service.advance_stage(project, "video")
-            project_workflow_state.mark_project_completed(project, project.last_task_id)
-            await db.commit()
-            blocks = [build_progress_block("completed", "confirmed", project.last_task_id, "视频已确认完成。")]
         elif plan["action"] == "CHANGE_BGM":
             updated_frames, blocks = await self._handle_change_bgm(db, project, project_id)
         elif plan["action"] == "CONVERSE":
             # 普通对话，不触发任何工作流操作
-            blocks = []
-        elif plan["action"] == "ASK_CLARIFYING_QUESTION":
             blocks = []
         elif plan["action"] == "ASK_CLARIFYING":
             blocks = []
@@ -317,6 +276,7 @@ class ChatService:
         project_id: int,
         content: str,
         frame_id: int | None = None,
+        metadata: dict | None = None,
     ):
         """流式版本的 handle_message，通过 SSE 逐事件返回结果。"""
 
@@ -325,11 +285,15 @@ class ChatService:
 
         # 1. 保存用户消息
         project = await self._get_project(db, project_id)
-        db.add(Conversation(
+        await self._apply_selected_assets_to_project(db, project, metadata or {})
+        user_message = Conversation(
             project_id=project_id, role="user", content=content,
             frame_id=frame_id, message_type="text", stage=project.workflow_stage,
-        ))
+            metadata_=metadata or None,
+        )
+        db.add(user_message)
         await db.commit()
+        await db.refresh(user_message)
 
         frames = await self._get_frames(db, project_id)
         history = await self._get_recent_conversations(db, project_id)
@@ -338,18 +302,14 @@ class ChatService:
         yield sse("thinking", {"message": "正在理解你的意图..."})
         await asyncio.sleep(0)
 
-        # 3. 统一意图识别（LLM驱动，失败时降级到规则）
-        try:
-            plan = intent_service.classify_project(
-                content=content,
-                workflow_stage=project.workflow_stage,
-                stage_status=project.stage_status,
-                frames=frames,
-                conversation_history=history,
-            )
-        except Exception as e:
-            logger.warning(f"Intent service failed, fallback to rule: {e}")
-            plan = workflow_agent_service.plan(project, frames, content, frame_id=frame_id)
+        # 3. 统一意图识别（LLM驱动，内部有极简降级）
+        plan = intent_service.classify_project(
+            content=content,
+            workflow_stage=project.workflow_stage,
+            stage_status=project.stage_status,
+            frames=frames,
+            conversation_history=history,
+        )
 
         action = plan["action"]
 
@@ -431,22 +391,6 @@ class ChatService:
             else:
                 task_result = await self._submit_project_regeneration(db, project, project_id, action)
                 blocks = [build_progress_block(plan.get("affected_stage") or "video", "running", task_result.get("task_id"), "Project regeneration has been queued.")]
-        elif action == "CONFIRM_SCRIPT_AND_GENERATE_IMAGES":
-            generation_workflow_service.advance_stage(project, "script")
-            await db.commit()
-            task_result = await image_workflow_service.submit_image_task(db, project_id)
-            blocks = [build_progress_block("image", "running", task_result.get("task_id"), "已确认剧本，正在生成分镜图片。")]
-        elif action == "CONFIRM_IMAGES_AND_GENERATE_VIDEO":
-            if project.workflow_stage == "image":
-                generation_workflow_service.advance_stage(project, "image")
-                await db.commit()
-            task_result = await video_generation_service.submit_generation_task(db, project_id)
-            blocks = [build_progress_block("video", "running", task_result.get("task_id"), "已确认图片，正在生成视频。")]
-        elif action == "CONFIRM_VIDEO":
-            generation_workflow_service.advance_stage(project, "video")
-            project_workflow_state.mark_project_completed(project, project.last_task_id)
-            await db.commit()
-            blocks = [build_progress_block("completed", "confirmed", project.last_task_id, "视频已确认完成。")]
         elif action == "CHANGE_BGM":
             updated_frames, blocks = await self._handle_change_bgm(db, project, project_id)
 
@@ -480,29 +424,6 @@ class ChatService:
             "task_id": task_id,
             "updated_frames": updated_frames,
         })
-
-    def _prefer_rule_script_generation_for_created_project(
-        self,
-        project: Project,
-        llm_plan: dict,
-        rule_plan: dict,
-    ) -> dict:
-        stage = getattr(project, "workflow_stage", None) or "created"
-        if (
-            stage == "created"
-            and rule_plan.get("action") == "GENERATE_SCRIPT"
-            and llm_plan.get("action") in {"ASK_CLARIFYING", "ASK_CLARIFYING_QUESTION", "CONVERSE"}
-        ):
-            return rule_plan
-        if (
-            stage == "created"
-            and rule_plan.get("action") == "CONVERSE"
-            and rule_plan.get("assistant_content")
-            and llm_plan.get("action") == "CONVERSE"
-            and not llm_plan.get("assistant_content")
-        ):
-            return rule_plan
-        return llm_plan
 
     async def _handle_confirm_and_advance(
         self,
@@ -997,6 +918,49 @@ class ChatService:
         generation_workflow_service.invalidate_from(project, "image")
         await db.commit()
         return updated
+
+    async def _apply_selected_assets_to_project(
+        self,
+        db: AsyncSession,
+        project: Project,
+        metadata: dict,
+    ) -> None:
+        selected_assets = metadata.get("selected_assets") or []
+        if not selected_assets:
+            return
+
+        asset_ids = []
+        for item in selected_assets:
+            try:
+                asset_ids.append(int(item.get("id")))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        if not asset_ids:
+            return
+
+        asset_result = await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+        assets = asset_result.scalars().all()
+        resolved_materials = MaterialResolver.resolve_selected_assets(selected_assets, assets)
+
+        changed = False
+        text_reference = resolved_materials["text_reference"]
+        if text_reference:
+            existing_description = (project.description or "").strip()
+            if text_reference not in existing_description:
+                project.description = (
+                    f"{existing_description}\n\n{text_reference}".strip()
+                    if existing_description else text_reference
+                )
+                changed = True
+
+        reference_images = list(project.reference_images or [])
+        for url in resolved_materials["reference_images"]:
+            if url and url not in reference_images:
+                reference_images.append(url)
+                changed = True
+        if changed:
+            project.reference_images = reference_images
+            await db.flush()
 
     async def _get_project(self, db: AsyncSession, project_id: int) -> Project:
         result = await db.execute(select(Project).where(Project.id == project_id))
