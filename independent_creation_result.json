@@ -1,0 +1,88 @@
+{
+  "video_meta": {
+    "product_name": "无线蓝牙耳机",
+    "target_duration": 15,
+    "style": "fashion",
+    "aspect_ratio": "9:16",
+    "hook_line": "百元耳机居然这么能打？"
+  },
+  "scenes": [
+    {
+      "scene_id": 1,
+      "type": "hook",
+      "duration": 4,
+      "text": "还在找好用不贵的蓝牙耳机？",
+      "voice_style": "excited",
+      "visual": {
+        "image_prompt": "年轻女生举着白色无线蓝牙耳机，背景是明亮的潮酷街头，暖白补光，蓝橙撞色调，近景构图，女生表情惊喜亮眼",
+        "video_prompt": "镜头从女生惊喜的脸部快速推近到她掌心的蓝牙耳机上，耳机有微光闪烁效果",
+        "camera": "push_in",
+        "mood": "energetic",
+        "overlay": {
+          "text": "宝藏耳机来啦",
+          "position": "top",
+          "style": "highlight"
+        }
+      }
+    },
+    {
+      "scene_id": 2,
+      "type": "selling_point",
+      "duration": 4,
+      "text": "HiFi音质超绝，24小时续航随便造，IPX7防水运动也不怕！",
+      "voice_style": "confident",
+      "visual": {
+        "image_prompt": "三个等分小屏，左屏是戴耳机听歌晃头的学生、中屏是充电盒显示满电的界面、右屏是水龙头冲淋耳机的画面，浅灰背景，明亮柔光，活力橙点缀，居中构图",
+        "video_prompt": "三个分屏依次弹出，每个分屏出现时对应小图标闪烁高亮",
+        "camera": "static",
+        "mood": "bright",
+        "overlay": {
+          "text": "三大核心优势",
+          "position": "center",
+          "style": "subtle"
+        }
+      }
+    },
+    {
+      "scene_id": 3,
+      "type": "detail",
+      "duration": 3,
+      "text": "贴合耳形，戴一天都不掉超舒服！",
+      "voice_style": "warm",
+      "visual": {
+        "image_prompt": "特写佩戴在跑步男生耳朵上的蓝牙耳机，背景是模糊的健身房场景，柔和侧光，浅蓝调，特写构图，耳机完全贴合耳廓",
+        "video_prompt": "镜头慢速360度环绕展示耳机佩戴贴合度，旁边弹出小对勾标识",
+        "camera": "close_up",
+        "mood": "bright",
+        "overlay": {
+          "text": "久戴不疼",
+          "position": "bottom",
+          "style": "highlight"
+        }
+      }
+    },
+    {
+      "scene_id": 4,
+      "type": "cta",
+      "duration": 4,
+      "text": "原价399现在只要199！赶紧冲！",
+      "voice_style": "urgent",
+      "visual": {
+        "image_prompt": "蓝牙耳机和充电盒摆在画面中央，旁边立着红色爆炸贴，背景是粉紫渐变时尚背景，柔光，居中构图，右下角有购物车图标",
+        "video_prompt": "原价399划掉跳转到199，购物车图标闪烁放大",
+        "camera": "static",
+        "mood": "energetic",
+        "overlay": {
+          "text": "到手仅199元",
+          "position": "center",
+          "style": "price_tag"
+        }
+      }
+    }
+  ],
+  "audio": {
+    "tts_voice": "zh_female_cancan_mars_bigtts",
+    "bgm": "动感轻快的电子流行乐，节奏明快有活力",
+    "bgm_volume": 0.3
+  }
+}

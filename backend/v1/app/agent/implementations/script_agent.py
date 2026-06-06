@@ -129,6 +129,22 @@ class ScriptPromptBuilder(PromptBuilder):
 6. 确保修改后的剧本仍然符合所有格式要求和字段完整性
 """
 
+    def build_user_prompt(self, query: str, context: Optional[Dict[str, Any]] = None) -> str:
+        """构建用户提示词 - 重写父类方法，不使用prompt_manager，直接返回query"""
+        # 我们在generate_script方法中已经构建了完整的用户prompt，不需要额外处理
+        return query
+
+    def build_tool_prompt(self, tool_results: List[Dict[str, Any]]) -> str:
+        """构建工具结果提示词 - 重写父类方法，简化实现"""
+        if not tool_results:
+            return ""
+
+        result_strs = []
+        for i, result in enumerate(tool_results, 1):
+            result_strs.append(f"工具 {i}：{result['tool_name']}\n调用参数：{result.get('parameters', {})}\n返回结果：{result['result']}")
+
+        return "\n\n".join(result_strs) + "\n\n请根据以上工具返回结果继续处理。"
+
 class ScriptAgent(ReActAgent):
     """
     剧本生成专用Agent

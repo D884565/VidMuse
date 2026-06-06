@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from backend.v1.app.assets.service.asset_analysis_schema import build_asset_ai_features
-from backend.v1.app.pipeline import ProductParsingPipeline, VideoParsingPipeline
+
 
 
 class AssetAnalysisOrchestrator:
@@ -38,6 +38,7 @@ class AssetAnalysisOrchestrator:
         return {1: "image", 2: "video", 4: "text"}.get(asset_type, "")
 
     def _run_product_analysis_for_asset(self, asset) -> dict:
+        from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
         pipeline = ProductParsingPipeline(enable_persistence=False, persist_to_asset=False)
         input_data = {"asset_id": getattr(asset, "id", None)}
         asset_type = getattr(asset, "type", None)
@@ -67,6 +68,7 @@ class AssetAnalysisOrchestrator:
         }
 
     def _run_video_strategy_analysis_for_asset(self, asset) -> dict:
+        from backend.v1.app.pipeline.pipelines.video_parsing_pipeline import VideoParsingPipeline
         pipeline = VideoParsingPipeline(enable_persistence=False, enable_vectorization=False)
         result = pipeline.run(
             {
