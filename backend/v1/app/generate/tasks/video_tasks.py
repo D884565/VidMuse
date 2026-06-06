@@ -402,7 +402,7 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
         generation_task_service.finish_step_sync(db, step, progress=100, output_snapshot={"frames_count": len(frames)}) if task_id else None
         generation_task_service.update_task_sync(db, task_id, status="succeeded", progress=100, current_step="IMAGE_GENERATED") if task_id else None
     except SoftTimeLimitExceeded as exc:
-        logger.error(f"[鍥剧墖浠诲姟瓒呮椂] project_id={project_id}", exc_info=True)
+        logger.error(f"[图片任务超时] project_id={project_id}", exc_info=True)
         will_retry = self.request.retries < self.max_retries
         if db:
             db.rollback()
@@ -422,7 +422,7 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
             raise self.retry(exc=exc, countdown=_retry_countdown(self.request.retries))
         raise
     except Exception as exc:
-        logger.error(f"[鍥剧墖浠诲姟澶辫触] project_id={project_id}, error={exc}", exc_info=True)
+        logger.error(f"[图片任务失败] project_id={project_id}, error={exc}", exc_info=True)
         # 让瞬时错误先走 Celery 重试，重试耗尽后再落最终失败状态。
         will_retry = self.request.retries < self.max_retries
         if db:
