@@ -12,6 +12,7 @@ from .core.context import BaseContextBuilder
 # 导出具体实现
 from .implementations.react_agent import ReActAgent
 from .implementations.search_agent import SearchAgent, search_agent
+from .implementations.script_agent import ScriptAgent, script_agent
 from .implementations.short_term_memory import ShortTermMemory
 from .implementations.long_term_memory import LongTermMemory
 from .implementations.tool_system import ToolSystem
@@ -23,6 +24,8 @@ from .utils.prompt_template import PromptTemplate
 
 # 导入所有工具，确保它们被注册
 from .tools.video_library_tool import VideoLibraryQueryTool
+from .tools.text_to_sql_inspiration_tool import TextToSQLInspirationTool
+from .tools.script_creation_tools import HotVideoFusionTool, TemplateGenerationTool, StrategyFactorGenerationTool
 
 __version__ = "1.0.0"
 __all__ = [
@@ -36,6 +39,8 @@ __all__ = [
     "ReActAgent",
     "SearchAgent",
     "search_agent",
+    "ScriptAgent",
+    "script_agent",
     "ShortTermMemory",
     "LongTermMemory",
     "ToolSystem",

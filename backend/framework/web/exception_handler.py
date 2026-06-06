@@ -12,10 +12,20 @@ from backend.framework.exceptions.exceptions import BaseAppException
 from backend.framework.web.response import Response
 from backend.framework.exceptions.error_codes import (
     PARAM_ERROR,
-    SYSTEM_ERROR
+    SYSTEM_ERROR,
+    UNAUTHORIZED,
+    FORBIDDEN,
+    LOGIN_EXPIRED
 )
 
 logger = logging.getLogger(__name__)
+
+# 需要返回特定HTTP状态码的错误码映射
+ERROR_CODE_TO_HTTP_STATUS = {
+    UNAUTHORIZED[0]: status.HTTP_401_UNAUTHORIZED,
+    LOGIN_EXPIRED[0]: status.HTTP_401_UNAUTHORIZED,
+    FORBIDDEN[0]: status.HTTP_403_FORBIDDEN,
+}
 
 
 def _format_validation_errors(errors) -> list[str]:
@@ -32,8 +42,11 @@ async def base_exception_handler(request: Request, exc: BaseAppException) -> JSO
     # 记录异常日志
     logger.info(f"业务异常: code={exc.code}, message={exc.message}, path={request.url.path}")
 
+    # 根据错误码决定HTTP状态码
+    http_status = ERROR_CODE_TO_HTTP_STATUS.get(exc.code, status.HTTP_200_OK)
+
     return JSONResponse(
-        status_code=status.HTTP_200_OK,
+        status_code=http_status,
         content=Response.error(
             code=exc.code,
             message=exc.message,

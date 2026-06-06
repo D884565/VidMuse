@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.store.database.async_database import get_db
 from backend.v1.app.generate.dao.project import ProjectCreate
 from backend.v1.app.generate.service.generateUtils.project import ProjectService
-from backend.v1.app.generate.service.stages.script import script_generation_service
+from backend.v1.app.script.service.script_generation_service import script_generation_service
 from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
 from backend.v1.app.generate.service.chat.chat_service import chat_service
 from backend.v1.app.generate.service.chat.entry_intent import classify_no_project_message
@@ -35,7 +35,7 @@ from backend.v1.app.models.project_asset import ProjectAsset
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/v1", tags=["视频生成"])
+router = APIRouter(prefix="/generate/v1", tags=["视频生成"])
 
 SCRIPT_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering", "processing"}
 SCRIPT_REGENERATE_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering"}

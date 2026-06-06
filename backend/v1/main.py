@@ -24,6 +24,12 @@ from backend.v1.app.push.controller.websocket_controller import router as ws_rou
 from backend.v1.app.push.controller.message_controller import router as message_router
 from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.assets.controller.asset_controller import router as asset_router
+from backend.v1.app.script.controller import router as script_router
+
+from fastapi import Request, Depends
+from typing import Annotated
+from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +41,7 @@ async def lifespan(app: FastAPI):
 
 
 
-app = FastAPI(title="VidMuse", version="0.1.0", lifespan=lifespan)
+app = FastAPI(title="VidMuse", version="0.1.0", lifespan=lifespan,swagger_ui_parameters={"persistAuthorization": True})
 
 # 注册请求链路追踪中间件
 app.add_middleware(TraceMiddleware)
@@ -64,6 +70,8 @@ app.include_router(video_router, prefix="/v1")
 
 app.include_router(merge_router, prefix="/v1")
 
+app.include_router(script_router, prefix="/v1")
+
 app.include_router(video_library_router, prefix="/v1")
 
 app.include_router(trace_management_router, prefix="/v1")  # 后台链路追踪管理接口
@@ -75,12 +83,14 @@ app.include_router(ws_router, prefix="/v1")
 app.include_router(message_router, prefix="/v1")
 
 
+security = HTTPBearer()
 
 @app.get("/", response_model=Response)
 async def root():
     """测试默认成功响应"""
     # 默认使用 SUCCESS 错误码: 0000000
     return Response.success(data={"message": "Hello World"})
+
 
 
 if __name__ == "__main__":

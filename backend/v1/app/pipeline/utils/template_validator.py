@@ -32,7 +32,11 @@ PROMPT_TYPE_MAP = {
     "product_understanding": "product_understanding.txt",
     "extract_common_factors": "extract_common_factors.txt",
     "generate_strategy": "generate_strategy.txt",
-    "extract_video_common_features": "extract_video_common_features.txt"
+    "extract_video_common_features": "extract_video_common_features.txt",
+    "agent_default_system_prompt": "agent/default_system_prompt.txt",
+    "agent_script_system_prompt": "agent/script_agent_system_prompt.txt",
+    "agent_user_prompt": "agent/user_prompt.txt",
+    "agent_tool_result": "agent/tool_result_prompt.txt"
 }
 # 提示词缓存
 _prompt_cache: Dict[str, Dict[str, Any]] = {}

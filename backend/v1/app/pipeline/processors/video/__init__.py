@@ -7,6 +7,7 @@ from .video_overall_understanding_processor import VideoOverallUnderstandingProc
 from .slice_generate_processor import SliceGenerateProcessor
 from .vectorization_processor import VectorizationProcessor
 from .video_product_understanding_processor import VideoProductUnderstandingProcessor
+from .video_category_persist_processor import VideoCategoryPersistProcessor
 
 __all__ = [
     "VideoSplitProcessor",
@@ -18,5 +19,6 @@ __all__ = [
     "VideoOverallUnderstandingProcessor",
     "SliceGenerateProcessor",
     "VectorizationProcessor",
-    "VideoProductUnderstandingProcessor"
+    "VideoProductUnderstandingProcessor",
+    "VideoCategoryPersistProcessor"
 ]

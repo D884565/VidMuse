@@ -22,7 +22,7 @@ from backend.framework.exceptions.error_codes import (
     FORBIDDEN,
     PARAM_ERROR,
 )
-from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
+# ProductParsingPipeline 导入移到函数内部，避免循环导入
 
 
 class ProductService:
@@ -241,6 +241,7 @@ class ProductService:
         })
 
         # 执行解析流水线
+        from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
         pipeline = ProductParsingPipeline(
             persist_to_asset=True,  # 自动落库到asset表
             enable_persistence=True

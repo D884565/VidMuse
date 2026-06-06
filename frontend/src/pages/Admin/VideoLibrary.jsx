@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Upload, Play, RefreshCw, Import } from 'lucide-react'
 import PageContainer from '../../components/Admin/Layout/PageContainer'
 import Table from '../../components/Admin/Common/Table'
-import { getVideoList, deleteVideo, triggerVideoParsing, batchImportHotVideos } from '../../services/admin'
+import { getVideoList, deleteVideo, triggerVideoParsing, batchImportHotVideos, uploadVideo } from '../../services/admin'
 
 const columns = [
   { key: 'id', title: 'ID' },
@@ -30,20 +30,30 @@ const columns = [
     )
   },
   {
-    key: 'status',
+    key: 'parsing_status',
     title: '状态',
-    render: (status) => {
-      const statusMap = { 0: '待处理', 1: '处理中', 2: '已完成', 3: '失败' }
-      const colorMap = { 0: 'yellow', 1: 'blue', 2: 'green', 3: 'red' }
+    render: (parsing_status) => {
+      const statusMap = {
+        'pending': '待处理',
+        'running': '处理中',
+        'completed': '已完成',
+        'failed': '失败'
+      }
+      const classMap = {
+        'pending': 'bg-yellow-100 text-yellow-800',
+        'running': 'bg-blue-100 text-blue-800',
+        'completed': 'bg-green-100 text-green-800',
+        'failed': 'bg-red-100 text-red-800'
+      }
       return (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium bg-${colorMap[status]}-100 text-${colorMap[status]}-800`}>
-          {statusMap[status] || '未知'}
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${classMap[parsing_status] || 'bg-gray-100 text-gray-800'}`}>
+          {statusMap[parsing_status] || '未知'}
         </span>
       )
     }
   },
   { key: 'duration', title: '时长(秒)' },
-  { key: 'size', title: '文件大小' },
+  { key: 'file_size', title: '文件大小' },
   { key: 'created_by', title: '创建人' },
   { key: 'created_at', title: '创建时间' },
 ]
@@ -73,6 +83,7 @@ export default function VideoLibrary() {
     min_hot_score: '',
     source_type: '',
     keyword: '',
+    status: '',
     page: 1,
     page_size: 20,
   })
@@ -85,6 +96,7 @@ export default function VideoLibrary() {
     description: '',
     category: '',
     tags: [],
+    trigger_ai_parse: true,
   })
   const [importForm, setImportForm] = useState({
     category: '',
@@ -160,10 +172,11 @@ export default function VideoLibrary() {
       formData.append('title', uploadForm.title || uploadForm.file.name)
       formData.append('description', uploadForm.description || '')
       formData.append('category', uploadForm.category || '')
+      formData.append('trigger_ai_parse', uploadForm.trigger_ai_parse)
       uploadForm.tags.forEach(tag => formData.append('tags[]', tag))
 
       // 调用上传接口
-      // await uploadVideo(formData)
+      await uploadVideo(formData)
 
       alert('上传成功！视频将在后台处理')
       setUploadModalVisible(false)
@@ -306,7 +319,7 @@ export default function VideoLibrary() {
       />
 
       {/* 分页信息 */}
-      <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+      <div className="mt-4 flex items-center justify-between text-sm text-gray-700">
         <div>
           共 {pagination.total} 条记录，第 {pagination.page} 页 / 共 {Math.ceil(pagination.total / pagination.page_size)} 页
         </div>
@@ -314,14 +327,14 @@ export default function VideoLibrary() {
           <button
             onClick={() => handleFilterChange('page', Math.max(1, pagination.page - 1))}
             disabled={pagination.page <= 1}
-            className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
+            className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 text-gray-700"
           >
             上一页
           </button>
           <button
             onClick={() => handleFilterChange('page', pagination.page + 1)}
             disabled={pagination.page >= Math.ceil(pagination.total / pagination.page_size)}
-            className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
+            className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 text-gray-700"
           >
             下一页
           </button>
@@ -393,6 +406,18 @@ export default function VideoLibrary() {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="例如：营销,爆款,短平快"
                 />
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="trigger_ai_parse"
+                  checked={uploadForm.trigger_ai_parse}
+                  onChange={(e) => setUploadForm({ ...uploadForm, trigger_ai_parse: e.target.checked })}
+                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                />
+                <label htmlFor="trigger_ai_parse" className="text-sm font-medium text-gray-700">
+                  上传后立即触发AI解析
+                </label>
               </div>
               <div className="flex justify-end space-x-3 pt-4">
                 <button

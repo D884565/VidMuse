@@ -18,6 +18,12 @@ class PromptManager:
     EXTRACT_COMMON_FACTORS = "extract_common_factors"
     GENERATE_STRATEGY = "generate_strategy"
 
+    # Agent相关提示词类型
+    AGENT_DEFAULT_SYSTEM_PROMPT = "agent_default_system_prompt"
+    AGENT_SCRIPT_SYSTEM_PROMPT = "agent_script_system_prompt"
+    AGENT_USER_PROMPT = "agent_user_prompt"
+    AGENT_TOOL_RESULT_PROMPT = "agent_tool_result"
+
     # 模板类型常量
     TEMPLATE_SLICE = "slice"
     TEMPLATE_VIDEO = "video"
@@ -170,6 +176,42 @@ class PromptManager:
     def get_strategy_template(self) -> Dict[str, Any]:
         """获取策略校验模板（快捷方法）"""
         return self.get_template(self.TEMPLATE_STRATEGY)
+
+    def get_agent_default_system_prompt(self, agent_name: str, agent_description: str, tools_str: str) -> str:
+        """获取Agent默认系统提示词"""
+        return self.get_prompt(
+            self.AGENT_DEFAULT_SYSTEM_PROMPT,
+            agent_name=agent_name,
+            agent_description=agent_description,
+            tools_str=tools_str
+        )
+
+    def get_agent_script_system_prompt(self, agent_name: str, agent_description: str, tools_str: str) -> str:
+        """获取剧本Agent系统提示词"""
+        return self.get_prompt(
+            self.AGENT_SCRIPT_SYSTEM_PROMPT,
+            agent_name=agent_name,
+            agent_description=agent_description,
+            tools_str=tools_str
+        )
+
+    def get_agent_user_prompt(self, query: str, context_str: str) -> str:
+        """获取Agent用户提示词"""
+        return self.get_prompt(
+            self.AGENT_USER_PROMPT,
+            query=query,
+            context_str=context_str
+        )
+
+    def get_agent_tool_result_prompt(self, index: int, tool_name: str, parameters: str, result: str) -> str:
+        """获取Agent工具结果提示词"""
+        return self.get_prompt(
+            self.AGENT_TOOL_RESULT_PROMPT,
+            index=index,
+            tool_name=tool_name,
+            parameters=parameters,
+            result=result
+        )
 
 
 # 全局实例

@@ -6,6 +6,7 @@ from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor, constants
 from backend.v1.app.pipeline.processors import SchemaValidationProcessor
 from backend.v1.app.pipeline.processors.common.content_router_processor import ContentRouterProcessor
 from backend.v1.app.pipeline.processors.common.asset_persist_processor import AssetPersistProcessor
+from backend.v1.app.pipeline.processors.common.category_matching_processor import CategoryMatchingProcessor
 from backend.v1.app.pipeline.processors.img.product_understanding_processor import ProductUnderstandingProcessor
 from backend.v1.app.pipeline.processors.text.text_understanding_processor import TextUnderstandingProcessor
 from backend.v1.app.pipeline.processors.video.video_product_understanding_processor import VideoProductUnderstandingProcessor
@@ -62,7 +63,9 @@ class ProductParsingPipeline(BasePipeline):
             self._create_understanding_branch(),
             # 第三阶段：统一生成商品结构化数据
             ProductGenerateProcessor(),
-            # 第四阶段：Schema校验
+            # 第四阶段：分类匹配，关联到系统分类体系
+            CategoryMatchingProcessor(),
+            # 第五阶段：Schema校验
             validator
         ]
 

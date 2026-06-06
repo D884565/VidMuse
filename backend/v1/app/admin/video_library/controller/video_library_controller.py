@@ -11,7 +11,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/admin/video-library", tags=["admin", "video-library"])
+router = APIRouter(prefix="/admin/video-library", tags=["video-library"])
 video_service = VideoLibraryService()
 
 
@@ -62,11 +62,12 @@ async def list_videos(
     min_hot_score: Optional[int] = Query(None, ge=0, le=100, description="最低爆款分数"),
     source_type: Optional[int] = Query(None, description="来源类型"),
     keyword: Optional[str] = Query(None, description="关键词搜索"),
+    status: Optional[int] = Query(None, ge=0, le=3, description="处理状态：0待处理 1处理中 2已完成 3失败"),
     db: AsyncSession = Depends(get_db),
     current_user_id: int = Depends(admin_required),  # 管理员权限校验
 ):
     videos, total = await video_service.get_video_list(
-        db, page, page_size, category, category_id, min_hot_score, source_type, keyword
+        db, page, page_size, category, category_id, min_hot_score, source_type, keyword, status
     )
     return Response.success(data={
         "list": videos,
@@ -113,6 +114,7 @@ async def upload_video(
     category: Optional[str] = Form(None),
     category_id: Optional[int] = Form(None),
     tags: Optional[List[str]] = Form(None),
+    trigger_ai_parse: bool = Form(True, description="是否触发AI解析，默认True"),
     db: AsyncSession = Depends(get_db),
     current_user_id: int = Depends(admin_required),
 ):
@@ -124,7 +126,8 @@ async def upload_video(
         description=description,
         category=category,
         category_id=category_id,
-        tags=tags
+        tags=tags,
+        trigger_ai_parse=trigger_ai_parse
     )
     return Response.success(data=video)
 
@@ -169,6 +172,18 @@ async def trigger_parsing(
     if not success:
         return Response.error(message="视频不存在或未关联资产")
     return Response.success(message="解析任务已触发")
+
+
+@router.get("/{video_id}/parsing-progress", summary="查询视频解析进度")
+async def get_parsing_progress(
+    video_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user_id: int = Depends(admin_required),
+):
+    progress = await video_service.get_parsing_progress(db, video_id)
+    if not progress:
+        return Response.error(message="视频不存在或未关联资产")
+    return Response.success(data=progress)
 
 
 @router.get("/{video_id}/slices", summary="获取视频对应的切片列表")

@@ -12,9 +12,13 @@ const columns = [
     title: '类型',
     render: (type) => {
       const typeMap = { 1: '图片', 2: '视频', 3: '音频' }
-      const colorMap = { 1: 'green', 2: 'blue', 3: 'purple' }
+      const classMap = {
+        1: 'bg-green-100 text-green-800',
+        2: 'bg-blue-100 text-blue-800',
+        3: 'bg-purple-100 text-purple-800'
+      }
       return (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium bg-${colorMap[type]}-100 text-${colorMap[type]}-800`}>
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${classMap[type] || 'bg-gray-100 text-gray-800'}`}>
           {typeMap[type] || '未知'}
         </span>
       )
@@ -34,9 +38,14 @@ const columns = [
     title: '解析状态',
     render: (status) => {
       const statusMap = { 0: '待解析', 1: '解析中', 2: '解析成功', 3: '解析失败' }
-      const colorMap = { 0: 'yellow', 1: 'blue', 2: 'green', 3: 'red' }
+      const classMap = {
+        0: 'bg-yellow-100 text-yellow-800',
+        1: 'bg-blue-100 text-blue-800',
+        2: 'bg-green-100 text-green-800',
+        3: 'bg-red-100 text-red-800'
+      }
       return (
-        <span className={`px-2 py-1 rounded-full text-xs font-medium bg-${colorMap[status]}-100 text-${colorMap[status]}-800`}>
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${classMap[status] || 'bg-gray-100 text-gray-800'}`}>
           {statusMap[status] || '未知'}
         </span>
       )
@@ -317,7 +326,7 @@ export default function AssetManagement() {
       />
 
       {/* 分页信息 */}
-      <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+      <div className="mt-4 flex items-center justify-between text-sm text-gray-700">
         <div>
           共 {pagination.total} 条记录，第 {pagination.page} 页 / 共 {Math.ceil(pagination.total / pagination.page_size)} 页
         </div>
@@ -325,14 +334,14 @@ export default function AssetManagement() {
           <button
             onClick={() => handleFilterChange('page', Math.max(1, pagination.page - 1))}
             disabled={pagination.page <= 1}
-            className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
+            className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 text-gray-700"
           >
             上一页
           </button>
           <button
             onClick={() => handleFilterChange('page', pagination.page + 1)}
             disabled={pagination.page >= Math.ceil(pagination.total / pagination.page_size)}
-            className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
+            className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 text-gray-700"
           >
             下一页
           </button>

@@ -7,7 +7,7 @@ export const useAppStore = create((set, get) => ({
   draftConversationTitle: '',
   projectListVersion: 0,
   isLoggedIn: !!localStorage.getItem('token'),
-  authLoading: !!localStorage.getItem('token'),
+  authLoading: false,
   // 用户信息（会话内有效，可通过 /users/me 刷新）
   user: null,
   // refresh_token 存 localStorage 实现跨会话持久化
@@ -35,7 +35,15 @@ export const useAppStore = create((set, get) => ({
   login: (token, refreshToken, userInfo) => {
     localStorage.setItem('token', token)
     if (refreshToken) localStorage.setItem('refresh_token', refreshToken)
-    set({ isLoggedIn: true, user: userInfo || null, authLoading: false })
+
+    // 确保用户信息中的role是数字类型
+    const normalizedUserInfo = userInfo ? {
+      ...userInfo,
+      role: Number(userInfo.role)
+    } : null
+
+    set({ isLoggedIn: true, user: normalizedUserInfo, authLoading: false })
+    console.log('[Store] 用户登录成功，用户信息:', normalizedUserInfo)
   },
   setIsLoggedIn: (isLoggedIn) => set({ isLoggedIn }),
   logout: () => {
@@ -49,7 +57,7 @@ export const useAppStore = create((set, get) => ({
   // 管理员权限判断
   isAdmin: () => {
     const user = get().user
-    return user?.role === 'admin'
+    return user?.role === 0
   },
 
   // 管理员相关状态

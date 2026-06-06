@@ -30,13 +30,11 @@ export const router = createBrowserRouter([
   },
   {
     path: '/admin',
-    // 临时绕过权限验证，方便查看界面
-    // element: (
-    //   <AuthGuard requiredRole="admin">
-    //     <AdminLayout />
-    //   </AuthGuard>
-    // ),
-    element: <AdminLayout />,
+    element: (
+      <AuthGuard requiredRole="admin">
+        <AdminLayout />
+      </AuthGuard>
+    ),
     children: [
       {
         index: true,

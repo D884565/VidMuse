@@ -13,7 +13,7 @@ from backend.providers import VolcanoLLM
 # TODO: RAG 依赖已移除，后续单独集成
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
 from backend.v1.app.generate.service.stages.image_workflow import image_workflow_service
-from backend.v1.app.generate.service.stages.script import script_generation_service
+from backend.v1.app.script.service.script_generation_service import script_generation_service
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
 from backend.v1.app.generate.service.stages.video_workflow import video_generation_service
 from backend.v1.app.generate.tasks.celery_app import celery_app

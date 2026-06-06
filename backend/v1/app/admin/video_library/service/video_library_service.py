@@ -8,7 +8,6 @@ from backend.v1.app.admin.video_library.dao.video_library_dao import VideoLibrar
 from backend.v1.app.product.dao.product_category_dao import ProductCategoryDAO
 from backend.v1.app.pipeline.processors.cluster.hot_report_fetch_processor import HotReportFetchProcessor
 from backend.v1.app.pipeline.base.context import PipelineContext
-from backend.v1.app.pipeline.pipelines.video_parsing_pipeline import VideoParsingPipeline
 from backend.framework.exceptions.error_codes import SYSTEM_ERROR, PARAM_ERROR
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
 from backend.v1.app.assets.service.asset_service import AssetService
@@ -37,10 +36,11 @@ class VideoLibraryService:
         min_hot_score: Optional[int] = None,
         source_type: Optional[int] = None,
         keyword: Optional[str] = None,
+        status: Optional[int] = None,
     ) -> Tuple[List[Dict[str, Any]], int]:
         """获取视频列表"""
         videos, total = await VideoLibraryDAO.list(
-            db, page, page_size, category, category_id, min_hot_score, source_type, keyword
+            db, page, page_size, category, category_id, min_hot_score, source_type, keyword, status
         )
         return [video.to_dict() for video in videos], total
 
@@ -60,6 +60,7 @@ class VideoLibraryService:
         category: Optional[str] = None,
         category_id: Optional[int] = None,
         tags: Optional[List[str]] = None,
+        trigger_ai_parse: bool = True,
     ) -> Dict[str, Any]:
         """上传视频文件"""
         try:
@@ -118,37 +119,26 @@ class VideoLibraryService:
                 "parsing_status": "pending"
             })
 
-            # 5. 直接调用视频解析流水线
-            pipeline = VideoParsingPipeline(enable_persistence=True)
-            # 从asset的url中提取object_name
-            object_name = AssetService.get_path_after_baseurl(asset_dict["url"])
-            pipeline_result = pipeline.run_with_persistence({
-                "video_id": asset_dict["id"],
-                "video_url": asset_dict["url"],
-                "object_name": object_name
-            })
+            # 5. 根据trigger_ai_parse参数决定是否触发AI解析
+            if trigger_ai_parse:
+                # 复用AssetsService的解析逻辑，保持与资产模块完全统一
+                await AssetService._extract_ai_features(
+                    id=asset_dict["id"],
+                    asset_type=2,  # 视频类型
+                    asset_url=asset_dict["url"],
+                    db=sync_db
+                )
 
-            # 6. 更新执行ID和状态
-            execution_id = pipeline_result.get("execution_id")
-            update_data = {}
-            if execution_id:
-                update_data["execution_id"] = execution_id
-
-            if pipeline_result.get("success"):
-                update_data["parsing_status"] = "running"
-            else:
-                update_data["parsing_status"] = "failed"
-                update_data["parsing_error"] = str(pipeline_result.get("errors", []))
-
-            await VideoLibraryDAO.update(db, video.id, **update_data)
-
-            # 同时更新asset表的状态
-            if execution_id:
-                AssetDAO.update_asset(sync_db, asset_dict["id"], {
-                    "execution_id": execution_id,
-                    "parsing_status": update_data["parsing_status"],
-                    "parsing_error": update_data.get("parsing_error")
+                # 同步资产表的最新状态到视频库表
+                updated_asset = AssetDAO.get_asset_by_id(sync_db, asset_dict["id"])
+                await VideoLibraryDAO.update(db, video.id, {
+                    "execution_id": updated_asset.execution_id,
+                    "parsing_status": updated_asset.parsing_status,
+                    "parsing_error": updated_asset.parsing_error
                 })
+            else:
+                # 不触发AI解析，保持pending状态，用户可后续手动触发
+                logger.info(f"视频 {video.id} 上传完成，已跳过AI解析")
 
             return video.to_dict()
 
@@ -383,69 +373,56 @@ class VideoLibraryService:
             if not asset:
                 return False
 
-            # 检查是否已经解析过
-            if asset.parsing_status == "completed" and not force:
-                logger.warning(f"资产 {video.asset_id} 已经解析过，跳过")
-                return False
-
-            # 如果有正在运行的解析任务，直接返回
-            if asset.parsing_status == "running" and not force:
-                return True
-
-            # 更新状态为待执行
-            await VideoLibraryDAO.update(db, video_id, {
-                "parsing_status": "pending",
-                "parsing_error": None
-            })
-            AssetDAO.update_asset(sync_db, video.asset_id, {
-                "parsing_status": "pending",
-                "parsing_error": None
-            })
-
-            # 尝试断点恢复（如果有execution_id）
-            execution_id = video.execution_id or asset.execution_id
-            pipeline_result = None
-
-            if execution_id and not force:
-                try:
-                    pipeline = VideoParsingPipeline(enable_persistence=True)
-                    pipeline_result = pipeline.resume_execution(execution_id)
-                except Exception as e:
-                    logger.warning(f"断点恢复失败，将重新执行: {str(e)}")
-                    execution_id = None
-
-            # 重新执行完整解析
-            if not execution_id or force or not pipeline_result:
-                pipeline = VideoParsingPipeline(enable_persistence=True)
-                pipeline_result = pipeline.run_with_persistence({
-                    "video_id": video.asset_id,
-                    "video_url": video.url,
-                    "object_name": video.url.split("/")[-1]  # 从URL中提取object_name
-                })
-
-            # 更新执行ID和状态
-            new_execution_id = pipeline_result.get("execution_id")
-            update_data = {}
-
-            if new_execution_id:
-                update_data["execution_id"] = new_execution_id
-
-            if pipeline_result.get("success"):
-                update_data["parsing_status"] = "running"
+            # 复用AssetsService的解析逻辑，保持与资产模块完全统一
+            if not force and asset.parsing_status == "failed" and asset.execution_id:
+                # 失败的任务尝试重试（支持断点恢复）
+                await AssetService.retry_parsing(
+                    db=sync_db,
+                    asset_id=video.asset_id
+                )
             else:
-                update_data["parsing_status"] = "failed"
-                update_data["parsing_error"] = str(pipeline_result.get("errors", []))
+                # 正常触发解析
+                await AssetService.parse_asset(
+                    db=sync_db,
+                    asset_id=video.asset_id,
+                    force=force
+                )
 
-            await VideoLibraryDAO.update(db, video_id, **update_data)
-
-            # 同时更新asset表
-            asset_update_data = update_data.copy()
-            if "id" in asset_update_data:
-                del asset_update_data["id"]
-            AssetDAO.update_asset(sync_db, video.asset_id, asset_update_data)
+            # 同步资产表的最新状态到视频库表
+            updated_asset = AssetDAO.get_asset_by_id(sync_db, video.asset_id)
+            await VideoLibraryDAO.update(db, video_id, {
+                "execution_id": updated_asset.execution_id,
+                "parsing_status": updated_asset.parsing_status,
+                "parsing_error": updated_asset.parsing_error
+            })
 
             return True
 
         except Exception as e:
             logger.error(f"触发视频解析失败: {str(e)}", exc_info=True)
             return False
+
+    @staticmethod
+    async def get_parsing_progress(db: AsyncSession, video_id: int) -> Optional[Dict[str, Any]]:
+        """查询视频解析进度"""
+        video = await VideoLibraryDAO.get_by_id(db, video_id)
+        if not video or not video.asset_id:
+            return None
+
+        try:
+            # 获取同步数据库会话
+            sync_db = next(get_sync_db())
+
+            # 复用AssetsService的进度查询逻辑
+            progress = AssetService.get_parsing_progress(
+                db=sync_db,
+                asset_id=video.asset_id
+            )
+
+            # 添加视频ID到返回结果
+            progress["video_id"] = video_id
+            return progress
+
+        except Exception as e:
+            logger.error(f"查询视频解析进度失败: {str(e)}", exc_info=True)
+            return None

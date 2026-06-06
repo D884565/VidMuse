@@ -42,6 +42,7 @@ class VideoLibraryDAO:
         min_hot_score: Optional[int] = None,
         source_type: Optional[int] = None,
         keyword: Optional[str] = None,
+        status: Optional[int] = None,
     ) -> tuple[List[VideoLibrary], int]:
         """分页查询视频列表"""
         query = select(VideoLibrary)
@@ -60,6 +61,16 @@ class VideoLibraryDAO:
                 (VideoLibrary.title.like(f"%{keyword}%")) |
                 (VideoLibrary.description.like(f"%{keyword}%"))
             )
+        if status is not None:
+            # 状态转换：0待处理 1处理中 2已完成 3失败
+            status_map = {
+                0: "pending",
+                1: "running",
+                2: "completed",
+                3: "failed"
+            }
+            if status in status_map:
+                query = query.where(VideoLibrary.parsing_status == status_map[status])
 
         # 排序
         query = query.order_by(VideoLibrary.created_at.desc())

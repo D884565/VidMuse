@@ -2,48 +2,86 @@
 
 提供 JWT 认证的 FastAPI 依赖，供所有控制器复用。
 """
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import Header, Depends
-from sqlalchemy.orm import Session
+import jwt
 
 from backend.v1.app.user.service.user_service import UserService
-from backend.store.database.sync_database import get_db
+from backend.v1.app.config.config import settings
 from backend.framework.exceptions.exceptions import BusinessException
-from backend.framework.exceptions.error_codes import UNAUTHORIZED, FORBIDDEN
+from backend.framework.exceptions.error_codes import UNAUTHORIZED, FORBIDDEN, LOGIN_EXPIRED
 
 
-def get_current_user_id(authorization: Optional[str] = Header(None)) -> int:
-    """从 Authorization 请求头解析当前登录用户的ID
+from typing import Annotated, Optional
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-    用法：在路由函数参数中通过 Depends(get_current_user_id) 注入。
-    请求头格式：Authorization: Bearer <access_token>
+# 定义 security scheme，Swagger 会显示 Authorize 按钮
+security = HTTPBearer(auto_error=False)  # auto_error=False 允许我们自己处理 401
 
-    :param authorization: Authorization 请求头的值
-    :return: 当前用户ID
-    :raises BusinessException: 未携带 token 或 token 无效时抛出 UNAUTHORIZED
-    """
-    if not authorization or not authorization.startswith("Bearer "):
+
+def parse_token_payload(token: str) -> Dict[str, Any]:
+    """解析JWT token，返回完整的payload信息"""
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise BusinessException(LOGIN_EXPIRED)
+    except jwt.InvalidTokenError:
         raise BusinessException(UNAUTHORIZED)
+
+
+def parse_token_from_header(authorization: Optional[str]) -> Optional[Dict[str, Any]]:
+    """从Authorization头中解析token，返回完整payload"""
+    if not authorization or not authorization.startswith("Bearer "):
+        return None
     token = authorization[7:]
-    return UserService.get_user_id_from_token(token)
+    return parse_token_payload(token)
+
+
+def get_current_user_id(
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security)]
+) -> int:
+    """
+    从 Authorization 请求头解析当前登录用户的ID
+    现在通过 HTTPBearer 对接 Swagger Authorize 按钮
+    """
+    if not credentials:
+        raise BusinessException(UNAUTHORIZED)
+
+    payload = parse_token_payload(credentials.credentials)
+    user_id = int(payload["sub"])
+
+    if not user_id:
+        raise BusinessException(UNAUTHORIZED)
+    return user_id
+
+
+def get_current_user_payload(
+    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(security)]
+) -> Dict[str, Any]:
+    """
+    从 Authorization 请求头解析当前登录用户的完整payload信息
+    包含user_id, username, role等信息，无需查询数据库
+    """
+    if not credentials:
+        raise BusinessException(UNAUTHORIZED)
+
+    payload = parse_token_payload(credentials.credentials)
+
+    if not payload.get("sub"):
+        raise BusinessException(UNAUTHORIZED)
+
+    return payload
 
 
 def admin_required(
-    current_user_id: int = Depends(get_current_user_id),
-    db: Session = Depends(get_db)
+    payload: Annotated[Dict[str, Any], Depends(get_current_user_payload)]
 ) -> int:
-    """管理员权限校验依赖，要求当前用户是超级管理员
-
-    用法：在路由函数参数中通过 Depends(admin_required) 注入。
-    只有角色为0的超级管理员可以访问。
-
-    :param current_user_id: 当前登录用户ID
-    :param db: 数据库会话
-    :return: 当前管理员用户ID
-    :raises BusinessException: 没有管理员权限时抛出 FORBIDDEN
     """
-    user = UserService.get_user_info(db, current_user_id)
-    # 角色：0-超级管理员, 1-普通用户, 2-VIP用户
-    if user.get("role") != 0:
+    管理员权限校验依赖
+    直接从JWT payload中获取角色信息，无需查询数据库，性能更高且兼容异步接口
+    """
+    user_role = payload.get("role")
+    if user_role != 0:
         raise BusinessException(FORBIDDEN, message="需要管理员权限")
-    return current_user_id
+    return int(payload["sub"])

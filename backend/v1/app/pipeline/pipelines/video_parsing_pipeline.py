@@ -3,12 +3,12 @@ from typing import List, Optional
 
 from backend.v1.app.pipeline.base import BasePipeline, BaseProcessor, constants
 from backend.v1.app.pipeline.processors import (
-
     SchemaValidationProcessor,
     SliceDataTransformProcessor,
+    CategoryMatchingProcessor,
 )
 from backend.v1.app.pipeline.processors.video import VideoSplitProcessor, VideoUnderstandingProcessor, \
-    VectorizationProcessor, VideoAggregationProcessor, VideoOverallUnderstandingProcessor, VideoGenerateProcessor
+    VectorizationProcessor, VideoAggregationProcessor, VideoOverallUnderstandingProcessor, VideoGenerateProcessor, VideoCategoryPersistProcessor
 
 
 class VideoParsingPipeline(BasePipeline):
@@ -103,6 +103,16 @@ class VideoParsingPipeline(BasePipeline):
             # 第七阶段：整体理解
             processors.extend([
                 VideoOverallUnderstandingProcessor(),
+            ])
+
+            # 新增：分类匹配 - 将视频中的商品分类匹配到系统分类体系
+            processors.extend([
+                CategoryMatchingProcessor(),
+            ])
+
+            # 新增：分类信息持久化 - 将匹配到的分类ID更新到video_library表
+            processors.extend([
+                VideoCategoryPersistProcessor(),
             ])
 
             # 第八阶段：整体JSON生成

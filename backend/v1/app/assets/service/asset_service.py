@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 from backend.store import get_storage_client
 from backend.v1.app.assets.dao import AssetDAO
 from backend.v1.app.config.config import settings
-from backend.v1.app.pipeline import VideoParsingPipeline, ProductParsingPipeline, AudioParsingPipeline
+# 流水线导入移到函数内部，避免循环导入
 
 
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
@@ -88,7 +88,7 @@ class AssetService:
         type_dir = {1: "img", 2: "video", 3: "audio"}.get(asset_type, "other")
         uuid_str = str(uuid.uuid4()).replace("-", "")
         if is_internal:
-            return f"materials/{type_dir}/{uuid_str[:2]}/{uuid_str[2:4]}/{uuid_str}.{ext}"
+            return f"masterials/{type_dir}/{uuid_str[:2]}/{uuid_str[2:4]}/{uuid_str}.{ext}"
         return f"assets/{type_dir}/{uuid_str[:2]}/{uuid_str[2:4]}/{uuid_str}.{ext}"
 
     @staticmethod
@@ -116,6 +116,7 @@ class AssetService:
                     }
                 }
             elif asset_type == 2:  # 视频
+                from backend.v1.app.pipeline import VideoParsingPipeline
                 pipeline = VideoParsingPipeline()
                 from backend.store import get_storage_client
 
@@ -157,6 +158,7 @@ class AssetService:
 
                 content = result.get("data", {})
             elif asset_type == 3:  # 音频
+                from backend.v1.app.pipeline import AudioParsingPipeline
                 pipeline = AudioParsingPipeline()
                 from backend.store import get_storage_client
 

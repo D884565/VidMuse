@@ -29,7 +29,7 @@ async function doRefresh() {
   // 直接用 axios 调用，避免走拦截器导致循环
   // refresh_token 放请求体，避免进入服务器访问日志和浏览器历史。
   const resp = await axios.post(
-    '/api/generate/v1/auth/refresh',
+    '/api/v1/auth/refresh',
     { refresh_token: refreshTokenValue },
     { timeout: 30000 }
   )

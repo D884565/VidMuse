@@ -257,7 +257,11 @@ CREATE TABLE IF NOT EXISTS scripts (
     project_id      BIGINT NOT NULL COMMENT '所属项目ID',
     version         INT NOT NULL DEFAULT 1 COMMENT '版本号',
     status          VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active/archived',
-    generation_mode VARCHAR(20) COMMENT '生成模式: rag/manual/hybrid',
+    generation_mode VARCHAR(20) COMMENT '生成模式: rag/manual/hybrid/template',
+    template_id     VARCHAR(32) COMMENT '关联的灵感模板ID',
+    strategy_id     VARCHAR(32) COMMENT '关联的创作策略ID',
+    used_factors    JSON COMMENT '使用的因子列表，包含因子ID和参数值',
+    template_params JSON COMMENT '用户对模板的自定义参数',
     prompt_snapshot JSON COMMENT '生成时的提示词快照',
     rag_snapshot    JSON COMMENT 'RAG检索结果快照',
     content         JSON COMMENT '剧本内容（帧列表JSON）',
@@ -266,7 +270,10 @@ CREATE TABLE IF NOT EXISTS scripts (
     updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
     FOREIGN KEY (parent_id) REFERENCES scripts(id),
-    INDEX idx_project_id (project_id)
+    UNIQUE KEY uq_scripts_project_version (project_id, version),
+    INDEX idx_project_id (project_id),
+    INDEX idx_template_id (template_id),
+    INDEX idx_strategy_id (strategy_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='剧本版本表';
 
 
@@ -599,3 +606,13 @@ ALTER TABLE video_library
 ADD COLUMN asset_id BIGINT NULL COMMENT '关联的内部资产ID' AFTER parsing_error,
 ADD CONSTRAINT fk_video_library_asset_id FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL,
 ADD INDEX idx_asset_id (asset_id);
+
+-- 为scripts表添加灵感模板关联字段
+ALTER TABLE scripts
+ADD COLUMN template_id VARCHAR(32) NULL COMMENT '关联的灵感模板ID' AFTER generation_mode,
+ADD COLUMN strategy_id VARCHAR(32) NULL COMMENT '关联的创作策略ID' AFTER template_id,
+ADD COLUMN used_factors JSON NULL COMMENT '使用的因子列表，包含因子ID和参数值' AFTER strategy_id,
+ADD COLUMN template_params JSON NULL COMMENT '用户对模板的自定义参数' AFTER used_factors,
+ADD INDEX idx_template_id (template_id),
+ADD INDEX idx_strategy_id (strategy_id),
+ADD UNIQUE KEY uq_scripts_project_version (project_id, version);

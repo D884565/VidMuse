@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from ..core.context import BaseContextBuilder
 from ..core.base_agent import BaseAgent
 from ..config import AGENT_CONFIG
+from backend.v1.app.pipeline.utils.prompt_manager import prompt_manager
 
 class PromptBuilder(BaseContextBuilder):
     """
@@ -32,28 +33,12 @@ class PromptBuilder(BaseContextBuilder):
 
         tools_str = "\n".join(tool_descriptions) if tool_descriptions else "无可用工具"
 
-        system_prompt = f"""你是{agent.name}，{agent.description}。
-
-## 核心能力
-你基于ReAct范式工作，可以通过思考-行动-观察的循环来解决复杂问题。
-
-## 可用工具
-{tools_str}
-
-## 工作流程
-1. 思考：分析用户问题，决定是否需要使用工具
-2. 行动：如果需要工具，调用合适的工具获取信息
-3. 观察：根据工具返回的结果，继续思考或生成回答
-4. 回答：当拥有足够信息时，给出最终答案
-
-## 响应规则
-- 回答要简洁、准确、有帮助
-- 如果无法回答，坦诚告知，不要编造信息
-- 工具调用要严格按照参数要求
-- 每次最多调用5个工具
-- 思考过程要清晰，不要暴露内部实现细节
-"""
-        return system_prompt
+        # 使用统一的PromptManager加载系统提示词
+        return prompt_manager.get_agent_default_system_prompt(
+            agent_name=agent.name,
+            agent_description=agent.description,
+            tools_str=tools_str
+        )
 
     def build_user_prompt(self, query: str, context: Optional[Dict[str, Any]] = None) -> str:
         """构建用户提示词"""
@@ -62,12 +47,11 @@ class PromptBuilder(BaseContextBuilder):
 
         context_str = "\n".join([f"- {k}: {v}" for k, v in context.items()])
 
-        return f"""用户问题：{query}
-
-上下文信息：
-{context_str}
-
-请根据以上信息回答用户问题。"""
+        # 使用统一的PromptManager加载用户提示词
+        return prompt_manager.get_agent_user_prompt(
+            query=query,
+            context_str=context_str
+        )
 
     def build_tool_prompt(self, tool_results: List[Dict[str, Any]]) -> str:
         """构建工具结果提示词"""
@@ -76,12 +60,13 @@ class PromptBuilder(BaseContextBuilder):
 
         result_strs = []
         for i, result in enumerate(tool_results, 1):
-            result_str = f"""<|工具结果{i}|>
-工具名称: {result['tool_name']}
-调用参数: {result.get('parameters', {})}
-返回结果:
-{result['result']}
-<|工具结果结束|>"""
+            # 使用统一的PromptManager加载工具结果提示词
+            result_str = prompt_manager.get_agent_tool_result_prompt(
+                index=i,
+                tool_name=result['tool_name'],
+                parameters=str(result.get('parameters', {})),
+                result=result['result']
+            )
             result_strs.append(result_str)
 
         return "\n\n".join(result_strs) + "\n\n请根据以上工具返回结果继续处理用户问题。"

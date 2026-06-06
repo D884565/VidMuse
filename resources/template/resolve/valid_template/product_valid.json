@@ -2,8 +2,11 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "ProductTemplateSchema",
   "type": "object",
-  "required": ["目标人群", "卖点列表", "物理属性", "价格与服务", "竞争差异化", "合规限制"],
+  "required": ["商品名称", "商品分类", "目标人群", "卖点列表", "物理属性", "价格与服务", "竞争差异化", "合规限制"],
   "properties": {
+    "商品名称": { "type": "string", "description": "商品的完整名称" },
+    "商品分类": { "type": "string", "description": "商品分类，支持三级格式：一级分类>二级分类>三级分类" },
+    "品牌": { "type": "string", "description": "商品品牌名称" },
     "目标人群": {
       "type": "object",
       "required": ["核心人群", "消费心理", "使用场景"],

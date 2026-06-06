@@ -11,7 +11,7 @@ from starlette.responses import Response
 from .context import trace_id_var, span_stack_var, get_all_spans, clear_context, start_span, end_span, set_user_id, get_user_id
 from .dao import save_trace_data, flush_batch
 from .config import trace_config
-from backend.framework.web.auth import get_current_user_id
+from backend.framework.web.auth import parse_token_from_header
 
 
 logger = logging.getLogger("trace.middleware")
@@ -41,13 +41,9 @@ class TraceMiddleware(BaseHTTPMiddleware):
         token_stack = span_stack_var.set([])
 
         # 尝试获取并设置用户ID（公共接口可能没有token，忽略异常）
-        try:
-            user_id = get_current_user_id(request.headers.get("Authorization"))
-            if user_id:
-                set_user_id(user_id)
-        except Exception:
-            # 未登录或token无效，不需要设置用户ID
-            pass
+        user_id = parse_token_from_header(request.headers.get("Authorization"))
+        if user_id:
+            set_user_id(user_id)
 
         # 创建根span，代表整个请求
         root_span = start_span(

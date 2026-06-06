@@ -2,9 +2,17 @@
 from typing import Optional, Dict, Any, List
 from .react_agent import ReActAgent
 from ..config import AGENT_CONFIG
-from backend.v1.app.search import SearchEngine, SearchQuery
 from ..core.tool import BaseTool
 import logging
+
+# 可选导入SearchEngine，避免依赖缺失导致导入失败
+try:
+    from backend.v1.app.search import SearchEngine, SearchQuery
+    HAS_SEARCH_ENGINE = True
+except ImportError:
+    SearchEngine = None
+    SearchQuery = None
+    HAS_SEARCH_ENGINE = False
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +52,15 @@ class SearchAgent(ReActAgent):
         )
 
         # 初始化检索引擎
-        try:
-            self.search_engine = SearchEngine(search_config)
-            logger.info("SearchAgent初始化检索引擎成功")
-        except Exception as e:
-            logger.error(f"SearchAgent初始化检索引擎失败: {str(e)}", exc_info=True)
+        if HAS_SEARCH_ENGINE and SearchEngine:
+            try:
+                self.search_engine = SearchEngine(search_config)
+                logger.info("SearchAgent初始化检索引擎成功")
+            except Exception as e:
+                logger.error(f"SearchAgent初始化检索引擎失败: {str(e)}", exc_info=True)
+                self.search_engine = None
+        else:
+            logger.warning("SearchEngine不可用，SearchAgent将无法使用检索功能")
             self.search_engine = None
 
         # 注册搜索工具
