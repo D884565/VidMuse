@@ -65,6 +65,7 @@ app.include_router(inspiration_template_router, prefix="/v1")
 app.include_router(ws_router, prefix="/v1")
 app.include_router(message_router, prefix="/v1")
 
+
 security = HTTPBearer()
 
 @app.get("/", response_model=Response)
