@@ -280,6 +280,41 @@ def example_persistence_and_resume():
     print(f"   执行结果: {'成功' if result['success'] else '失败'}")
 
 
+def direct_video_parsing_example():
+    """极简视频解析流水线使用示例"""
+    from backend.v1.app.pipeline.pipelines import DirectVideoParsingPipeline
+
+    # 创建流水线实例
+    pipeline = DirectVideoParsingPipeline(
+        enable_vectorization=True,  # 启用向量化
+        enable_persistence=True     # 启用持久化和断点续跑
+    )
+
+    # 输入参数（与现有VideoParsingPipeline完全兼容）
+    input_data = {
+        "video_url": "https://example.com/your_video.mp4",
+        "video_id": "vid_123456789",
+        "asset_id": 1001,
+        "video_duration": 120000,  # 2分钟，单位毫秒
+        "user_id": 1,
+        "created_by": "system"
+    }
+
+    # 运行流水线（带持久化）
+    result = pipeline.run_with_persistence(input_data)
+    print(f"Pipeline execution result: {result['success']}")
+    print(f"Execution ID: {result.get('execution_id')}")
+
+    if result["success"]:
+        ai_features = result["data"]["ai_features"]
+        print(f"AI features generated, video info: {ai_features['video_info'].keys()}")
+        print(f"Slice count: {len(ai_features['slices'])}")
+    else:
+        print(f"Errors: {result['errors']}")
+
+    return result
+
+
 def main():
     """主函数：运行所有示例"""
     print("🚀 运行三条流水线示例...\n")
@@ -296,6 +331,12 @@ def main():
 
     # 4. 运行持久化和断点续跑示例
     example_persistence_and_resume()
+
+    # 5. 运行DirectVideoParsingPipeline示例
+    print("\n" + "=" * 60)
+    print("🎥 DirectVideoParsingPipeline 极简示例")
+    print("=" * 60)
+    direct_result = direct_video_parsing_example()
 
     print("\n" + "=" * 60)
     print("🎉 所有流水线示例运行完成！")
