@@ -114,16 +114,38 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
                 content = content[start_idx:end_idx+1]
 
             result = json.loads(content)
+
+            # 双重校验：如果result仍然是字符串（JSON被双重转义的情况），再次解析
+            if isinstance(result, str):
+                logger.warning(f"大模型返回的JSON被双重转义，尝试二次解析: {result[:500]}...")
+                result = json.loads(result)
+
+            # 校验result必须是字典类型
+            if not isinstance(result, dict):
+                raise ValueError(f"大模型返回结果不是字典类型: {type(result)}")
+
         except json.JSONDecodeError as e:
             # 记录原始响应内容方便调试
             error_msg = f"Direct video understanding JSON parse failed. Raw content: {response.content[:2000]}..."
             logger.error(error_msg)
             context.add_error(ValueError(f"Direct video understanding result parse failed: {str(e)}"))
             return context
+        except Exception as e:
+            error_msg = f"解析大模型返回结果失败: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            context.add_error(ValueError(error_msg))
+            return context
 
-        # 提取video和slice结构
+        # 提取video和slice结构，确保类型正确
         video_data = result.get("video", {})
+        if not isinstance(video_data, dict):
+            logger.warning(f"video字段不是字典类型，重置为空字典: {type(video_data)}")
+            video_data = {}
+
         slice_data = result.get("slices", [])
+        if not isinstance(slice_data, list):
+            logger.warning(f"slices字段不是列表类型，重置为空列表: {type(slice_data)}")
+            slice_data = []
 
         # 补充必要字段，确保与现有格式兼容
         video_data["video_id"] = video_id
@@ -178,6 +200,22 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
             "parse_version": "1.0"
         }
 
+        # 类型安全校验：确保所有字段都是正确的类型，避免后续处理错误
+        if not isinstance(ai_features, dict):
+            error_msg = f"构建的ai_features不是字典类型: {type(ai_features)}"
+            logger.error(error_msg)
+            context.add_error(ValueError(error_msg))
+            return context
+
+        # 深度检查：确保video_info是字典，slices是列表
+        if not isinstance(ai_features.get("video_info"), dict):
+            logger.warning("ai_features.video_info不是字典类型，重置为空字典")
+            ai_features["video_info"] = {}
+
+        if not isinstance(ai_features.get("slices"), list):
+            logger.warning("ai_features.slices不是列表类型，重置为空列表")
+            ai_features["slices"] = []
+
         # 存储结果到上下文，使用标准键名
         context.set(constants.SLICE_DATA, understood_slices)
         context.set(constants.VIDEO_DATA, video_data)
@@ -186,6 +224,10 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
         context.set(constants.EMBED_VIDEO, embed_video)
         context.set(constants.AI_FEATURES, ai_features)
         context.set("product_data", ai_features)  # 兼容AssetPersistProcessor
+
+        # 调试日志：输出关键数据的类型
+        logger.debug(f"ai_features类型: {type(ai_features)}, video_info类型: {type(video_data)}, slices类型: {type(understood_slices)}")
+        logger.debug(f"product_data设置完成，类型: {type(context.get('product_data'))}")
 
         # 记录处理统计
         context.metadata["direct_video_processing"] = {

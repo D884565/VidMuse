@@ -1,4 +1,5 @@
 from typing import Dict, List, Any
+import json
 import logging
 from sqlalchemy.orm import Session
 
@@ -43,6 +44,33 @@ class AssetPersistProcessor(BaseProcessor):
         parsing_status = context.get("parsing_status", "completed")
         parsing_error = context.get("parsing_error", None)
 
+        # 类型安全校验：确保product_data是字典类型
+        if isinstance(product_data, str):
+            try:
+                logger.warning(f"product_data是字符串类型，尝试解析为JSON: {product_data[:500]}...")
+                product_data = json.loads(product_data)
+            except json.JSONDecodeError as e:
+                error_msg = f"product_data是字符串类型且无法解析为JSON: {str(e)}"
+                logger.error(error_msg)
+                context.add_error(ValueError(error_msg))
+                return context
+
+        if not isinstance(product_data, dict):
+            error_msg = f"product_data类型错误，期望字典，实际: {type(product_data)}"
+            logger.error(error_msg)
+            context.add_error(ValueError(error_msg))
+            return context
+
+        # 确保ai_features也是字典类型（兼容直接使用ai_features字段的情况）
+        ai_features = context.get("ai_features", product_data)
+        if isinstance(ai_features, str):
+            try:
+                logger.warning(f"ai_features是字符串类型，尝试解析为JSON")
+                ai_features = json.loads(ai_features)
+                context.set("ai_features", ai_features)
+            except json.JSONDecodeError as e:
+                logger.warning(f"ai_features解析失败，将使用product_data代替: {str(e)}")
+
         if not asset_id:
             raise ValueError("asset_id is required for persisting to asset table")
 
@@ -69,24 +97,29 @@ class AssetPersistProcessor(BaseProcessor):
             context.set("asset_info", updated_asset.to_dict())
             logger.info(f"商品数据成功落库到asset表，asset_id: {asset_id}")
 
-            # 如果有product_id和分类信息，更新products表
+            # 如果有product_id，更新products表
             product_id = context.get("product_id")
-            category_id = context.get("category_id")
-            if product_id and category_id:
+            if product_id:
                 try:
                     product_update_data = {
-                        "category_id": category_id,
-                        "category": context.get("category_name"),
-                        "category_path": context.get("category_path")
+                        "ai_features": product_data  # 将解析结果存入商品表的ai_features字段
                     }
+                    # 如果有分类信息，也更新分类
+                    category_id = context.get("category_id")
+                    if category_id:
+                        product_update_data.update({
+                            "category_id": category_id,
+                            "category": context.get("category_name"),
+                            "category_path": context.get("category_path")
+                        })
                     # 更新商品记录
                     updated_product = ProductDAO.update_product(db, int(product_id), product_update_data)
                     if updated_product:
-                        logger.info(f"商品分类信息成功更新，product_id: {product_id}, category_id: {category_id}")
+                        logger.info(f"商品信息成功更新，product_id: {product_id}")
                         context.set("product_info", updated_product.to_dict())
                 except Exception as e:
-                    logger.error(f"更新商品分类信息失败: {str(e)}", exc_info=True)
-                    context.add_error(ValueError(f"更新商品分类信息失败: {str(e)}"))
+                    logger.error(f"更新商品信息失败: {str(e)}", exc_info=True)
+                    context.add_error(ValueError(f"更新商品信息失败: {str(e)}"))
 
         except Exception as e:
             logger.error(f"资产落库失败: {str(e)}", exc_info=True)
