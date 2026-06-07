@@ -60,3 +60,4 @@ tests/generate
 export_cookies.py
 
 # RAG 临时接口（RAG团队提供正式实现后删除）
+logs/
