@@ -119,6 +119,11 @@ class StoryboardService:
                         "requires_confirmation": True,
                         "frame": self._frame_to_dict(frame),
                     }
+            # narration 修改标记 TTS dirty
+            if "narration" in changed_fields:
+                ai_params = dict(frame.ai_params or {})
+                ai_params["tts_dirty"] = True
+                frame.ai_params = ai_params
             dirty_stage = self._infer_dirty_stage(changed_fields)
             if project:
                 generation_workflow_service.invalidate_from(project, dirty_stage)
