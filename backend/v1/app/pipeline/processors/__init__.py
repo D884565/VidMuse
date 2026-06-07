@@ -7,6 +7,7 @@ from .text.text_understanding_processor import TextUnderstandingProcessor
 from .video.video_product_understanding_processor import VideoProductUnderstandingProcessor
 from .img.product_understanding_processor import ProductUnderstandingProcessor
 from .img.product_generate_processor import ProductGenerateProcessor
+from .video.vectorization_processor import VectorizationProcessor
 
 
 __all__ = [
@@ -18,5 +19,6 @@ __all__ = [
     "TextUnderstandingProcessor",
     "VideoProductUnderstandingProcessor",
     "ProductUnderstandingProcessor",
-    "ProductGenerateProcessor"
+    "ProductGenerateProcessor",
+    "VectorizationProcessor"
 ]
