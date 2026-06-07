@@ -131,14 +131,28 @@ class PromptManager:
             output_schema=self.get_product_template()
         )
 
-    def get_direct_video_understanding_prompt(self) -> str:
-        """获取直接视频理解提示词模板（不含动态参数，动态参数在processor中注入）"""
-        # 返回一个简单的提示词，避免JSON格式化问题
-        return """请分析以下视频内容，输出结构化的理解结果。
-视频URL: {video_url}
-视频时长: {video_duration}秒
+    def get_direct_video_understanding_prompt(self, video_url: str, video_duration: int = 0) -> str:
+        """获取直接视频理解提示词，自动注入完整的输出schema和动态参数
 
-请严格按照JSON格式输出，包含video和slices两个字段。"""
+        Args:
+            video_url: 视频URL
+            video_duration: 视频时长（毫秒），会自动转换为秒
+        """
+        # 构建完整的输出schema，包含video和slices的完整结构
+        output_schema = {
+            "video": self.get_video_template(),
+            "slices": {
+                "type": "array",
+                "items": self.get_slice_template()
+            }
+        }
+
+        return self.get_prompt(
+            self.DIRECT_VIDEO_UNDERSTANDING,
+            output_schema=output_schema,
+            video_url=video_url,
+            video_duration=video_duration // 1000 if video_duration else 0
+        )
 
     def get_slice_template(self) -> Dict[str, Any]:
         """获取分片校验模板（快捷方法）"""

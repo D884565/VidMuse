@@ -16,8 +16,15 @@ from backend.v1.app.pipeline.utils import prompt_manager
 # 添加缺失的常量
 constants.VIDEO_URL = "video_url"
 
-# Mock prompt_manager的方法
-prompt_manager.get_direct_video_understanding_prompt = Mock(return_value="test prompt")
+# Mock prompt_manager的方法（匹配新的签名）
+def mock_get_direct_prompt(video_url, video_duration=0):
+    return f"""请分析视频内容，输出JSON。
+视频URL: {video_url}
+视频时长: {video_duration}秒
+
+请输出包含video和slices字段的JSON。"""
+
+prompt_manager.get_direct_video_understanding_prompt = mock_get_direct_prompt
 
 from backend.v1.app.pipeline.processors.video import DirectVideoUnderstandingProcessor
 

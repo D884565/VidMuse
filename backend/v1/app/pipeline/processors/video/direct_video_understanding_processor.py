@@ -26,8 +26,6 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
         :param llm_client: 大模型客户端，默认使用VolcanoLLM
         """
         self.llm_client = llm_client or VolcanoLLM(key=None, model_name=None)
-        # 使用包含完整输出格式要求的提示词
-        self.prompt_template = prompt_manager.get_direct_video_understanding_prompt()
 
     def run_async(self, coro):
         """万能异步运行器，兼容所有环境"""
@@ -82,16 +80,16 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
 
         # 构建大模型请求
         try:
-            # 格式化提示词，注入动态参数
-            formatted_prompt = self.prompt_template.format(
+            # 获取格式化好的提示词，包含完整schema和动态参数
+            formatted_prompt = prompt_manager.get_direct_video_understanding_prompt(
                 video_url=video_url,
-                video_duration=video_duration // 1000 if video_duration else 0
+                video_duration=video_duration
             )
             response = self.run_async(self.llm_client.video_understanding(VideoUnderstandingRequest(
                 video_url=video_url,
                 prompt=formatted_prompt,
-                max_tokens=16384,  # 增大token限制，避免JSON被截断
-                temperature=0.7,
+                max_tokens=32768,  # 增大token限制，避免复杂JSON被截断
+                temperature=0.1,  # 降低温度，确保输出格式稳定
                 top_p=0.9
             )))
         except Exception as e:
