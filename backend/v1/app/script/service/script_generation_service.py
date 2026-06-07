@@ -11,9 +11,12 @@ from backend.v1.app.models.project import Project
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.generation_task import GenerationTask
 from backend.v1.app.models.script import Script
+from backend.v1.app.models.asset import Asset
+from backend.v1.app.models.project_asset import ProjectAsset
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
 from backend.v1.app.generate.service.workflow.limits import normalize_target_duration
 from backend.v1.app.script.service.template_script_service import template_script_service
+from backend.v1.app.generate.service.chat.parsed_material_prompt import format_material_prompt_section
 # 导入移到属性内部，避免循环导入
 # from backend.v1.app.agent import ScriptAgent
 
@@ -57,12 +60,14 @@ class ScriptGenerationService:
         template_params: dict | None = None,
         creation_mode: str | None = None,
         strategy_id: str | None = None,
+        local_references: list | None = None,
     ) -> list[Frame]:
         """
         生成带货剧本，逐帧写入 frames 表。
         target_duration 从 projects 表读取。
         :param creation_mode: 创作模式：independent(自主创作，默认)/auto/hot_video/template/strategy
         :param strategy_id: 指定使用的策略ID，仅在strategy模式下有效
+        :param local_references: 本地参考素材列表（图片features/文本content）
         """
         result = await db.execute(select(Project).where(Project.id == project_id))
         project = result.scalar_one_or_none()
@@ -126,6 +131,13 @@ class ScriptGenerationService:
         else:
             prompt = self._build_prompt(project, target_duration)
 
+        # 构建素材参考内容
+        material_reference = await self._build_material_reference(db, project_id)
+        local_reference_text = self._build_local_reference_text(local_references)
+
+        # 将聊天上传的图片和素材库资产的图片同步到 project.reference_images
+        await self._sync_reference_images(db, project, local_references)
+
         # 调用 Agent 生成剧本
         try:
             script_content = await self._call_agent(
@@ -135,7 +147,9 @@ class ScriptGenerationService:
                 creation_mode=creation_mode,
                 template_id=template_id,
                 strategy_id=strategy_id,
-                template_params=template_params
+                template_params=template_params,
+                material_reference=material_reference,
+                local_reference_text=local_reference_text,
             )
             logger.info(f"[剧本生成] Agent 调用成功，project_id={project_id}, mode={creation_mode}")
         except Exception as e:
@@ -461,6 +475,105 @@ class ScriptGenerationService:
         return script
 
 
+    # ========== 素材参考构建 ==========
+
+    async def _build_material_reference(self, db: AsyncSession, project_id: int) -> str:
+        """从 ProjectAsset 关联表读取素材库解析内容，格式化为参考文本。"""
+        result = await db.execute(
+            select(Asset)
+            .join(ProjectAsset, ProjectAsset.asset_id == Asset.id)
+            .where(ProjectAsset.project_id == project_id)
+            .order_by(ProjectAsset.id.asc())
+        )
+        materials = []
+        for asset in result.scalars().all():
+            ai_features = asset.ai_features or {}
+            if not isinstance(ai_features, dict):
+                continue
+            prompt_summary = ai_features.get("prompt_summary", {}) or {}
+            if not prompt_summary:
+                continue
+            materials.append({
+                "title": asset.title or f"Asset {asset.id}",
+                "prompt_summary": prompt_summary,
+            })
+        return format_material_prompt_section(materials)
+
+    @staticmethod
+    def _build_local_reference_text(local_references: list | None) -> str:
+        """从 local_references 列表构建本地参考文本。"""
+        if not local_references:
+            return ""
+        parts = []
+        for ref in local_references:
+            if not ref:
+                continue
+            ref_type = ref.get("type")
+            if ref_type == "image":
+                features = ref.get("features") or {}
+                ref_text = features.get("reference_text", "")
+                title = ref.get("title", "参考图")
+                if ref_text:
+                    parts.append(f"本地参考图片（{title}）：\n{ref_text}")
+            elif ref_type == "text":
+                content = ref.get("content", "")
+                if content:
+                    parts.append(f"本地参考文本：\n{content}")
+        if not parts:
+            return ""
+        return "本地参考素材：\n\n" + "\n\n".join(parts)
+
+    @staticmethod
+    async def _sync_reference_images(
+        db: AsyncSession,
+        project: Project,
+        local_references: list | None = None,
+    ) -> None:
+        """将聊天上传的图片和素材库资产的图片同步到 project.reference_images。
+
+        这样图片生成阶段的 extract_reference_images() 就能读到这些图片。
+        只追加新 URL，不覆盖已有的。
+        """
+        existing: list[str] = project.reference_images or []
+        if not isinstance(existing, list):
+            existing = []
+        seen = set(existing)
+        added = []
+
+        # 1. 从 local_references 中提取聊天上传的图片 URL
+        for ref in local_references or []:
+            if not isinstance(ref, dict):
+                continue
+            if ref.get("type") != "image":
+                continue
+            url = ref.get("url")
+            if url and isinstance(url, str) and url.strip() and url not in seen:
+                added.append(url.strip())
+                seen.add(url)
+
+        # 2. 从素材库资产中提取图片 URL（ProjectAsset role=reference）
+        result = await db.execute(
+            select(Asset.url)
+            .join(ProjectAsset, ProjectAsset.asset_id == Asset.id)
+            .where(
+                ProjectAsset.project_id == project.id,
+                Asset.type == 1,  # 图片类型
+                Asset.url.isnot(None),
+            )
+        )
+        for (url,) in result.all():
+            if url and isinstance(url, str) and url.strip() and url not in seen:
+                added.append(url.strip())
+                seen.add(url)
+
+        if added:
+            project.reference_images = existing + added
+            await db.flush()
+            logger.info(
+                f"[剧本生成] 同步 {len(added)} 张参考图到 project.reference_images, "
+                f"project_id={project.id}"
+            )
+
     # ========== Prompt 组装 ==========
 
     def _format_product_info(self, product_info_json: str | None) -> str:
@@ -611,7 +724,9 @@ class ScriptGenerationService:
         creation_mode: Optional[str] = None,
         template_id: Optional[str] = None,
         strategy_id: Optional[str] = None,
-        template_params: Optional[Dict[str, Any]] = None
+        template_params: Optional[Dict[str, Any]] = None,
+        material_reference: str = "",
+        local_reference_text: str = "",
     ) -> dict:
         """调用 ScriptAgent 生成剧本"""
         # 提取项目信息
@@ -627,8 +742,16 @@ class ScriptGenerationService:
             "重点强调": ", ".join(project.key_points) if isinstance(project.key_points, list) and project.key_points else "",
             "需要避免": ", ".join(project.avoid) if isinstance(project.avoid, list) and project.avoid else "",
             "参考图片": "\n".join(f"- {url}" for url in project.reference_images) if isinstance(project.reference_images, list) and project.reference_images else "",
-            "商品分类": project.category or ""  # 添加分类信息，用于爆款视频查询
+            "商品分类": project.category or "",
         }
+
+        # 注入素材库解析内容
+        if material_reference:
+            project_info["素材分析参考"] = material_reference
+
+        # 注入本地参考素材
+        if local_reference_text:
+            project_info["本地参考素材"] = local_reference_text
 
         # 过滤空值
         project_info = {k: v for k, v in project_info.items() if v}
@@ -662,11 +785,16 @@ class ScriptGenerationService:
                 )
             )
 
-            # 验证返回结果
-            required_fields = ["video_meta", "scenes", "audio"]
-            for field in required_fields:
-                if field not in script_content:
-                    raise ValueError(f"Agent 返回的 JSON 缺少必要字段: {field}")
+            # 兼容 Agent 返回的格式变体
+            script_content = self._normalize_agent_output(script_content, project, target_duration)
+
+            # 规则层硬约束校验
+            auto_fixed, warnings = self._validate_script_constraints(script_content, target_duration)
+            if auto_fixed:
+                logger.info(f"[剧本生成] 规则层自动修复: {auto_fixed}")
+            if warnings:
+                logger.warning(f"[剧本生成] 规则层警告: {warnings}")
+                script_content["_warnings"] = warnings
 
             for scene in script_content.get("scenes", []):
                 visual = scene.get("visual", {})
@@ -682,6 +810,101 @@ class ScriptGenerationService:
         except Exception as e:
             logger.error(f"调用Agent生成剧本失败: {str(e)}", exc_info=True)
             raise
+
+    @staticmethod
+    def _normalize_agent_output(raw: dict, project: Project, target_duration: int) -> dict:
+        """将 Agent 返回的各种格式统一为标准格式 {video_meta, scenes, audio}。"""
+        if not isinstance(raw, dict):
+            raise ValueError(f"Agent 返回非 dict 类型: {type(raw)}")
+
+        has_video_meta = "video_meta" in raw
+        has_scenes = "scenes" in raw
+        has_audio = "audio" in raw
+
+        # 已经是标准格式
+        if has_video_meta and has_scenes and has_audio:
+            pass
+        elif has_scenes:
+            if not has_video_meta:
+                raw["video_meta"] = {
+                    "product_name": project.title,
+                    "target_duration": raw.get("total_duration", target_duration),
+                    "style": "lifestyle",
+                    "aspect_ratio": "9:16",
+                    "hook_line": "",
+                }
+            if not has_audio:
+                raw["audio"] = {
+                    "tts_voice": "zh_female_cancan_mars_bigtts",
+                    "bgm": "轻松愉快的背景音乐",
+                    "bgm_volume": 0.3,
+                }
+            logger.warning("[剧本生成] Agent 返回格式缺少字段，已自动补全")
+        else:
+            raise ValueError(f"Agent 返回的 JSON 缺少 scenes 字段: {list(raw.keys())}")
+
+        # 校验并截断总时长
+        scenes = raw.get("scenes", [])
+        total = sum(float(s.get("duration", 0)) for s in scenes)
+        if total > target_duration and scenes:
+            overflow = total - target_duration
+            for scene in reversed(scenes):
+                dur = float(scene.get("duration", 0))
+                cut = min(overflow, dur - 1)  # 每个 scene 至少保留 1 秒
+                if cut > 0:
+                    scene["duration"] = round(dur - cut, 1)
+                    overflow -= cut
+                if overflow <= 0:
+                    break
+            logger.warning(f"[剧本生成] 分镜总时长 {total}s 超过目标 {target_duration}s，已截断")
+
+        return raw
+
+    @staticmethod
+    def _validate_script_constraints(
+        script_content: dict,
+        target_duration: int,
+    ) -> tuple[list[str], list[str]]:
+        """规则层硬约束校验。返回 (auto_fixed, warnings)。"""
+        auto_fixed: list[str] = []
+        warnings: list[str] = []
+        scenes = script_content.get("scenes", [])
+        if not scenes:
+            return auto_fixed, warnings
+
+        # 1. 总时长校验（_normalize_agent_output 已做截断，这里只记录）
+        total = sum(float(s.get("duration", 0)) for s in scenes)
+        if total > target_duration:
+            auto_fixed.append(f"总时长 {total}s 已截断到 {target_duration}s")
+
+        # 2. 单镜头时长校验
+        for scene in scenes:
+            dur = float(scene.get("duration", 0))
+            if dur > 12:
+                scene["duration"] = 12
+                auto_fixed.append(f"场景 {scene.get('scene_id')} 时长 {dur}s 已截断到 12s")
+            if dur < 1:
+                scene["duration"] = 1
+                auto_fixed.append(f"场景 {scene.get('scene_id')} 时长 {dur}s 已提升到 1s")
+
+        # 3. 旁白密度预估
+        total_chars = sum(len(s.get("text", "")) for s in scenes)
+        estimated_tts_seconds = total_chars / 3
+        if estimated_tts_seconds > target_duration * 1.5:
+            warnings.append(
+                f"旁白约 {total_chars} 字（预估 {estimated_tts_seconds:.0f} 秒），"
+                f"可能超出 {target_duration} 秒目标时长，生成时会截断"
+            )
+
+        # 4. 镜头数量检查
+        expected_max = max(3, target_duration // 3)
+        if len(scenes) > expected_max:
+            warnings.append(
+                f"镜头数 {len(scenes)} 偏多（建议不超过 {expected_max} 个），"
+                f"可能导致单镜头节奏过快"
+            )
+
+        return auto_fixed, warnings
 
     def _mock_generate(self, project: Project, target_duration: int) -> dict:
         """Mock 剧本生成（作为 LLM 调用失败的 fallback）"""
