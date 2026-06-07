@@ -127,27 +127,43 @@ celery_app.conf.beat_schedule = {
 }
 
 
+# 视频解析任务（爆款视频分析队列）
 @celery_app.task(base=BaseTask, rate_limit='5/m', name='video_analysis')
 @trace(push_config=TASK_PUSH_CONFIG)
 def video_analysis_task(payload, user_id=None, trace_id=None):
     """
-    爆款视频解析任务（DirectVideoParsingPipeline）
-    异步执行视频URL解析，自动推送状态和结果
+    视频解析异步任务
+    payload格式: {
+        "video_id": 123,
+        "force": False,
+        "context": {}
+    }
     """
-    from backend.v1.app.pipeline.pipelines.direct_video_parsing_pipeline import DirectVideoParsingPipeline
+    from backend.v1.app.admin.video_library.service.video_library_service import VideoLibraryService
+    from backend.store.database.sync_database import SessionLocal
+    from sqlalchemy.ext.asyncio import AsyncSession
+    import asyncio
 
-    # 创建流水线实例
-    pipeline = DirectVideoParsingPipeline(
-        enable_vectorization=payload.get('enable_vectorization', True),
-        enable_persistence=payload.get('enable_persistence', True)
-    )
+    video_id = payload.get('video_id')
+    force = payload.get('force', False)
+    context = payload.get('context', {})
 
-    # 组装输入参数
-    input_data = payload.copy()
-    if user_id:
-        input_data['user_id'] = user_id
+    if not video_id:
+        raise ValueError("video_id is required in payload")
 
-    # 运行流水线
-    result = pipeline.run_with_persistence(input_data)
+    # 同步执行解析逻辑
+    service = VideoLibraryService()
+    db = SessionLocal()
+    try:
+        # 这里需要将同步db会话包装一下给异步方法使用
+        # 直接调用trigger_parsing的核心逻辑，跳过重复的检查
+        async def run_parse():
+            from backend.store.database.async_database import get_db
+            # 获取异步会话
+            async for async_db in get_db():
+                return await service.trigger_parsing(async_db, video_id, force, context)
 
-    return result
+        # 运行异步方法
+        return asyncio.run(run_parse())
+    finally:
+        db.close()

@@ -1,19 +1,26 @@
 """视频素材库业务逻辑层"""
+import os
+import uuid
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from fastapi import UploadFile, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from backend.framework.exceptions import BusinessException
 from backend.v1.app.admin.video_library.dao.video_library_dao import VideoLibraryDAO
 from backend.v1.app.product.dao.product_category_dao import ProductCategoryDAO
 from backend.v1.app.pipeline.processors.cluster.hot_report_fetch_processor import HotReportFetchProcessor
 from backend.v1.app.pipeline.base.context import PipelineContext
+# BasePipeline 导入移到函数内部，避免循环导入
 from backend.framework.exceptions.error_codes import SYSTEM_ERROR, PARAM_ERROR
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
-from backend.v1.app.assets.service.asset_service import AssetService
 from backend.v1.app.slice.dao.slice_dao import SliceDAO
+from backend.v1.app.pipeline.factory.pipeline_factory import PipelineFactory
 from backend.store.database.sync_database import get_db as get_sync_db
 from backend.store import get_storage_client
+from backend.store.obj.local_client import get_local_storage_client
+from backend.v1.app.config.config import settings
 import logging
 from backend.store.vector.factory import get_vector_db_client
 
@@ -26,12 +33,121 @@ class VideoLibraryService:
     def __init__(self):
         self._obj_store = None
         self.hot_report_fetcher = HotReportFetchProcessor()
+        self.video_exts = {"mp4", "avi", "mov", "flv", "wmv", "webm", "mkv"}
 
     @property
     def obj_store(self):
         if self._obj_store is None:
             self._obj_store = get_storage_client()
         return self._obj_store
+
+    # ==================== 独立文件处理方法（不再依赖AssetService） ====================
+    @staticmethod
+    def detect_video_type(file: UploadFile) -> int:
+        """检测上传文件是否为视频类型"""
+        content_type = file.content_type or ""
+        if content_type.startswith("video/"):
+            return 2
+
+        filename = file.filename or ""
+        ext = filename.split(".")[-1].lower() if "." in filename else ""
+        if ext in VideoLibraryService().video_exts:
+            return 2
+
+        raise BusinessException(PARAM_ERROR, "只能上传视频文件，支持格式：mp4/avi/mov/flv/wmv/webm/mkv")
+
+    @staticmethod
+    def _validate_video_file(file: UploadFile) -> str:
+        """验证视频文件合法性"""
+        file_size = getattr(file, "size", None)
+        if file_size is not None and file_size > settings.UPLOAD_MAX_SIZE:
+            raise BusinessException(PARAM_ERROR, f"文件大小超过限制，最大支持 {settings.UPLOAD_MAX_SIZE // 1024 // 1024} MB")
+
+        filename = file.filename or ""
+        ext = filename.split(".")[-1].lower() if "." in filename else ""
+        allowed_exts = settings.ALLOWED_EXTENSIONS.get(2, [])  # 2是视频类型
+        if ext not in allowed_exts:
+            raise BusinessException(PARAM_ERROR, f"不支持的文件格式：{ext}，支持格式：{', '.join(allowed_exts)}")
+        return ext
+
+    @staticmethod
+    def generate_video_object_name(ext: str) -> str:
+        """生成视频文件的存储路径"""
+        type_dir = "video"
+        uuid_str = str(uuid.uuid4()).replace("-", "")
+        root = "materials"  # 视频库素材使用materials目录
+        return f"{root}/{type_dir}/{uuid_str[:2]}/{uuid_str[2:4]}/{uuid_str}.{ext}"
+
+    @staticmethod
+    def _normalize_title(title: Optional[str], fallback: str) -> str:
+        """标准化标题"""
+        final_title = (title or fallback).strip()
+        return final_title or fallback
+
+    @staticmethod
+    def _upload_fileobj(file_obj, object_name: str, content_type: Optional[str] = None) -> str:
+        """直接上传文件到存储，不降级"""
+        stream = getattr(file_obj, "file", file_obj)
+        if hasattr(stream, "seek"):
+            stream.seek(0)
+        return get_storage_client().upload_fileobj(stream, object_name, content_type)
+
+    @staticmethod
+    def get_path_after_baseurl(url: str, baseurl: str = "https://vidmuse.tos-cn-beijing.volces.com") -> str:
+        """从URL中提取存储路径"""
+        from urllib.parse import urlparse
+        if not url:
+            return ""
+        if url.startswith(baseurl):
+            return url[len(baseurl):].lstrip("/")
+        parsed = urlparse(url)
+        return parsed.path.lstrip("/")
+
+    def get_pipeline(self) -> Any:
+        """获取视频解析流水线
+        临时使用ProductParsingPipeline绕过VideoParsingPipeline内部问题，它本身支持视频解析
+        """
+        from backend.v1.app.pipeline.factory.pipeline_factory import PipelineFactory
+        return PipelineFactory.get_direct_video_pipeline()
+
+    def get_asset_id(self, db: Session, video_id: int) -> Optional[int]:
+        """根据视频ID获取关联的资产ID"""
+        # 注意：这里需要使用同步的DAO方法查询
+        from sqlalchemy import select
+        from backend.v1.app.admin.video_library.model.video_library import VideoLibrary
+
+        # 使用同步查询，只获取asset_id字段
+        result = db.execute(select(VideoLibrary.asset_id).where(VideoLibrary.id == video_id))
+        return result.scalar_one_or_none()
+
+    def _get_asset_sync(self, db: Session, asset_id: int) -> Optional[Any]:
+        """同步查询资产信息，绕过异步DAO"""
+        from sqlalchemy import select
+        from backend.v1.app.models.asset import Asset
+
+        result = db.execute(select(Asset).where(Asset.id == asset_id))
+        return result.scalar_one_or_none()
+
+    def _update_asset_sync(self, db: Session, asset_id: int, update_data: Dict[str, Any]) -> None:
+        """同步更新资产信息，绕过异步DAO"""
+        from sqlalchemy import update
+        from backend.v1.app.models.asset import Asset
+
+        stmt = update(Asset).where(Asset.id == asset_id).values(**update_data)
+        db.execute(stmt)
+        db.commit()
+
+    def sync_status(self, db: Session, video_id: int, asset: Any) -> None:
+        """同步资产状态到video_library表"""
+        from backend.v1.app.admin.video_library.model.video_library import VideoLibrary
+
+        # 使用同步更新
+        db.query(VideoLibrary).filter(VideoLibrary.id == video_id).update({
+            "execution_id": asset.execution_id,
+            "parsing_status": asset.parsing_status,
+            "parsing_error": asset.parsing_error
+        })
+        db.commit()
 
     @staticmethod
     async def get_video_list(
@@ -69,33 +185,47 @@ class VideoLibraryService:
         tags: Optional[List[str]] = None,
         trigger_ai_parse: bool = True,
     ) -> Dict[str, Any]:
-        """上传视频文件"""
+        """上传视频文件
+        完全独立实现，不再依赖AssetService
+        """
         try:
-            # 1. 复用AssetService的内部上传逻辑，统一处理文件验证、存储、资产创建
             sync_db = next(get_sync_db())
 
-            # 检测文件类型（虽然应该是视频，但复用统一逻辑）
-            asset_type = AssetService.detect_asset_type(file)
-            if asset_type != 2:  # 确保是视频类型
-                raise BusinessException(PARAM_ERROR, "只能上传视频文件")
+            # 1. 检测并验证视频文件
+            self.detect_video_type(file)  # 确保是视频类型
+            ext = self._validate_video_file(file)
 
-            # 上传内部资产，跳过自动解析，后面统一处理
-            asset_dict = await AssetService.upload_internal_asset(
-                db=sync_db,
-                file=file,
-                type=asset_type,
-                title=title or file.filename,
-                source_type=0,  # 内部上传
-                skip_ai_analysis=True  # 跳过自动解析，由视频库自己控制解析流程
-            )
+            # 2. 生成存储路径并上传文件
+            final_title = self._normalize_title(title, file.filename or "未命名视频")
+            object_name = self.generate_video_object_name(ext)
+            file_url = self._upload_fileobj(file.file, object_name, file.content_type)
 
-            # 2. 处理分类关联
+            # 3. 创建资产记录
+            asset_data = {
+                "user_id": None,  # 视频库资产没有特定所有者
+                "type": 2,  # 视频类型
+                "title": final_title,
+                "url": file_url,
+                "file_size": getattr(file, "size", None),
+                "duration": None,
+                "format": ext,
+                "ai_features": None,
+                "source_type": 0,  # 内部上传
+                "storage_key": object_name,
+                "upload_status": "completed",
+                "scope": {"type": "library"},
+                "parsing_status": "pending"  # 初始状态为待解析
+            }
+            asset = AssetDAO.create_asset(sync_db, asset_data)
+            asset_dict = asset.to_dict()
+
+            # 4. 处理分类关联
             video_data = {
-                "title": asset_dict["title"],
+                "title": final_title,
                 "description": description,
-                "url": asset_dict["url"],
-                "file_size": asset_dict["file_size"],
-                "format": asset_dict["format"],
+                "url": file_url,
+                "file_size": getattr(file, "size", None),
+                "format": ext,
                 "source_type": 0,  # 内部上传
                 "category": category,
                 "tags": tags,
@@ -115,34 +245,16 @@ class VideoLibraryService:
                 video_data["category"] = category_obj.name
                 video_data["category_path"] = category_obj.path
 
-            # 3. 创建视频库记录，关联资产ID
+            # 5. 创建视频库记录，关联资产ID
             video = await VideoLibraryDAO.create(
                 db,
                 **video_data
             )
 
-            # 4. 更新资产表的解析状态为pending
-            AssetDAO.update_asset(sync_db, asset_dict["id"], {
-                "parsing_status": "pending"
-            })
-
-            # 5. 根据trigger_ai_parse参数决定是否触发AI解析
+            # 6. 根据trigger_ai_parse参数决定是否触发AI解析
             if trigger_ai_parse:
-                # 复用AssetsService的解析逻辑，保持与资产模块完全统一
-                await AssetService._extract_ai_features(
-                    id=asset_dict["id"],
-                    asset_type=2,  # 视频类型
-                    asset_url=asset_dict["url"],
-                    db=sync_db
-                )
-
-                # 同步资产表的最新状态到视频库表
-                updated_asset = AssetDAO.get_asset_by_id(sync_db, asset_dict["id"])
-                await VideoLibraryDAO.update(db, video.id, {
-                    "execution_id": updated_asset.execution_id,
-                    "parsing_status": updated_asset.parsing_status,
-                    "parsing_error": updated_asset.parsing_error
-                })
+                # 使用VideoParsingPipeline触发解析
+                await self.trigger_parsing(db, video.id,force=True)
             else:
                 # 不触发AI解析，保持pending状态，用户可后续手动触发
                 logger.info(f"视频 {video.id} 上传完成，已跳过AI解析")
@@ -364,72 +476,207 @@ class VideoLibraryService:
             logger.error(f"查询视频切片失败: {str(e)}", exc_info=True)
             return []
 
-    @staticmethod
-    async def trigger_parsing(db: AsyncSession, video_id: int, force: bool = False) -> bool:
-        """手动触发视频解析"""
-        video = await VideoLibraryDAO.get_by_id(db, video_id)
-        if not video or not video.asset_id:
-            return False
+    async def trigger_parsing(self, db: AsyncSession, video_id: int, force: bool = False, context: Optional[Dict[str, Any]] = None) -> bool:
+        """手动触发视频解析，使用VideoParsingPipeline
+        独立实现，不依赖统一解析框架
+        """
+        import logging
+        logger = logging.getLogger(__name__)
 
+        # 获取同步数据库会话
+        sync_db = next(get_sync_db())
         try:
-            # 获取同步数据库会话
-            sync_db = next(get_sync_db())
+            logger.info(f"开始触发视频 {video_id} 的解析，force={force}")
 
-            # 获取资产信息
-            asset = AssetDAO.get_asset_by_id(sync_db, video.asset_id)
-            if not asset:
+            # 1. 先验证视频是否存在（异步DAO方法需要await）
+            video_exists = await VideoLibraryDAO.get_by_id(db, video_id)
+            if not video_exists:
+                logger.error(f"视频 {video_id} 不存在，无法触发解析")
                 return False
+            logger.info(f"视频 {video_id} 存在，准备查询关联资产")
 
-            # 复用AssetsService的解析逻辑，保持与资产模块完全统一
-            if not force and asset.parsing_status == "failed" and asset.execution_id:
-                # 失败的任务尝试重试（支持断点恢复）
-                await AssetService.retry_parsing(
-                    db=sync_db,
-                    asset_id=video.asset_id
-                )
-            else:
-                # 正常触发解析
-                await AssetService.parse_asset(
-                    db=sync_db,
-                    asset_id=video.asset_id,
-                    force=force
-                )
+            # 2. 获取关联的资产ID（使用已有的get_asset_id方法，同步查询）
+            asset_id = self.get_asset_id(sync_db, video_id)
+            if not asset_id:
+                logger.error(f"视频 {video_id} 未关联资产，无法触发解析，请检查video_library表的asset_id字段")
+                return False
+            logger.info(f"查询到关联资产ID: {asset_id}")
 
-            # 同步资产表的最新状态到视频库表
-            updated_asset = AssetDAO.get_asset_by_id(sync_db, video.asset_id)
-            await VideoLibraryDAO.update(db, video_id, {
-                "execution_id": updated_asset.execution_id,
-                "parsing_status": updated_asset.parsing_status,
-                "parsing_error": updated_asset.parsing_error
-            })
+            # 3. 使用同步SQL查询资产信息，绕过异步DAO的问题
+            asset = self._get_asset_sync(sync_db, asset_id)
+            if not asset:
+                logger.error(f"资产 {asset_id} 不存在于asset表中，无法触发解析")
+                return False
+            logger.info(f"找到资产: id={asset.id}, type={asset.type}, url={asset.url}, status={asset.parsing_status}")
 
+            # 3. 状态检查
+            if asset.parsing_status == "completed" and not force and asset.ai_features:
+                logger.info(f"资产 {asset_id} 已经解析完成，跳过解析（force={force}）")
+                return True
+
+            # 4. 如果有正在运行的解析任务，直接返回
+            if asset.parsing_status == "running" and not force:
+                logger.info(f"资产 {asset_id} 解析任务正在进行中，跳过重复触发")
+                return True
+
+            # ========== 改为异步任务调度 ==========
+            # 提交到Celery队列异步执行
+            from backend.v1.app.generate.tasks.celery_app import celery_app
+
+            # 构建任务参数
+            task_payload = {
+                "video_id": video_id,
+                "force": force,
+                "context": context
+            }
+
+            # 提交到视频分析队列
+            task = celery_app.send_task(
+                "video_analysis",
+                args=[task_payload],
+                kwargs={
+                    "user_id": None,  # 视频库解析任务不需要关联特定用户
+                    "trace_id": None
+                },
+                queue="video_analysis",
+                priority=3
+            )
+
+            # 更新状态为排队中
+            update_data = {
+                "parsing_status": "pending",
+                "execution_id": task.id,  # 使用Celery的task_id作为执行ID
+                "parsing_error": None
+            }
+
+            self._update_asset_sync(sync_db, asset_id, update_data)
+            updated_asset = self._get_asset_sync(sync_db, asset_id)
+            self.sync_status(sync_db, video_id, updated_asset)
+
+            logger.info(f"视频 {video_id} 解析任务已提交到队列，task_id={task.id}, asset_id={asset_id}")
             return True
 
         except Exception as e:
-            logger.error(f"触发视频解析失败: {str(e)}", exc_info=True)
+            logger.error(f"触发解析失败，video_id={video_id}: {str(e)}", exc_info=True)
             return False
+        finally:
+            sync_db.close()
 
-    @staticmethod
-    async def get_parsing_progress(db: AsyncSession, video_id: int) -> Optional[Dict[str, Any]]:
-        """查询视频解析进度"""
-        video = await VideoLibraryDAO.get_by_id(db, video_id)
-        if not video or not video.asset_id:
-            return None
-
+    async def get_parsing_progress(self, db: AsyncSession, video_id: int) -> Optional[Dict[str, Any]]:
+        """查询视频解析进度
+        独立实现，不依赖统一解析框架
+        """
+        # 获取同步数据库会话
+        sync_db = next(get_sync_db())
         try:
-            # 获取同步数据库会话
-            sync_db = next(get_sync_db())
+            # 1. 获取关联的资产ID
+            asset_id = self.get_asset_id(sync_db, video_id)
+            if not asset_id:
+                return None
 
-            # 复用AssetsService的进度查询逻辑
-            progress = AssetService.get_parsing_progress(
-                db=sync_db,
-                asset_id=video.asset_id
-            )
+            # 2. 获取资产基础信息
+            asset = self._get_asset_sync(sync_db, asset_id)
+            if not asset:
+                return None
 
-            # 添加视频ID到返回结果
-            progress["video_id"] = video_id
+            # 3. 基础信息
+            progress = {
+                "video_id": video_id,
+                "asset_id": asset_id,
+                "parsing_status": asset.parsing_status,
+                "execution_id": asset.execution_id,
+                "parsing_error": asset.parsing_error,
+                "updated_at": asset.updated_at.isoformat() + "Z" if asset.updated_at else None
+            }
+
+            # 4. 如果有execution_id，查询详细进度
+            if asset.execution_id:
+                try:
+                    # 先尝试查询Celery任务状态
+                    from celery.result import AsyncResult
+                    from backend.v1.app.generate.tasks.celery_app import celery_app
+
+                    celery_result = AsyncResult(asset.execution_id, app=celery_app)
+
+                    # 映射Celery状态
+                    status_mapping = {
+                        "PENDING": "pending",
+                        "STARTED": "running",
+                        "SUCCESS": "completed",
+                        "FAILURE": "failed",
+                        "REVOKED": "cancelled",
+                        "RETRY": "running"
+                    }
+
+                    celery_status = status_mapping.get(celery_result.status, "pending")
+
+                    # 如果Celery任务已经完成，尝试查询流水线的详细进度
+                    if celery_status == "completed" or celery_status == "failed":
+                        pipeline = self.get_pipeline()
+                        execution_status = pipeline.get_execution_status(asset.execution_id)
+                        if execution_status:
+                            progress["progress_detail"] = {
+                                "current_processor": execution_status["current_processor_index"] + 1,
+                                "total_processors": execution_status["total_processors"],
+                                "progress_percent": round((execution_status["current_processor_index"] + 1) / execution_status["total_processors"] * 100, 2) if execution_status["total_processors"] > 0 else 0,
+                                "status": execution_status["status"],
+                                "created_at": execution_status["created_at"],
+                                "updated_at": execution_status["updated_at"]
+                            }
+                    else:
+                        # Celery任务还在队列中或执行中
+                        progress["progress_detail"] = {
+                            "status": celery_status,
+                            "progress_percent": 0 if celery_status == "pending" else 50,
+                            "message": "任务排队中" if celery_status == "pending" else "任务执行中"
+                        }
+
+                except Exception as e:
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"查询详细进度失败: {str(e)}")
+
             return progress
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"查询解析进度失败，video_id={video_id}: {str(e)}", exc_info=True)
+            return None
+        finally:
+            sync_db.close()
+
+    async def retry_parsing(self, db: AsyncSession, video_id: int) -> bool:
+        """重试失败的视频解析
+        独立实现，不依赖统一解析框架
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
+        # 获取同步数据库会话
+        sync_db = next(get_sync_db())
+        try:
+            # 获取关联的资产ID
+            asset_id = self.get_asset_id(sync_db, video_id)
+            if not asset_id:
+                logger.warning(f"视频 {video_id} 未关联资产，无法重试解析")
+                return False
+
+            # 获取资产信息
+            asset = self._get_asset_sync(sync_db, asset_id)
+            if not asset:
+                logger.warning(f"资产 {asset_id} 不存在，无法重试解析")
+                return False
+
+            # 只有失败的任务可以重试
+            if asset.parsing_status not in ["failed", None]:
+                logger.warning(f"资产 {asset_id} 状态为 {asset.parsing_status}，不需要重试")
+                return False
+
+            # 强制重新解析
+            return await self.trigger_parsing(db, video_id, force=True)
 
         except Exception as e:
-            logger.error(f"查询视频解析进度失败: {str(e)}", exc_info=True)
-            return None
+            logger.error(f"重试解析失败，video_id={video_id}: {str(e)}", exc_info=True)
+            return False
+        finally:
+            sync_db.close()
