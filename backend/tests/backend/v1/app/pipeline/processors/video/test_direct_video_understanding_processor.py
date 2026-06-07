@@ -173,7 +173,15 @@ def test_direct_video_understanding_processor_video_url_compatibility():
                 "duration": 60
             }
         },
-        "slices": []
+        "slices": [
+            {
+                "creative_elements": {
+                    "start_time": 0,
+                    "end_time": 10,
+                    "script": "测试台词"
+                }
+            }
+        ]
     })
     # 使用AsyncMock来模拟异步方法
     mock_llm.video_understanding = AsyncMock(return_value=mock_response)
@@ -199,3 +207,5 @@ def test_direct_video_understanding_processor_video_url_compatibility():
     result2 = processor.process(context2)
     assert not result2.has_errors()
     assert result2.get(constants.VIDEO_DATA)["video_id"] == "test_vid_456"
+
+

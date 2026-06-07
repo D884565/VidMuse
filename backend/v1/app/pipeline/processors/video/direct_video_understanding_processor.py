@@ -147,6 +147,15 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
             logger.warning(f"slices字段不是列表类型，重置为空列表: {type(slice_data)}")
             slice_data = []
 
+        # 检查slices是否为空，业务上视频至少应该有一个分片
+        if not slice_data:
+            error_msg = f"大模型返回的slices字段为空列表，无法进行后续处理。原始结果: {json.dumps(result, ensure_ascii=False, default=str)[:1000]}..."
+            logger.error(error_msg)
+            context.add_error(ValueError(error_msg))
+            return context
+
+        logger.info(f"从大模型结果中获取到 {len(slice_data)} 个视频分片")
+
         # 补充必要字段，确保与现有格式兼容
         video_data["video_id"] = video_id
         video_data["video_duration"] = video_duration
@@ -225,9 +234,21 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
         context.set(constants.AI_FEATURES, ai_features)
         context.set("product_data", ai_features)  # 兼容AssetPersistProcessor
 
-        # 调试日志：输出关键数据的类型
-        logger.debug(f"ai_features类型: {type(ai_features)}, video_info类型: {type(video_data)}, slices类型: {type(understood_slices)}")
+        # 调试日志：输出关键数据的类型和上下文键信息
+        logger.debug(f"ai_features类型: {type(ai_features)}, video_info类型: {type(video_data)}, slices类型: {type(understood_slices)}, 长度: {len(understood_slices)}")
         logger.debug(f"product_data设置完成，类型: {type(context.get('product_data'))}")
+        logger.debug(f"上下文已设置键: {list(context.data.keys())}")
+        logger.debug(f"constants.SLICE_DATA = '{constants.SLICE_DATA}', 对应的值类型: {type(context.get(constants.SLICE_DATA))}, 长度: {len(context.get(constants.SLICE_DATA, []))}")
+
+        # 安全校验：确保slice_data确实被正确设置
+        stored_slice_data = context.get(constants.SLICE_DATA)
+        if not stored_slice_data or not isinstance(stored_slice_data, list) or len(stored_slice_data) == 0:
+            error_msg = f"设置{constants.SLICE_DATA}失败，存储后的值为空或不是列表: {stored_slice_data}"
+            logger.error(error_msg)
+            context.add_error(ValueError(error_msg))
+            return context
+
+        logger.info(f"成功设置{constants.SLICE_DATA}，包含{len(stored_slice_data)}个分片")
 
         # 记录处理统计
         context.metadata["direct_video_processing"] = {
