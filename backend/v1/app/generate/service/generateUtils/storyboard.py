@@ -10,7 +10,7 @@ from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
 from backend.v1.app.models.script import Script
 from backend.v1.app.generate.service.workflow.state import generation_workflow_service
-from backend.v1.app.generate.service.workflow.limits import validate_total_frame_duration
+from backend.v1.app.generate.service.workflow.limits import validate_total_frame_duration, normalize_target_duration
 
 # 允许前端通过 PATCH 接口修改的帧字段
 EDITABLE_FRAME_FIELDS = {
@@ -80,10 +80,22 @@ class StoryboardService:
             project = await db.get(Project, project_id)
             duration_result = await db.execute(select(Frame).where(Frame.project_id == project_id))
             frames = list(duration_result.scalars().all())
-            validate_total_frame_duration(
-                [item.duration for item in frames],
-                target_duration=project.target_duration if project else None,
-            )
+            # 总时长校验，溢出则返回警告而不是抛异常
+            durations = [float(item.duration or 0) for item in frames]
+            total = sum(durations)
+            limit = normalize_target_duration(project.target_duration if project else 15)
+            if total > limit:
+                await db.flush()
+                return {
+                    "warning": "total_duration_overflow",
+                    "message": f"分镜总时长 {total:.1f} 秒超过目标 {limit} 秒",
+                    "suggestions": [
+                        {"action": "auto_balance", "label": "自动平衡其他分镜"},
+                        {"action": "keep_as_is", "label": "保持原样（保存后可手动调整）"},
+                    ],
+                    "requires_confirmation": True,
+                    "frame": self._frame_to_dict(frame),
+                }
             self._sync_legacy_fields(frame)
             frame.dirty = 1  # 标记帧已被手动编辑
             frame.last_edited_at = datetime.utcnow()
