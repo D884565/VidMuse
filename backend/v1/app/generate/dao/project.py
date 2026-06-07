@@ -22,7 +22,7 @@ class ProjectCreate(ProjectBase):
     key_points: list[str] = Field(default_factory=list)
     avoid: list[str] = Field(default_factory=list)
     rag_weight: float = 0.3
-    target_duration: int = 15
+    target_duration: int = Field(default=15, ge=10, le=25)
     voice_type: str = "zh_female_cancan_mars_bigtts"
 
 
