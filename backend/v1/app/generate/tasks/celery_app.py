@@ -6,7 +6,7 @@ from celery.schedules import crontab
 from backend.v1.app.config.config import settings
 from backend.framework.trace.context import trace_id_var, set_user_id, start_span, end_span, get_all_spans, clear_context
 from backend.framework.trace.dao import save_trace_data
-from backend.framework.trace.decorator import PushConfig
+from backend.framework.trace.decorator import PushConfig, trace
 
 celery_app = Celery(
     "vidmuse",
@@ -125,3 +125,29 @@ celery_app.conf.beat_schedule = {
         'options': {'queue': 'scheduled_clustering'}
     },
 }
+
+
+@celery_app.task(base=BaseTask, rate_limit='5/m', name='video_analysis')
+@trace(push_config=TASK_PUSH_CONFIG)
+def video_analysis_task(payload, user_id=None, trace_id=None):
+    """
+    爆款视频解析任务（DirectVideoParsingPipeline）
+    异步执行视频URL解析，自动推送状态和结果
+    """
+    from backend.v1.app.pipeline.pipelines.direct_video_parsing_pipeline import DirectVideoParsingPipeline
+
+    # 创建流水线实例
+    pipeline = DirectVideoParsingPipeline(
+        enable_vectorization=payload.get('enable_vectorization', True),
+        enable_persistence=payload.get('enable_persistence', True)
+    )
+
+    # 组装输入参数
+    input_data = payload.copy()
+    if user_id:
+        input_data['user_id'] = user_id
+
+    # 运行流水线
+    result = pipeline.run_with_persistence(input_data)
+
+    return result
