@@ -25,11 +25,12 @@ from backend.v1.app.push.controller.websocket_controller import router as ws_rou
 from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.video.controller.video import router as video_router
+from backend.v1.app.task_scheduler.controller.task_controller import router as task_router
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.assets.controller.asset_controller import router as asset_router
-from backend.v1.app.script.controller import router as script_router
+from backend.v1.app.script.controller.script_controller import router as script_router
 
 from fastapi import Request, Depends
 from typing import Annotated
@@ -69,6 +70,7 @@ app.include_router(trace_management_router, prefix="/v1")
 app.include_router(inspiration_template_router, prefix="/v1")
 app.include_router(ws_router, prefix="/v1")
 app.include_router(message_router, prefix="/v1")
+app.include_router(task_router)
 
 security = HTTPBearer()
 
