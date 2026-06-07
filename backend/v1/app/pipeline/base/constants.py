@@ -10,6 +10,7 @@ SOURCE_ID = "source_id"
 OBJECT_NAME = "object_name"
 IMAGE_SET_ID = "image_set_id"
 SLICE_ID = "slice_id"
+VIDEO_URL = "video_file"  # 兼容旧代码，VIDEO_URL是VIDEO_FILE的别名
 
 # 视频拆分处理器输出
 SLICE_COUNT = "count"

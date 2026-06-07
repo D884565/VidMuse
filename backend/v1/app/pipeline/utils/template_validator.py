@@ -30,6 +30,7 @@ PROMPT_TYPE_MAP = {
     "slice_understanding": "slice_understanding.txt",
     "video_overall_understanding": "video_overall_understanding.txt",
     "product_understanding": "product_understanding.txt",
+    "direct_video_understanding": "direct_video_understanding.txt",
     "extract_common_factors": "extract_common_factors.txt",
     "generate_strategy": "generate_strategy.txt",
     "extract_video_common_features": "extract_video_common_features.txt",

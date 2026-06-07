@@ -81,9 +81,14 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
 
         # 构建大模型请求
         try:
+            # 格式化提示词，注入动态参数
+            formatted_prompt = self.prompt_template.format(
+                video_url=video_url,
+                video_duration=video_duration // 1000 if video_duration else 0
+            )
             response = self.run_async(self.llm_client.video_understanding(VideoUnderstandingRequest(
                 video_url=video_url,
-                prompt=self.prompt_template,
+                prompt=formatted_prompt,
                 max_tokens=16384,  # 增大token限制，避免JSON被截断
                 temperature=0.7,
                 top_p=0.9

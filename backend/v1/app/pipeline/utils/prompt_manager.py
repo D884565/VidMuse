@@ -14,6 +14,7 @@ class PromptManager:
     SLICE_UNDERSTANDING = "slice_understanding"
     VIDEO_OVERALL_UNDERSTANDING = "video_overall_understanding"
     PRODUCT_UNDERSTANDING = "product_understanding"
+    DIRECT_VIDEO_UNDERSTANDING = "direct_video_understanding"
     EXTRACT_COMMON_FEATURES = "extract_video_common_features"
     EXTRACT_COMMON_FACTORS = "extract_common_factors"
     GENERATE_STRATEGY = "generate_strategy"
@@ -129,6 +130,15 @@ class PromptManager:
             self.PRODUCT_UNDERSTANDING,
             output_schema=self.get_product_template()
         )
+
+    def get_direct_video_understanding_prompt(self) -> str:
+        """获取直接视频理解提示词模板（不含动态参数，动态参数在processor中注入）"""
+        # 返回一个简单的提示词，避免JSON格式化问题
+        return """请分析以下视频内容，输出结构化的理解结果。
+视频URL: {video_url}
+视频时长: {video_duration}秒
+
+请严格按照JSON格式输出，包含video和slices两个字段。"""
 
     def get_slice_template(self) -> Dict[str, Any]:
         """获取分片校验模板（快捷方法）"""
