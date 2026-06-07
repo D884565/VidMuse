@@ -50,12 +50,25 @@ def apply_frame_modifications(frame, modifications: dict) -> None:
             setattr(frame, field, value)
         elif field == "duration" and value is not None:
             try:
-                frame.duration = max(4.0, float(value))
+                frame.duration = max(1.0, float(value))
             except (TypeError, ValueError):
                 pass
 
     if "description" in modifications and not explicit_image_prompt:
         frame.image_prompt = modifications["description"]
+
+    # 旁白溢出检测：预估 TTS 时长，溢出则写入 ai_params 警告
+    if "narration" in modifications and modifications["narration"]:
+        estimated = len(modifications["narration"]) / 3
+        dur = float(frame.duration or 5)
+        if estimated > dur * 1.5:
+            ai_params = dict(frame.ai_params or {})
+            ai_params["tts_overflow_warning"] = {
+                "narration_chars": len(modifications["narration"]),
+                "estimated_seconds": round(estimated),
+                "duration": dur,
+            }
+            frame.ai_params = ai_params
 
 
 class ChatService:
@@ -117,7 +130,7 @@ class ChatService:
         pending_action = None
 
         if plan["action"] == "GENERATE_SCRIPT":
-            task_result, blocks = await self._generate_script_from_chat(db, project, project_id)
+            task_result, blocks = await self._generate_script_from_chat(db, project, project_id, metadata=metadata)
             plan["assistant_content"] = (
                 "风格和分镜方案已经就位，下面是剧本与画面方案。"
                 "你先看一下节奏、卖点和每个镜头的画面方向；如果没问题，回复「继续」或「可以生成图片」，我就开始生成首帧图片。"
@@ -346,7 +359,7 @@ class ChatService:
         pending_action = None
 
         if action == "GENERATE_SCRIPT":
-            task_result, blocks = await self._generate_script_from_chat(db, project, project_id)
+            task_result, blocks = await self._generate_script_from_chat(db, project, project_id, metadata=metadata)
         elif action == "CONFIRM_AND_ADVANCE":
             task_result, blocks = await self._handle_confirm_and_advance(db, project, project_id)
         elif action == "GENERATE_IMAGES":
@@ -595,7 +608,9 @@ class ChatService:
         frame_ids: list[int],
         modifications: dict,
     ) -> tuple[list[dict], list[dict]]:
-        """处理 EDIT_FRAME 动作：修改分镜字段并返回 frame_editor blocks。"""
+        """处理 EDIT_FRAME 动作：修改分镜字段并返回 frame_editor blocks。
+        如果修改了影响图片的字段且工作流已过 script 阶段，自动触发图片重生成。
+        """
         if not frame_ids or not modifications:
             return [], []
 
@@ -604,6 +619,11 @@ class ChatService:
         updated = []
         blocks = []
 
+        # 判断是否修改了影响图片的字段
+        image_affecting_fields = {"description", "image_prompt"}
+        affects_image = bool(image_affecting_fields & set(modifications.keys()))
+        should_regen_image = affects_image and project.workflow_stage in ("image", "video", "completed")
+
         for frame in frames:
             apply_frame_modifications(frame, modifications)
             frame.dirty = 1
@@ -611,14 +631,32 @@ class ChatService:
             blocks.append(build_frame_editor_block(frame))
 
         # 修改分镜后回退工作流状态
-        if project.workflow_stage == "completed":
-            generation_workflow_service.invalidate_from(project, "video")
-        elif project.workflow_stage in ("video", "image"):
-            generation_workflow_service.invalidate_from(project, "image")
+        # 如果需要重生成图片，由 _mark_frames_for_image_regeneration 统一处理失效
+        if not should_regen_image:
+            if project.workflow_stage == "completed":
+                generation_workflow_service.invalidate_from(project, "video")
+            elif project.workflow_stage in ("video", "image"):
+                generation_workflow_service.invalidate_from(project, "image")
+            else:
+                generation_workflow_service.invalidate_from(project, "script")
+            await db.commit()
         else:
-            generation_workflow_service.invalidate_from(project, "script")
+            await db.flush()
+            # 如果项目已完成，先失效视频阶段，再由图片重生成处理 image 阶段失效
+            if project.workflow_stage == "completed":
+                generation_workflow_service.invalidate_from(project, "video")
+            # 自动触发图片重生成（内部会处理工作流失效和 commit）
+            instruction = "剧本修改后自动重生成图片"
+            _, task_result = await self._submit_frame_image_regeneration_tasks(
+                db, project, frame_ids, instruction
+            )
+            blocks.append(build_progress_block(
+                "image",
+                "running",
+                task_result.get("task_id"),
+                "剧本已修改，对应图片正在重新生成。",
+            ))
 
-        await db.commit()
         return updated, blocks
 
     async def _handle_change_bgm(
@@ -688,12 +726,17 @@ class ChatService:
         db: AsyncSession,
         project: Project,
         project_id: int,
+        metadata: dict | None = None,
     ) -> tuple[dict, list[dict]]:
         task = await generation_task_service.create_task(db, project_id, "script", status="running")
         try:
             project_workflow_state.mark_project_stage_running(project, "script", task.id)
             await db.commit()
-            frames = await script_generation_service.generate_script(db, project_id)
+            local_refs = (metadata or {}).get("local_references") or []
+            frames = await script_generation_service.generate_script(
+                db, project_id,
+                local_references=local_refs,
+            )
             generation_workflow_service.mark_stage_review(project, "script", task.id)
             task.status = "succeeded"
             task.progress = 100
@@ -781,6 +824,15 @@ class ChatService:
         sent = celery_app.send_task("generate_project_tts_task", args=[project_id, task.id])
         await generation_task_service.set_celery_task_id(db, task.id, sent.id)
         return {"task_id": task.id, "status": "queued"}
+
+    async def submit_project_tts_regeneration_task(
+        self,
+        db: AsyncSession,
+        project_id: int,
+    ) -> dict:
+        """Public entrypoint for detail-page project TTS regeneration."""
+        project = await self._get_project(db, project_id)
+        return await self._submit_project_tts_regeneration_task(db, project, project_id)
 
     async def _submit_project_regeneration(
         self,
