@@ -152,3 +152,43 @@ def test_direct_video_understanding_processor_json_parse_error():
     result_context = processor.process(context)
     assert result_context.has_errors()
     assert "parse failed" in str(result_context.get_errors()[0])
+
+
+def test_direct_video_understanding_processor_video_url_compatibility():
+    """测试video_url参数兼容性，支持video_url和video_file两种键名"""
+    # Mock LLM客户端
+    mock_llm = Mock()
+    mock_response = Mock()
+    mock_response.content = json.dumps({
+        "video": {
+            "视频基本信息": {
+                "title": "测试视频",
+                "duration": 60
+            }
+        },
+        "slices": []
+    })
+    # 使用AsyncMock来模拟异步方法
+    mock_llm.video_understanding = AsyncMock(return_value=mock_response)
+
+    processor = DirectVideoUnderstandingProcessor(llm_client=mock_llm)
+
+    # 测试1：使用video_url键
+    context1 = PipelineContext({
+        "video_url": "https://example.com/test1.mp4",
+        constants.VIDEO_ID: "test_vid_123",
+        "asset_id": 123
+    })
+    result1 = processor.process(context1)
+    assert not result1.has_errors()
+    assert result1.get(constants.VIDEO_DATA)["video_id"] == "test_vid_123"
+
+    # 测试2：使用video_file键（即constants.VIDEO_URL在实际代码中的值）
+    context2 = PipelineContext({
+        "video_file": "https://example.com/test2.mp4",
+        constants.VIDEO_ID: "test_vid_456",
+        "asset_id": 456
+    })
+    result2 = processor.process(context2)
+    assert not result2.has_errors()
+    assert result2.get(constants.VIDEO_DATA)["video_id"] == "test_vid_456"

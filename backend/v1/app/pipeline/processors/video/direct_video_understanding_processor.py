@@ -67,7 +67,8 @@ class DirectVideoUnderstandingProcessor(BaseProcessor):
         :return: 修改后的上下文，包含大模型理解结果
         """
         # 从上下文获取必要参数
-        video_url = context.get(constants.VIDEO_URL)
+        # 兼容多种键名：优先使用video_url，其次是video_file，最后是constants.VIDEO_URL
+        video_url = context.get("video_url") or context.get("video_file") or context.get(constants.VIDEO_URL)
         video_id = context.get(constants.VIDEO_ID)
         asset_id = context.get("asset_id")
         video_duration = context.get("video_duration", 0)
