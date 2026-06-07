@@ -132,24 +132,14 @@ class PromptManager:
         )
 
     def get_direct_video_understanding_prompt(self, video_url: str, video_duration: int = 0) -> str:
-        """获取直接视频理解提示词，自动注入完整的输出schema和动态参数
+        """获取直接视频理解提示词，包含完整的格式示例和动态参数
 
         Args:
             video_url: 视频URL
             video_duration: 视频时长（毫秒），会自动转换为秒
         """
-        # 构建完整的输出schema，包含video和slices的完整结构
-        output_schema = {
-            "video": self.get_video_template(),
-            "slices": {
-                "type": "array",
-                "items": self.get_slice_template()
-            }
-        }
-
         return self.get_prompt(
             self.DIRECT_VIDEO_UNDERSTANDING,
-            output_schema=output_schema,
             video_url=video_url,
             video_duration=video_duration // 1000 if video_duration else 0
         )
