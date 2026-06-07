@@ -624,9 +624,18 @@ class ChatService:
         affects_image = bool(image_affecting_fields & set(modifications.keys()))
         should_regen_image = affects_image and project.workflow_stage in ("image", "video", "completed")
 
+        # narration 修改标记 TTS dirty
+        narration_affecting_fields = {"narration"}
+        affects_narration = bool(narration_affecting_fields & set(modifications.keys()))
+
         for frame in frames:
             apply_frame_modifications(frame, modifications)
             frame.dirty = 1
+            # narration 修改且已过 script 阶段，标记 TTS dirty
+            if affects_narration and project.workflow_stage in ("video", "completed"):
+                ai_params = dict(frame.ai_params or {})
+                ai_params["tts_dirty"] = True
+                frame.ai_params = ai_params
             updated.append({"frame_id": frame.id, "sequence": frame.sequence})
             blocks.append(build_frame_editor_block(frame))
 
