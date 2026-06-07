@@ -647,7 +647,9 @@ class ScriptGenerationService:
 
         # === 组装完整 prompt ===
         prompt_parts = [
-            f"你是一个专业的带货视频编剧，擅长创作短视频带货剧本。请根据以下信息，生成一个约{target_duration}秒的带货短视频剧本。\n",
+            f"你是一个专业的带货视频编剧，擅长创作短视频带货剧本。"
+            f"请根据以下信息，生成一个约 {target_duration} 秒的带货短视频剧本。"
+            f"共 3-5 个场景，每个场景 3-8 秒。\n",
             core_text,
         ]
 
