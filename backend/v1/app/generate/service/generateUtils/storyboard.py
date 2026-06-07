@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.v1.app.models.frame import Frame
@@ -63,16 +63,18 @@ class StoryboardService:
 
         # 只更新白名单内的字段
         changed = False
+        changed_fields: set[str] = set()
         for field, value in patch.items():
             if field not in EDITABLE_FRAME_FIELDS:
                 continue
             if field == "duration":
                 try:
-                    value = max(4.0, float(value))
+                    value = max(1.0, float(value))
                 except (TypeError, ValueError):
                     continue
             setattr(frame, field, value)
             changed = True
+            changed_fields.add(field)
 
         if changed:
             project = await db.get(Project, project_id)
@@ -85,9 +87,30 @@ class StoryboardService:
             self._sync_legacy_fields(frame)
             frame.dirty = 1  # 标记帧已被手动编辑
             frame.last_edited_at = datetime.utcnow()
-            # 编辑后将项目状态置为"待审核"，需重新渲染才能生效
+            # 旁白溢出检测
+            if "narration" in changed_fields and frame.narration:
+                estimated_seconds = len(frame.narration) / 3
+                current_duration = float(frame.duration or 5)
+                if estimated_seconds > current_duration * 1.5:
+                    await db.flush()
+                    return {
+                        "warning": "narration_overflow",
+                        "message": (
+                            f"旁白约 {len(frame.narration)} 字，需要 {estimated_seconds:.0f} 秒，"
+                            f"当前分镜只有 {current_duration} 秒"
+                        ),
+                        "suggestions": [
+                            {"action": "extend_duration", "label": "延长分镜时长", "new_duration": round(estimated_seconds)},
+                            {"action": "trim_narration", "label": "精简旁白", "target_chars": int(current_duration * 3)},
+                            {"action": "keep_as_is", "label": "保持原样（生成时截断）"},
+                        ],
+                        "requires_confirmation": True,
+                        "frame": self._frame_to_dict(frame),
+                    }
+            dirty_stage = self._infer_dirty_stage(changed_fields)
             if project:
-                generation_workflow_service.invalidate_from(project, "script")
+                generation_workflow_service.invalidate_from(project, dirty_stage)
+            await self._sync_project_script_snapshot(db, project, frames)
             await db.commit()
             await db.refresh(frame)
 
@@ -104,6 +127,124 @@ class StoryboardService:
         if frame.subtitle_position is not None:
             ai_params["overlay_position"] = frame.subtitle_position
         frame.ai_params = ai_params
+
+    def _infer_dirty_stage(self, changed_fields: set[str]) -> str:
+        """Infer the earliest invalid workflow stage from edited frame fields."""
+        if not changed_fields:
+            return "script"
+        if "sequence" in changed_fields:
+            return "script"
+        if "image_prompt" in changed_fields:
+            return "image"
+        if "video_prompt" in changed_fields or "duration" in changed_fields:
+            return "video"
+        if (
+            "narration" in changed_fields
+            or "subtitle_text" in changed_fields
+            or "subtitle_position" in changed_fields
+        ):
+            return "video"
+        return "script"
+
+    async def _sync_project_script_snapshot(
+        self,
+        db: AsyncSession,
+        project: Project | None,
+        frames: list[Frame],
+    ) -> Script | None:
+        """Persist a latest script snapshot derived from current frame values."""
+        if not project:
+            return None
+
+        latest_result = await db.execute(
+            select(Script)
+            .where(Script.project_id == project.id)
+            .order_by(Script.version.desc())
+            .limit(1)
+        )
+        latest_script = latest_result.scalar_one_or_none()
+        if not latest_script:
+            return None
+
+        version_result = await db.execute(
+            select(func.max(Script.version)).where(Script.project_id == project.id)
+        )
+        max_version = version_result.scalar_one() or latest_script.version or 1
+        next_version = int(max_version) + 1
+
+        ordered_frames = sorted(frames, key=lambda item: (item.sequence or 0, item.id or 0))
+        content = self._build_script_content_from_frames(project, latest_script.content or {}, ordered_frames)
+        new_script = Script(
+            project_id=project.id,
+            version=next_version,
+            status="active",
+            generation_mode="storyboard_edit",
+            template_id=latest_script.template_id,
+            strategy_id=latest_script.strategy_id,
+            used_factors=latest_script.used_factors,
+            template_params=latest_script.template_params,
+            prompt_snapshot={
+                **(latest_script.prompt_snapshot or {}),
+                "source": "storyboard_edit",
+                "updated_at": datetime.utcnow().isoformat(),
+            },
+            rag_snapshot=latest_script.rag_snapshot,
+            content=content,
+            parent_id=latest_script.id,
+        )
+        db.add(new_script)
+        await db.flush()
+        for item in ordered_frames:
+            item.script_id = new_script.id
+        return new_script
+
+    def _build_script_content_from_frames(
+        self,
+        project: Project,
+        latest_content: dict[str, Any],
+        frames: list[Frame],
+    ) -> dict[str, Any]:
+        """Rebuild editable script content from current frame values."""
+        video_meta = dict((latest_content or {}).get("video_meta") or {})
+        if project.title:
+            video_meta.setdefault("product_name", project.title)
+        if project.target_duration:
+            video_meta["target_duration"] = project.target_duration
+        if project.style:
+            video_meta.setdefault("style", project.style)
+
+        audio = dict((latest_content or {}).get("audio") or {})
+        if project.voice_type:
+            audio["tts_voice"] = project.voice_type
+
+        scenes = []
+        for index, frame in enumerate(frames, 1):
+            ai_params = dict(frame.ai_params or {})
+            metadata = dict(frame.metadata_ or {})
+            scenes.append({
+                "scene_id": index,
+                "type": metadata.get("scene_type_str") or "",
+                "duration": float(frame.duration) if isinstance(frame.duration, Decimal) else frame.duration,
+                "text": frame.narration or "",
+                "voice_style": ai_params.get("voice_style", ""),
+                "visual": {
+                    "image_prompt": frame.image_prompt or frame.description or "",
+                    "video_prompt": frame.video_prompt or frame.prompt or "",
+                    "camera": ai_params.get("camera", ""),
+                    "mood": ai_params.get("mood", ""),
+                    "overlay": {
+                        "text": frame.subtitle_text or frame.text_overlay or "",
+                        "position": frame.subtitle_position or ai_params.get("overlay_position", "bottom"),
+                        "style": ai_params.get("overlay_style", "highlight"),
+                    },
+                },
+            })
+
+        return {
+            "video_meta": video_meta,
+            "scenes": scenes,
+            "audio": audio,
+        }
 
     def _script_to_dict(self, script: Script, *, include_content: bool) -> dict[str, Any]:
         """将 Script 模型转为字典。include_content=False 时省略 LLM 输出等大字段。"""
