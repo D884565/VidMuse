@@ -2,10 +2,13 @@ from typing import Dict, List, Union
 import asyncio
 import inspect
 import json
+import logging
 
 from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
-from backend.v1.app.pipeline.utils import load_prompt
+from backend.v1.app.pipeline.utils import prompt_manager
 from backend.providers import VolcanoLLM, ImageUnderstandingRequest
+
+logger = logging.getLogger(__name__)
 from backend.providers.dto.schema import (
     ChatRequest,
     ChatMessage,
@@ -28,7 +31,8 @@ class ProductUnderstandingProcessor(BaseProcessor):
         :param llm_client: 大模型客户端，默认使用VolcanoLLM
         """
         self.llm_client = llm_client or VolcanoLLM(key=None, model_name=None)
-        self.prompt_template = load_prompt("product_understanding")
+        # 使用prompt_manager获取包含完整schema的提示词
+        self.prompt_template = prompt_manager.get_product_understanding_prompt()
 
     def _run_async(self, coro):
         """
@@ -73,13 +77,23 @@ class ProductUnderstandingProcessor(BaseProcessor):
         if not description and not images:
             raise ValueError("multimodal_content is required in context")
 
+        # 处理图片列表
+        image_url = None
+        if images:
+            if isinstance(images, list):
+                if len(images) > 1:
+                    logger.warning(f"检测到{len(images)}张图片，当前版本仅支持处理第一张图片，其余图片将被忽略")
+                image_url = images[0]
+            else:
+                image_url = images
+
         # 构建大模型请求，将提示词模板与用户描述结合
         prompt = f"{self.prompt_template}\n\n商品描述：{description}" if description else self.prompt_template
         request = ImageUnderstandingRequest(
             prompt=prompt,
-            image_url=images[0] if isinstance(images, list) else images,
-            max_tokens=1024,
-            temperature=0.7,
+            image_url=image_url,
+            max_tokens=8192,  # 增大token限制，容纳完整的商品信息结构
+            temperature=0.1,  # 降低温度，确保输出格式稳定
             top_p=0.9,
             model="_llama2_7b_chat_v2",
         )
