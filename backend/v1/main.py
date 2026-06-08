@@ -10,6 +10,7 @@ from backend.framework.trace import TraceMiddleware
 from backend.framework.web.exception_handler import register_exception_handlers
 from backend.framework.web.response import Response
 from backend.v1.app.admin.inspiration_template.controller.inspiration_controller import router as inspiration_template_router
+from backend.v1.app.admin.pipeline.controller.pipeline_controller import router as pipeline_router
 from backend.v1.app.admin.rag_trace.controller.trace_controller import router as agent_trace_router
 from backend.v1.app.admin.trace_management.controller.trace_management_controller import router as trace_management_router
 from backend.v1.app.admin.video_library.controller.video_library_controller import router as video_library_router
@@ -68,6 +69,7 @@ app.include_router(script_router, prefix="/v1")
 app.include_router(video_library_router, prefix="/v1")
 app.include_router(trace_management_router, prefix="/v1")
 app.include_router(inspiration_template_router, prefix="/v1")
+app.include_router(pipeline_router, prefix="/v1")
 app.include_router(ws_router, prefix="/v1")
 app.include_router(message_router, prefix="/v1")
 app.include_router(task_router)
