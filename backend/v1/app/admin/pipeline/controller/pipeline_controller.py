@@ -73,7 +73,8 @@ async def retry_pipeline(
     db: AsyncSession = Depends(get_db),
     current_user_id: int = Depends(admin_required),
 ):
-    success = await pipeline_service.retry_pipeline(db, execution_id)
+    force = request.force if request else False
+    success = await pipeline_service.retry_pipeline(db, execution_id, force)
     if success:
         return Response.success(message="流水线已提交重试")
     return Response.error(message="重试失败")
