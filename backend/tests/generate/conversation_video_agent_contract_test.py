@@ -204,6 +204,24 @@ def test_entry_chat_stream_uses_intent_service_for_conversation():
     assert "intent_service.stream_entry_converse" in route_section
 
 
+def test_image_generation_prompt_includes_hard_price_revision_constraints():
+    frame = SimpleNamespace(
+        description="保温杯放在左侧，右侧是醒目的99元价格牌",
+        image_prompt="保温杯放在左侧，右侧是醒目的99元价格牌",
+        ai_params={
+            "image_revision_instruction": "将画面中的价格改为99元，旁白不变",
+            "price_revision_target": "99元",
+            "price_revision_original": "39.9",
+        },
+    )
+
+    prompt = resolve_image_generation_prompt(frame)
+
+    assert "99元" in prompt
+    assert "MUST render the visible price text as 99元" in prompt
+    assert "Do not render 39.9" in prompt
+
+
 def test_chat_service_uses_intent_service_not_legacy_agents():
     chat_source = Path("backend/v1/app/generate/service/chat/chat_service.py").read_text(encoding="utf-8")
 

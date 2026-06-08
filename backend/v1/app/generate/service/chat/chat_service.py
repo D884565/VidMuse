@@ -43,7 +43,28 @@ PROJECT_REGENERATION_ACTIONS = {
 PRICE_TEXT_FIELDS = ("description", "narration", "image_prompt", "subtitle_text", "text_overlay")
 
 
+def _extract_numeric_price_tokens(price_text: str) -> list[str]:
+    tokens: list[str] = []
+    current = ""
+    for char in str(price_text or ""):
+        if char.isdigit() or char == ".":
+            current += char
+            continue
+        if current:
+            tokens.append(current)
+            current = ""
+    if current:
+        tokens.append(current)
+    return tokens
+
+
 def _apply_price_modification(frame, new_price: str) -> None:
+    ai_params = dict(getattr(frame, "ai_params", None) or {})
+    original_candidates: list[str] = []
+    for field in PRICE_TEXT_FIELDS:
+        current = getattr(frame, field, None)
+        if isinstance(current, str):
+            original_candidates.extend(_extract_numeric_price_tokens(current))
     for field in PRICE_TEXT_FIELDS:
         current = getattr(frame, field, None)
         if not isinstance(current, str) or "元" not in current:
@@ -69,6 +90,14 @@ def _apply_price_modification(frame, new_price: str) -> None:
             rebuilt.append(token)
         if replaced:
             setattr(frame, field, "".join(rebuilt))
+    ai_params["price_revision_target"] = new_price
+    if original_candidates:
+        deduped = []
+        for token in original_candidates:
+            if token not in deduped:
+                deduped.append(token)
+        ai_params["price_revision_original"] = deduped[0] if len(deduped) == 1 else deduped
+    frame.ai_params = ai_params
 
 
 def _apply_single_modification(frame, field: str, value) -> str | None:
@@ -674,7 +703,7 @@ class ChatService:
         task_result = None
 
         # 判断是否修改了影响图片的字段
-        image_affecting_fields = {"description", "image_prompt"}
+        image_affecting_fields = {"description", "image_prompt", "price"}
         affects_image = bool(image_affecting_fields & set(modifications.keys()))
         should_regen_image = affects_image and project.workflow_stage in ("image", "video", "completed")
 

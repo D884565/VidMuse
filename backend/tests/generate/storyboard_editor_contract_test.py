@@ -56,6 +56,22 @@ def test_frame_image_regenerate_route_dispatches_task_and_preserves_instruction(
     assert 'task_id": task.id' in route
 
 
+def test_frame_regeneration_routes_store_progress_cards_for_chat_sync():
+    source = Path("backend/v1/app/generate/controller/generation.py").read_text(encoding="utf-8")
+    image_route = source[source.index("async def regenerate_frame_image("):source.index("@router.post", source.index("async def regenerate_frame_image(") + 1)]
+    video_route = source[source.index("async def regenerate_frame_video("):source.index("@router.post", source.index("async def regenerate_frame_video(") + 1)]
+
+    assert 'build_progress_block("image", "running", task.id' in image_route
+    assert 'generation_workflow_service.mark_stage_running(project_model, "image", task.id)' in image_route
+    assert 'message_type="stage_card"' in image_route
+    assert 'blocks=[build_progress_block("image", "running", task.id' in image_route
+
+    assert 'build_progress_block("video", "running", task.id' in video_route
+    assert 'generation_workflow_service.mark_stage_running(project_model, "video", task.id)' in video_route
+    assert 'message_type="stage_card"' in video_route
+    assert 'blocks=[build_progress_block("video", "running", task.id' in video_route
+
+
 def test_frame_video_route_persists_instruction_for_worker_prompt():
     source = Path("backend/v1/app/generate/controller/generation.py").read_text(encoding="utf-8")
     route = source[source.index("async def regenerate_frame_video("):source.index("@router.post", source.index("async def regenerate_frame_video(") + 1)]

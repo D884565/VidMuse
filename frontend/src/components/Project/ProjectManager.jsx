@@ -4,6 +4,13 @@ import { getProjects, deleteProject } from '../../services/project.js'
 import ConfirmDialog from '../Common/ConfirmDialog.jsx'
 import ProjectDetail from './ProjectDetail.jsx'
 
+function appendVideoCacheBuster(url, taskId) {
+  if (!url) return url
+  const separator = url.includes('?') ? '&' : '?'
+  const token = taskId || Date.now()
+  return `${url}${separator}v=${encodeURIComponent(token)}`
+}
+
 export default function ProjectManager() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
@@ -142,6 +149,7 @@ function ProjectCard({ project, onClick, onDelete }) {
   const statusColor =
     stage === 'completed' ? 'bg-[rgba(16,185,129,0.14)] text-[#6ee7b7]' :
     'bg-[rgba(124,58,237,0.14)] text-[#c4b5fd]'
+  const displayVideoUrl = appendVideoCacheBuster(project.video_output_url, project.last_task_id)
 
   return (
     <div className="group relative">
@@ -154,7 +162,8 @@ function ProjectCard({ project, onClick, onDelete }) {
         <div className="relative aspect-video overflow-hidden bg-[rgba(15,15,30,0.8)]">
           {project.video_output_url ? (
             <video
-              src={project.video_output_url}
+              key={displayVideoUrl}
+              src={displayVideoUrl}
               className="h-full w-full object-cover"
               muted
               preload="metadata"

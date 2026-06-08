@@ -185,6 +185,30 @@ def _write_frame_image_regeneration_conversation(
     ))
 
 
+def _write_frame_video_regeneration_conversation(
+    db: Session,
+    project: Project,
+    frame: Frame,
+    task_id: int | None,
+) -> None:
+    db.add(Conversation(
+        project_id=project.id,
+        role="assistant",
+        content=f"第{frame.sequence}个分镜的视频片段已重新生成。",
+        message_type="stage_card",
+        stage="video",
+        blocks=[
+            {
+                "type": "follow_up",
+                "message": f"第{frame.sequence}个分镜的视频片段已更新。它是单个分镜片段，不是整条成片；如需更新成片，请继续触发整片视频生成。",
+            },
+        ],
+        action_type="REGENERATE_FRAME_VIDEO",
+        task_id=task_id,
+        frame_id=frame.id,
+    ))
+
+
 def _generate_single_frame_video(project_id: int, frame: Frame, output_dir: str, style: str | None = None) -> dict:
     """在当前线程中为单帧生成视频片段，成功后回填 frame.video_url。失败抛异常。"""
     frame_dir = os.path.join(output_dir, f"frame_{frame.id}_{uuid.uuid4().hex}")
@@ -1113,6 +1137,7 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
             db, task_id, status="succeeded", progress=100, current_step="FRAME_VIDEO_GENERATED",
             current_frame_id=frame_id,
         ) if task_id else None
+        _write_frame_video_regeneration_conversation(db, project, frame, task_id)
         db.commit()
     except SoftTimeLimitExceeded as exc:
         logger.error(f"[单帧视频任务超时] project_id={project_id}, frame_id={frame_id}", exc_info=True)

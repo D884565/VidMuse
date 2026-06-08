@@ -25,6 +25,13 @@ const DEFAULT_FORM = {
 const TASK_POLL_INTERVAL_MS = 1500
 const TERMINAL_TASK_STATUSES = new Set(['succeeded', 'failed', 'cancelled', 'completed'])
 
+function appendVideoCacheBuster(url, taskId) {
+  if (!url) return url
+  const separator = url.includes('?') ? '&' : '?'
+  const token = taskId || Date.now()
+  return `${url}${separator}v=${encodeURIComponent(token)}`
+}
+
 function buildFrameForm(frame) {
   return {
     narration: frame?.narration || '',
@@ -194,6 +201,10 @@ export default function ProjectDetail({ project, onClose }) {
   const selectedFrame = useMemo(
     () => frames.find((frame) => frame.id === selectedFrameId) || null,
     [frames, selectedFrameId]
+  )
+  const displayVideoUrl = useMemo(
+    () => appendVideoCacheBuster(videoUrl, project.last_task_id),
+    [project.last_task_id, videoUrl]
   )
   const mustRegenerateImageFirst = !!selectedFrame && (
     !selectedFrame.image_url || Number(selectedFrame.status) !== 2 || !!selectedFrame.dirty
@@ -424,7 +435,8 @@ export default function ProjectDetail({ project, onClose }) {
           <div className="flex-1 overflow-hidden rounded-xl bg-black">
             {videoUrl ? (
               <video
-                src={videoUrl}
+                key={displayVideoUrl}
+                src={displayVideoUrl}
                 controls
                 className="h-full w-full"
                 preload="metadata"
@@ -451,21 +463,43 @@ export default function ProjectDetail({ project, onClose }) {
         </div>
 
         <div className="flex w-[54%] flex-col overflow-y-auto p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h3 className="m-0 text-base font-semibold">剧本与分镜</h3>
-            {frames.length > 0 ? (
-              <div className="min-w-0 flex-1">
-                <StoryboardTimeline
-                  frames={frames}
-                  selectedFrameId={selectedFrameId}
-                  onSelectFrame={(frame) => {
-                    setSelectedFrameId(frame.id)
-                    setEditorOpen(true)
-                  }}
-                />
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRegenerateImage}
+                disabled={!selectedFrame || savingFrame || !!actionLoading}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-white hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-50"
+              >
+                {actionLoading === 'image' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                重新生成图片
+              </button>
+              <button
+                type="button"
+                onClick={handleRegenerateVideo}
+                disabled={!selectedFrame || savingFrame || !!actionLoading || !canRegenerateVideo}
+                title={mustRegenerateImageFirst ? '请先重新生成图片' : undefined}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-white hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-50"
+              >
+                {actionLoading === 'video' ? <Loader2 size={16} className="animate-spin" /> : <Film size={16} />}
+                重新生成视频
+              </button>
+            </div>
           </div>
+
+          {frames.length > 0 ? (
+            <div className="mb-4">
+              <StoryboardTimeline
+                frames={frames}
+                selectedFrameId={selectedFrameId}
+                onSelectFrame={(frame) => {
+                  setSelectedFrameId(frame.id)
+                  setEditorOpen(true)
+                }}
+              />
+            </div>
+          ) : null}
 
           {feedback ? (
             <div className="mb-3 rounded-lg border border-[rgba(167,139,250,0.25)] bg-[rgba(124,58,237,0.12)] px-3 py-2 text-xs text-[#d8b4fe]">

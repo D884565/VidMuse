@@ -184,6 +184,69 @@ async def test_chat_edit_frame_with_image_change_submits_single_frame_image_rege
 
 
 @pytest.mark.asyncio
+async def test_chat_price_edit_submits_single_frame_image_regeneration():
+    service = ChatService()
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
+    mock_db.flush = AsyncMock()
+
+    frame = SimpleNamespace(
+        id=1,
+        project_id=1,
+        sequence=4,
+        description="保温杯放在左侧，右侧是醒目的39.9元价格牌",
+        image_prompt="保温杯放在左侧，右侧是醒目的39.9元价格牌",
+        video_prompt="镜头快速推近到39.9元价格牌上",
+        narration="现在下单只要39.9，抢！",
+        image_url="https://cdn.test/old.png",
+        video_url="https://cdn.test/old.mp4",
+        audio_url=None,
+        status=2,
+        dirty=0,
+        duration=3.0,
+        ai_params={},
+        error_message=None,
+        metadata_=None,
+        version=1,
+        last_edited_at=None,
+    )
+    project = SimpleNamespace(
+        id=1,
+        workflow_stage="video",
+        stage_status="awaiting_review",
+        dirty_stage=None,
+        last_task_id=None,
+        status="review_required",
+        script_confirmed_at="2026-01-01",
+        images_confirmed_at="2026-01-01",
+        video_confirmed_at="2026-01-01",
+    )
+
+    mock_result = MagicMock()
+    mock_result.scalars.return_value.all.return_value = [frame]
+    mock_db.execute = AsyncMock(return_value=mock_result)
+
+    with patch.object(
+        service,
+        "_submit_frame_image_regeneration_tasks",
+        new=AsyncMock(return_value=([{"frame_id": 1, "sequence": 4}], {"task_id": "frame_image_4", "status": "queued"})),
+    ) as mock_submit:
+        task_result, updated, blocks = await service._handle_edit_frame(
+            mock_db,
+            project,
+            [1],
+            {"price": "99元"},
+        )
+
+    assert task_result["task_id"] == "frame_image_4"
+    assert updated == [{"frame_id": 1, "sequence": 4}]
+    assert "99元" in frame.description
+    assert "99元" in frame.image_prompt
+    mock_submit.assert_awaited_once()
+    assert any(block.get("type") == "progress_card" and block.get("stage") == "image" for block in blocks)
+
+
+@pytest.mark.asyncio
 async def test_chat_edit_frame_during_script_review_keeps_script_reviewable():
     service = ChatService()
     mock_db = MagicMock()

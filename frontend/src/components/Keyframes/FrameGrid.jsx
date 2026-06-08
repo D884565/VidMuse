@@ -336,8 +336,9 @@ export default function FrameGrid() {
     const syncKey = `${taskId}:${taskStatus}:${taskCurrentStep || ''}`
     if (lastTerminalTaskRef.current === syncKey) return
     lastTerminalTaskRef.current = syncKey
+    bumpConversationVersion()
     refetch()
-  }, [taskCurrentStep, taskId, taskStatus, refetch])
+  }, [bumpConversationVersion, taskCurrentStep, taskId, taskStatus, refetch])
 
   useEffect(() => {
     if (!project || !activeProjectId) return

@@ -8,6 +8,7 @@ import {
   DRAFT_PROJECT_KEY,
   appendOptimisticMessages,
   appendTokenToMessage,
+  buildScriptGenerationMessagePayload,
   clearPersistedDraftState,
   getProjectActivity,
   getProjectKey,
@@ -20,6 +21,16 @@ import {
   updateProjectMessage,
   writePersistedDraftState,
 } from './chatState.js'
+
+function buildScriptGenerationProgressBlock(status = 'running', taskId = null) {
+  return {
+    type: 'progress_card',
+    stage: 'script',
+    status,
+    task_id: taskId,
+    message: status === 'completed' ? '剧本创建完成' : '正在为您创建剧本...',
+  }
+}
 
 export function useChat(options = {}) {
   const { onMessageHandled } = options
@@ -386,7 +397,7 @@ export function useChat(options = {}) {
           setMessagesByProject((current) =>
             updateProjectMessage(current, projectKey, assistantMsgId, (message) => ({
               ...message,
-              content: '项目已创建，正在为您生成剧本，请稍候...',
+              ...buildScriptGenerationMessagePayload('running'),
               streaming: true,
             }))
           )
@@ -396,7 +407,7 @@ export function useChat(options = {}) {
           setMessagesByProject((current) =>
             updateProjectMessage(current, projectKey, assistantMsgId, (message) => ({
               ...message,
-              content: '剧本已生成！您可以在右侧分镜面板中查看和调整。',
+              ...buildScriptGenerationMessagePayload('completed', scriptResult?.task_id || null),
               streaming: false,
               optimistic: false,
             }))

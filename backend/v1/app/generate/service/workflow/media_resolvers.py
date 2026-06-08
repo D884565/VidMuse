@@ -30,6 +30,22 @@ def resolve_image_generation_prompt(frame, style: str | None = None) -> str:
     revision = _clean(ai_params.get("image_revision_instruction"))
     if revision:
         base = f"{base}\nUser image revision: {revision}" if base else revision
+    price_target = _clean(ai_params.get("price_revision_target"))
+    if price_target:
+        originals = ai_params.get("price_revision_original")
+        if isinstance(originals, str):
+            original_tokens = [originals]
+        elif isinstance(originals, list):
+            original_tokens = [_clean(item) for item in originals if _clean(item)]
+        else:
+            original_tokens = []
+        base = (
+            f"{base}\nMUST render the visible price text as {price_target}."
+            if base else f"MUST render the visible price text as {price_target}."
+        )
+        if original_tokens:
+            forbidden = ", ".join(dict.fromkeys(original_tokens))
+            base = f"{base}\nDo not render {forbidden} anywhere in the image."
     style_hint = get_style_prompt(style)
     if style_hint:
         base = f"{base}\nStyle: {style_hint}" if base else f"Style: {style_hint}"

@@ -112,6 +112,23 @@ export function appendTokenToMessage(cache, projectId, messageId, content) {
   }))
 }
 
+export function buildScriptGenerationMessagePayload(status = 'running', taskId = null) {
+  const normalizedStatus = String(status || 'running').toLowerCase()
+  const isCompleted = normalizedStatus === 'completed'
+  return {
+    content: isCompleted ? '剧本创建完成' : '好的，正在为您生成剧本，请稍候~',
+    blocks: [
+      {
+        type: 'progress_card',
+        stage: 'script',
+        status,
+        task_id: taskId,
+        message: isCompleted ? '剧本创建完成' : '正在为您创建剧本...',
+      },
+    ],
+  }
+}
+
 export function promoteDraftMessagesToProject(cache, projectId, streamingMessageId = null) {
   const projectKey = getProjectKey(projectId)
   const draftMessages = cache[DRAFT_PROJECT_KEY] || []

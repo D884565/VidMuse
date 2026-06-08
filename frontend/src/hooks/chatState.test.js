@@ -5,6 +5,7 @@ import {
   DRAFT_PROJECT_KEY,
   appendOptimisticMessages,
   appendTokenToMessage,
+  buildScriptGenerationMessagePayload,
   clearPersistedDraftState,
   getProjectMessages,
   getProjectActivity,
@@ -144,8 +145,11 @@ test('mergeFetchedMessages keeps local generated script message during stale his
     {
       id: 'assistant-local',
       role: 'assistant',
-      content: '剧本已生成！您可以在右侧分镜面板中查看和调整。',
-      blocks: [{ type: 'storyboard_table', frames: [{ id: 1 }] }],
+      content: '',
+      blocks: [
+        { type: 'progress_card', stage: 'script', status: 'completed', message: '剧本创建完成' },
+        { type: 'storyboard_table', frames: [{ id: 1 }] },
+      ],
       streaming: false,
       optimistic: false,
       client_id: 'client-assistant-54',
@@ -164,7 +168,9 @@ test('mergeFetchedMessages keeps local generated script message during stale his
 
   assert.equal(merged.length, 3)
   assert.equal(merged.at(-1)?.id, 'assistant-local')
-  assert.equal(merged.at(-1)?.blocks?.[0]?.type, 'storyboard_table')
+  assert.equal(merged.at(-1)?.blocks?.[0]?.type, 'progress_card')
+  assert.equal(merged.at(-1)?.blocks?.[0]?.status, 'completed')
+  assert.equal(merged.at(-1)?.blocks?.[1]?.type, 'storyboard_table')
 
   const refreshed = mergeFetchedMessages(
     merged,
@@ -304,4 +310,30 @@ test('mergeFetchedMessages prefers metadata display content while deduplicating 
   assert.equal(merged[0]?.content, '做一条夏日防晒喷雾带货视频')
   assert.equal(merged[0]?.metadata?.display_content, '做一条夏日防晒喷雾带货视频')
   assert.equal(merged[1]?.id, 'assistant-local')
+})
+
+test('buildScriptGenerationMessagePayload keeps script generation copy aligned with other progress messages', () => {
+  const runningPayload = buildScriptGenerationMessagePayload('running')
+  assert.equal(runningPayload.content, '好的，正在为您生成剧本，请稍候~')
+  assert.deepEqual(runningPayload.blocks, [
+    {
+      type: 'progress_card',
+      stage: 'script',
+      status: 'running',
+      task_id: null,
+      message: '正在为您创建剧本...',
+    },
+  ])
+
+  const completedPayload = buildScriptGenerationMessagePayload('completed', 'task-123')
+  assert.equal(completedPayload.content, '剧本创建完成')
+  assert.deepEqual(completedPayload.blocks, [
+    {
+      type: 'progress_card',
+      stage: 'script',
+      status: 'completed',
+      task_id: 'task-123',
+      message: '剧本创建完成',
+    },
+  ])
 })

@@ -27,7 +27,7 @@ from backend.v1.app.generate.service.chat.initial_message import project_initial
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
 from backend.v1.app.push.service.task_event_service import task_event_service
 from backend.v1.app.generate.service.generateUtils.storyboard import storyboard_service
-from backend.v1.app.generate.service.workflow.blocks import build_script_stage_blocks
+from backend.v1.app.generate.service.workflow.blocks import build_progress_block, build_script_stage_blocks
 from backend.framework.web import Response
 from backend.framework.web.auth import get_current_user_id
 from backend.framework.exceptions import BusinessException
@@ -996,6 +996,11 @@ async def regenerate_frame_image(
         instruction = (req or {}).get("instruction")
         result = await chat_service.regenerate_frame_image(db, project_id, frame_id, instruction)
         task = await generation_task_service.create_task(db, project_id, "frame_image", status="queued")
+        project_model = await _load_project_for_workflow_update(db, project_id)
+        if not project_model:
+            raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
+        generation_workflow_service.invalidate_from(project_model, "image")
+        generation_workflow_service.mark_stage_running(project_model, "image", task.id)
         from backend.v1.app.generate.tasks.celery_app import celery_app
         sent = celery_app.send_task("generate_frame_image_task", args=[project_id, frame_id, task.id])
         await generation_task_service.set_celery_task_id(db, task.id, sent.id)
@@ -1004,8 +1009,9 @@ async def regenerate_frame_image(
             project_id=project_id,
             role="assistant",
             content="已提交图片重新生成任务，完成后会在对话中展示新图。",
-            message_type="text",
-            stage=project.get("workflow_stage") or "image",
+            message_type="stage_card",
+            stage="image",
+            blocks=[build_progress_block("image", "running", task.id, "已提交图片重新生成，正在为你更新分镜图片。")],
             action_type="storyboard_edit_regenerate_image",
             task_id=task.id,
             frame_id=frame_id,
@@ -1058,6 +1064,7 @@ async def regenerate_frame_video(
         if not project_model:
             raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
         generation_workflow_service.invalidate_from(project_model, "video")
+        generation_workflow_service.mark_stage_running(project_model, "video", task.id)
         frame.dirty = 1
         await db.commit()
         from backend.v1.app.generate.tasks.celery_app import celery_app
@@ -1067,8 +1074,9 @@ async def regenerate_frame_video(
             project_id=project_id,
             role="assistant",
             content="已提交分镜视频重新生成任务，完成后可在分镜编辑中预览。",
-            message_type="text",
-            stage=project.get("workflow_stage") or "video",
+            message_type="stage_card",
+            stage="video",
+            blocks=[build_progress_block("video", "running", task.id, "已提交视频重新生成，正在为你更新分镜视频。")],
             action_type="storyboard_edit_regenerate_video",
             task_id=task.id,
             frame_id=frame_id,

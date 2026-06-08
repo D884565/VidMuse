@@ -46,6 +46,16 @@ def test_frame_image_task_writes_conversation_message_after_success():
     assert "Conversation(" in task_source
 
 
+def test_frame_video_task_writes_conversation_message_after_success():
+    task_source = read("backend/v1/app/generate/tasks/video_tasks.py")
+
+    assert "def _write_frame_video_regeneration_conversation" in task_source
+    assert "REGENERATE_FRAME_VIDEO" in task_source
+    assert '"video_card"' not in task_source[task_source.index("def _write_frame_video_regeneration_conversation"):task_source.index("def _generate_single_frame_video")]
+    assert '"follow_up"' in task_source
+    assert "_write_frame_video_regeneration_conversation(db, project, frame, task_id)" in task_source
+
+
 def test_image_workflow_imports_json_and_conversation():
     source = read("backend/v1/app/generate/service/stages/image_workflow.py")
 
