@@ -9,6 +9,8 @@ class TaskTypeEnum(str, Enum):
     VIDEO_PRODUCTION = "video_production"
     VIDEO_ANALYSIS = "video_analysis"
     SCHEDULED_CLUSTERING = "scheduled_clustering"
+    PRODUCT_PARSING = "product_parsing"
+    DIRECT_VIDEO_PARSING = "direct_video_parsing"
     DEFAULT = "default"
 
 

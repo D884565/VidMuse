@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react'
-import { Eye, Trash2, Upload, RefreshCw, Play } from 'lucide-react'
+import { Eye, Trash2, Upload, RefreshCw, Play, X } from 'lucide-react'
 import PageContainer from '../../components/Admin/Layout/PageContainer'
 import Table from '../../components/Admin/Common/Table'
-import { getAssetList, deleteAsset, parseAsset, getParsingProgress, retryParsing } from '../../services/admin'
+import { getAssetList, getAssetDetail, deleteAsset, parseAsset, getParsingProgress, retryParsing } from '../../services/admin'
 
 const columns = [
   { key: 'id', title: 'ID' },
@@ -99,6 +99,10 @@ export default function AssetManagement() {
     skip_ai_analysis: true,
   })
   const [uploading, setUploading] = useState(false)
+  const [previewVisible, setPreviewVisible] = useState(false)
+  const [detailVisible, setDetailVisible] = useState(false)
+  const [currentAsset, setCurrentAsset] = useState(null)
+  const [loadingDetail, setLoadingDetail] = useState(false)
 
   useEffect(() => {
     fetchAssets()
@@ -171,6 +175,25 @@ export default function AssetManagement() {
     }
   }
 
+  const handlePreview = (row) => {
+    setCurrentAsset(row)
+    setPreviewVisible(true)
+  }
+
+  const handleViewDetail = async (row) => {
+    try {
+      setLoadingDetail(true)
+      const detail = await getAssetDetail(row.id)
+      setCurrentAsset(detail)
+      setDetailVisible(true)
+    } catch (error) {
+      console.error('获取资产详情失败:', error)
+      alert('获取详情失败，请重试')
+    } finally {
+      setLoadingDetail(false)
+    }
+  }
+
   const handleUpload = async (e) => {
     e.preventDefault()
     if (!uploadForm.file) {
@@ -205,12 +228,14 @@ export default function AssetManagement() {
   const actions = (row) => (
     <div className="flex items-center justify-end space-x-1">
       <button
+        onClick={() => handlePreview(row)}
         className="p-1 text-blue-600 hover:text-blue-800"
         title="预览"
       >
         <Play size={16} />
       </button>
       <button
+        onClick={() => handleViewDetail(row)}
         className="p-1 text-purple-600 hover:text-purple-800"
         title="查看详情"
       >
@@ -434,6 +459,180 @@ export default function AssetManagement() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 预览弹窗 */}
+      {previewVisible && currentAsset && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">预览：{currentAsset.title}</h3>
+              <button onClick={() => setPreviewVisible(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-4 flex items-center justify-center bg-gray-900 min-h-[400px]">
+              {currentAsset.type === 1 && (
+                <img
+                  src={currentAsset.url}
+                  alt={currentAsset.title}
+                  className="max-w-full max-h-[60vh] object-contain"
+                />
+              )}
+              {currentAsset.type === 2 && (
+                <video
+                  src={currentAsset.url}
+                  controls
+                  className="max-w-full max-h-[60vh]"
+                >
+                  您的浏览器不支持视频播放
+                </video>
+              )}
+              {currentAsset.type === 3 && (
+                <div className="bg-white p-8 rounded-lg">
+                  <p className="text-center mb-4 text-gray-700">音频播放</p>
+                  <audio
+                    src={currentAsset.url}
+                    controls
+                    className="w-full min-w-[400px]"
+                  >
+                    您的浏览器不支持音频播放
+                  </audio>
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t bg-gray-50">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-medium text-gray-600">文件格式：</span>
+                  <span className="text-gray-800">{currentAsset.format}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">文件大小：</span>
+                  <span className="text-gray-800">{currentAsset.size}</span>
+                </div>
+                {currentAsset.duration && (
+                  <div>
+                    <span className="font-medium text-gray-600">时长：</span>
+                    <span className="text-gray-800">{currentAsset.duration} 秒</span>
+                  </div>
+                )}
+                <div>
+                  <span className="font-medium text-gray-600">上传用户：</span>
+                  <span className="text-gray-800">{currentAsset.username || '未知'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 详情弹窗 */}
+      {detailVisible && currentAsset && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-lg font-semibold">资产详情</h3>
+              <button onClick={() => setDetailVisible(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            {loadingDetail ? (
+              <div className="p-8 text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">加载中...</p>
+              </div>
+            ) : (
+              <div className="p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">ID</label>
+                    <p className="text-gray-900">{currentAsset.id}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">标题</label>
+                    <p className="text-gray-900">{currentAsset.title}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">类型</label>
+                    <p className="text-gray-900">
+                      {{1: '图片', 2: '视频', 3: '音频', 4: '文本'}[currentAsset.type] || '未知'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">来源类型</label>
+                    <p className="text-gray-900">
+                      {{0: '用户上传', 1: 'AI生成', 2: '系统预置', 3: '购买'}[currentAsset.source_type] || currentAsset.source_type}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">格式</label>
+                    <p className="text-gray-900">{currentAsset.format}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">文件大小</label>
+                    <p className="text-gray-900">{currentAsset.size}</p>
+                  </div>
+                  {currentAsset.duration && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-500 mb-1">时长</label>
+                      <p className="text-gray-900">{currentAsset.duration} 秒</p>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">解析状态</label>
+                    <p className="text-gray-900">
+                      {{0: '待解析', 1: '解析中', 2: '解析成功', 3: '解析失败'}[currentAsset.parsing_status] || '未知'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">上传用户</label>
+                    <p className="text-gray-900">{currentAsset.username || '未知'}</p>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-500 mb-1">上传时间</label>
+                    <p className="text-gray-900">{currentAsset.createdAt || currentAsset.created_at}</p>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-sm font-medium text-gray-500 mb-1">文件地址</label>
+                    <a
+                      href={currentAsset.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:text-blue-800 break-all"
+                    >
+                      {currentAsset.url}
+                    </a>
+                  </div>
+                </div>
+
+                {currentAsset.parsing_error && (
+                  <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <label className="block text-sm font-medium text-red-700 mb-1">解析错误信息</label>
+                    <p className="text-red-600 text-sm">{currentAsset.parsing_error}</p>
+                  </div>
+                )}
+
+                {currentAsset.ai_features && Object.keys(currentAsset.ai_features).length > 0 && (
+                  <div className="mt-6">
+                    <h4 className="font-medium text-gray-900 mb-3">AI解析结果</h4>
+                    <pre className="bg-gray-50 p-4 rounded-lg text-sm overflow-x-auto">
+                      {JSON.stringify(currentAsset.ai_features, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
+            <div className="p-6 border-t bg-gray-50 flex justify-end">
+              <button
+                onClick={() => setDetailVisible(false)}
+                className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                关闭
+              </button>
+            </div>
           </div>
         </div>
       )}

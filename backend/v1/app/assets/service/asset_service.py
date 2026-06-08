@@ -344,7 +344,7 @@ class AssetService(BaseParsingService):
     @staticmethod
     def list_assets(
         db: Session,
-        user_id: int,
+        user_id: Optional[int],
         type: Optional[int] = None,
         source_type: Optional[int] = None,
         keyword: Optional[str] = None,
@@ -355,7 +355,7 @@ class AssetService(BaseParsingService):
         if type is not None and type not in [1, 2, 3, 4]:
             raise BusinessException(PARAM_ERROR, "invalid asset type")
 
-        total, assets = AssetDAO.list_assets(
+        total, results = AssetDAO.list_assets(
             db=db,
             user_id=AssetService._library_owner_id(user_id),
             type=type,
@@ -367,8 +367,29 @@ class AssetService(BaseParsingService):
             page_size=page_size,
         )
         asset_list = []
-        for asset in assets:
+        for asset, username in results:
             asset_dict = asset.to_dict()
+            # 转换解析状态为数字
+            status_map = {
+                "pending": 0,
+                "running": 1,
+                "completed": 2,
+                "failed": 3
+            }
+            status = status_map.get(asset_dict.get("parsing_status"), 0)
+
+            # 转换文件大小为可读格式
+            size = asset_dict.get("file_size")
+            if size:
+                if size < 1024:
+                    size_str = f"{size} B"
+                elif size < 1024 * 1024:
+                    size_str = f"{size/1024:.1f} KB"
+                else:
+                    size_str = f"{size/(1024*1024):.1f} MB"
+            else:
+                size_str = "未知"
+
             asset_list.append(
                 {
                     "id": asset_dict["id"],
@@ -376,43 +397,44 @@ class AssetService(BaseParsingService):
                     "type_name": AssetService.TYPE_NAME.get(asset_dict["type"], "unknown"),
                     "title": asset_dict["title"],
                     "url": asset_dict["url"],
-                    "file_size": asset_dict["file_size"],
+                    "size": size_str,
                     "duration": asset_dict["duration"],
                     "format": asset_dict["format"],
                     "ai_features": asset_dict["ai_features"],
                     "content_text": asset_dict.get("content_text"),
                     "source_type": asset_dict["source_type"],
-                    "created_at": asset_dict["created_at"],
+                    "createdAt": asset_dict["created_at"],
+                    "username": username or "未知用户",
+                    "status": status,
+                    "parsing_status": asset_dict.get("parsing_status")
                 }
             )
         return {
             "list": asset_list,
-            "pagination": {
-                "page": page,
-                "page_size": page_size,
-                "total": total,
-                "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
-            },
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "total_pages": (total + page_size - 1) // page_size if total > 0 else 0,
         }
 
     @staticmethod
-    def get_asset_detail(db: Session, user_id: int, asset_id: int) -> dict:
+    def get_asset_detail(db: Session, user_id: Optional[int], asset_id: int) -> dict:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
-        # 权限校验：只有所有者可以操作
-        if asset.user_id != user_id:
+        # 权限校验：只有所有者或管理员可以操作
+        if user_id is not None and asset.user_id != user_id:
             from backend.framework.exceptions.error_codes import FORBIDDEN
             raise BusinessException(FORBIDDEN, "无权限操作此资产")
         return asset.to_dict()
 
     @staticmethod
-    def update_asset(db: Session, user_id: int, asset_id: int, title: Optional[str] = None, ai_features: Optional[dict] = None) -> dict:
+    def update_asset(db: Session, user_id: Optional[int], asset_id: int, title: Optional[str] = None, ai_features: Optional[dict] = None) -> dict:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
-        # 权限校验：只有所有者可以操作
-        if asset.user_id != user_id:
+        # 权限校验：只有所有者或管理员可以操作
+        if user_id is not None and asset.user_id != user_id:
             from backend.framework.exceptions.error_codes import FORBIDDEN
             raise BusinessException(FORBIDDEN, "无权限操作此资产")
 
@@ -432,15 +454,15 @@ class AssetService(BaseParsingService):
         return updated_asset.to_dict()
 
     @staticmethod
-    async def parse_asset(db: Session, user_id: int, asset_id: int, force: bool = False, product_id: Optional[int] = None) -> dict:
+    async def parse_asset(db: Session, user_id: Optional[int], asset_id: int, force: bool = False, product_id: Optional[int] = None) -> dict:
         """触发资产解析，使用BaseParsingService的通用逻辑"""
         from backend.v1.app.product.dao.product_dao import ProductDAO
 
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
-        # 权限校验：只有所有者可以操作
-        if asset.user_id != user_id:
+        # 权限校验：只有所有者或管理员可以操作
+        if user_id is not None and asset.user_id != user_id:
             from backend.framework.exceptions.error_codes import FORBIDDEN
             raise BusinessException(FORBIDDEN, "无权限操作此资产")
 
@@ -499,12 +521,12 @@ class AssetService(BaseParsingService):
         }
 
     @staticmethod
-    def get_parsing_progress(db: Session, user_id: int, asset_id: int) -> dict:
+    def get_parsing_progress(db: Session, user_id: Optional[int], asset_id: int) -> dict:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
-        # 权限校验：只有所有者可以操作
-        if asset.user_id != user_id:
+        # 权限校验：只有所有者或管理员可以操作
+        if user_id is not None and asset.user_id != user_id:
             from backend.framework.exceptions.error_codes import FORBIDDEN
             raise BusinessException(FORBIDDEN, "无权限操作此资产")
         return {
@@ -516,7 +538,7 @@ class AssetService(BaseParsingService):
         }
 
     @staticmethod
-    async def retry_parsing(db: Session, user_id: int, asset_id: int, product_id: Optional[int] = None) -> dict:
+    async def retry_parsing(db: Session, user_id: Optional[int], asset_id: int, product_id: Optional[int] = None) -> dict:
         return await AssetService.parse_asset(db=db, user_id=user_id, asset_id=asset_id, force=True, product_id=product_id)
 
     @staticmethod
@@ -623,12 +645,12 @@ class AssetService(BaseParsingService):
             raise BusinessException(PARAM_ERROR, f"解析失败: {error_msg}")
 
     @staticmethod
-    def delete_asset(db: Session, user_id: int, asset_id: int) -> None:
+    def delete_asset(db: Session, user_id: Optional[int], asset_id: int) -> None:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
-        # 权限校验：只有所有者可以操作
-        if asset.user_id != user_id:
+        # 权限校验：只有所有者或管理员可以操作
+        if user_id is not None and asset.user_id != user_id:
             from backend.framework.exceptions.error_codes import FORBIDDEN
             raise BusinessException(FORBIDDEN, "无权限操作此资产")
         if asset.storage_key:

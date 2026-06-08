@@ -17,6 +17,8 @@ class TaskService:
         TaskTypeEnum.VIDEO_PRODUCTION: "video_production",
         TaskTypeEnum.VIDEO_ANALYSIS: "video_analysis",
         TaskTypeEnum.SCHEDULED_CLUSTERING: "scheduled_clustering",
+        TaskTypeEnum.PRODUCT_PARSING: "pipeline_parsing",
+        TaskTypeEnum.DIRECT_VIDEO_PARSING: "pipeline_parsing",
         TaskTypeEnum.DEFAULT: "default"
     }
 

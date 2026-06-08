@@ -20,8 +20,12 @@ export function usePipelinePush({ onUpdate } = {}) {
       return
     }
 
+    // 使用相对路径走Vite代理，避免跨域问题
+    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws/connect`
+
     const client = new PushClient({
-      wsUrl: `${import.meta.env.VITE_API_BASE_URL.replace('http', 'ws')}/v1/ws/connect`,
+      wsUrl,
       token,
       autoReconnect: true,
       maxReconnectAttempts: 10,

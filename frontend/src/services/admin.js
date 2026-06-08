@@ -255,7 +255,7 @@ export const querySystemTraces = (data) => {
 
 // ==================== 流水线管理 ====================
 export const getPipelineList = (params) => {
-  return api.get('/v1/admin/pipelines', { params })
+  return api.get('/v1/admin/pipelines/', { params })
 }
 
 export const getPipelineStatistics = () => {

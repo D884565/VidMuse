@@ -1,7 +1,9 @@
 from typing import Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from backend.v1.app.models.asset import Asset
+from backend.v1.app.models.user import User
 
 
 class AssetDAO:
@@ -55,9 +57,9 @@ class AssetDAO:
             tags: Optional[dict] = None,
             page: int = 1,
             page_size: int = 20
-    ) -> tuple[int, list[Asset]]:
-        """分页查询资产列表"""
-        query = db.query(Asset)
+    ) -> tuple[int, list[tuple[Asset, Optional[str]]]]:
+        """分页查询资产列表，关联查询用户名"""
+        query = db.query(Asset, User.username).outerjoin(User, Asset.user_id == User.id)
 
         # 用户筛选
         if user_id is not None:
@@ -97,6 +99,6 @@ class AssetDAO:
         total = query.count()
 
         offset = (page - 1) * page_size
-        assets = query.order_by(Asset.created_at.desc()).offset(offset).limit(page_size).all()
+        results = query.order_by(Asset.created_at.desc()).offset(offset).limit(page_size).all()
 
-        return total, assets
+        return total, results

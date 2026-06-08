@@ -2,7 +2,6 @@ import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw, Wifi, WifiOff } from 'lucide-react'
 import PageContainer from '@/components/Admin/Layout/PageContainer'
 import Button from '@/components/Button/Button'
-import { message, Modal } from 'antd'
 import PipelineFilter from '@/components/Admin/Pipeline/PipelineFilter'
 import PipelineStatistics from '@/components/Admin/Pipeline/PipelineStatistics'
 import PipelineList from '@/components/Admin/Pipeline/PipelineList'
@@ -52,7 +51,7 @@ export default function PipelineManagement() {
     loadStatistics()
 
     // 显示通知
-    message.info(`流水线 ${update.pipeline_name} 状态更新为: ${update.status}`)
+    alert(`流水线 ${update.pipeline_name} 状态更新为: ${update.status}`)
   }, [])
 
   const { isConnected, error } = usePipelinePush({ onUpdate: handlePushUpdate })
@@ -62,10 +61,10 @@ export default function PipelineManagement() {
     try {
       setLoading(true)
       const res = await getPipelineList(filters)
-      setListData(res.data.list)
-      setTotal(res.data.total)
+      setListData(res.list)
+      setTotal(res.total)
     } catch (error) {
-      message.error('加载列表失败: ' + error.message)
+      alert('加载列表失败: ' + error.message)
     } finally {
       setLoading(false)
     }
@@ -75,7 +74,7 @@ export default function PipelineManagement() {
   const loadStatistics = useCallback(async () => {
     try {
       const res = await getPipelineStatistics()
-      setStatistics(res.data)
+      setStatistics(res)
     } catch (error) {
       console.error('加载统计数据失败:', error)
     }
@@ -106,14 +105,14 @@ export default function PipelineManagement() {
 
   // 处理分页变化
   const handlePageChange = (page, pageSize) => {
-    setFilters(prev => ({ ...prev, page, page_size }))
+    setFilters(prev => ({ ...prev, page, page_size: pageSize }))
   }
 
   // 处理刷新
   const handleRefresh = () => {
     loadList()
     loadStatistics()
-    message.success('已刷新')
+    alert('已刷新')
   }
 
   // 处理查看详情
@@ -123,37 +122,29 @@ export default function PipelineManagement() {
   }
 
   // 处理重试
-  const handleRetry = (record) => {
-    Modal.confirm({
-      title: '确认重试',
-      content: `确定要重试流水线 "${record.pipeline_name}" 吗？`,
-      onOk: async () => {
-        try {
-          await retryPipeline(record.execution_id)
-          message.success('已提交重试')
-          loadList()
-        } catch (error) {
-          message.error('重试失败: ' + error.message)
-        }
+  const handleRetry = async (record) => {
+    if (window.confirm(`确定要重试流水线 "${record.pipeline_name}" 吗？`)) {
+      try {
+        await retryPipeline(record.execution_id)
+        alert('已提交重试')
+        loadList()
+      } catch (error) {
+        alert('重试失败: ' + error.message)
       }
-    })
+    }
   }
 
   // 处理取消
-  const handleCancel = (record) => {
-    Modal.confirm({
-      title: '确认取消',
-      content: `确定要取消流水线 "${record.pipeline_name}" 吗？`,
-      onOk: async () => {
-        try {
-          await cancelPipeline(record.execution_id)
-          message.success('已取消')
-          loadList()
-        } catch (error) {
-          message.error('取消失败: ' + error.message)
-        }
+  const handleCancel = async (record) => {
+    if (window.confirm(`确定要取消流水线 "${record.pipeline_name}" 吗？`)) {
+      try {
+        await cancelPipeline(record.execution_id)
+        alert('已取消')
+        loadList()
+      } catch (error) {
+        alert('取消失败: ' + error.message)
       }
-    })
+    }
   }
 
   return (

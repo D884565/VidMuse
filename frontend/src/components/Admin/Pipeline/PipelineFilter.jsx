@@ -1,9 +1,46 @@
 import { useState } from 'react'
 import { Search, Filter, Calendar, X } from 'lucide-react'
-import Input from '@/components/Input/Input'
-import Select from '@/components/Select/Select'
 import Button from '@/components/Button/Button'
-import DatePicker from '@/components/DatePicker/DatePicker'
+
+// 简单的Input组件
+const Input = ({ prefix, placeholder, value, onChange, className = '' }) => (
+  <div className={`relative flex items-center ${className}`}>
+    {prefix && <div className="absolute left-3">{prefix}</div>}
+    <input
+      type="text"
+      placeholder={placeholder}
+      value={value}
+      onChange={onChange}
+      className={`w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${prefix ? 'pl-10' : ''}`}
+    />
+  </div>
+)
+
+// 简单的Select组件
+const Select = ({ options, value, onChange, placeholder }) => (
+  <select
+    value={value}
+    onChange={(e) => onChange(e.target.value)}
+    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+  >
+    {options.map(option => (
+      <option key={option.value} value={option.value}>
+        {option.label}
+      </option>
+    ))}
+  </select>
+)
+
+// 简单的DatePicker组件
+const DatePicker = ({ placeholder, value, onChange }) => (
+  <input
+    type="date"
+    placeholder={placeholder}
+    value={value ? value.toISOString().split('T')[0] : ''}
+    onChange={(e) => onChange(e.target.value ? new Date(e.target.value) : null)}
+    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+  />
+)
 
 const statusOptions = [
   { value: '', label: '全部状态' },

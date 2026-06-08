@@ -31,12 +31,6 @@ const columns = [
     render: (value) => <span className="text-sm text-gray-900">{value || '-'}</span>
   },
   {
-    key: 'model',
-    title: '使用模型',
-    width: 150,
-    render: (value) => <span className="text-sm font-medium text-gray-900">{value}</span>
-  },
-  {
     key: 'iterations',
     title: '迭代次数',
     width: 80,
@@ -95,7 +89,6 @@ export default function TraceManagement() {
     session_id: '',
     user_id: '',
     project_id: '',
-    model: '',
     success: '',
     keyword: '',
     period: '7d',
@@ -106,7 +99,6 @@ export default function TraceManagement() {
   const [detailVisible, setDetailVisible] = useState(false)
   const [currentTrace, setCurrentTrace] = useState(null)
   const [trendData, setTrendData] = useState([])
-  const [modelDistribution, setModelDistribution] = useState([])
   const [durationDistribution, setDurationDistribution] = useState([])
 
   useEffect(() => {
@@ -134,8 +126,7 @@ export default function TraceManagement() {
 
       // 生成趋势图数据（模拟）
       setTrendData(generateTrendData(statData))
-      // 生成模型分布和耗时分布数据
-      setModelDistribution(generateModelDistribution())
+      // 生成耗时分布数据
       setDurationDistribution(generateDurationDistribution())
     } catch (error) {
       console.error('获取追踪数据失败:', error)
@@ -162,15 +153,6 @@ export default function TraceManagement() {
     }))
   }
 
-  // 生成模型使用分布数据
-  const generateModelDistribution = () => {
-    return [
-      { name: 'Claude 3 Opus', value: 45 },
-      { name: 'Claude 3 Sonnet', value: 30 },
-      { name: 'GPT-4o', value: 15 },
-      { name: '其他模型', value: 10 },
-    ]
-  }
 
   // 生成耗时分布数据
   const generateDurationDistribution = () => {
@@ -355,35 +337,8 @@ export default function TraceManagement() {
       )}
 
       {/* 分布统计 */}
-      {modelDistribution.length > 0 && durationDistribution.length > 0 && (
-        <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* 模型使用分布 */}
-          <div className="bg-white rounded-lg shadow p-6">
-            <h3 className="text-lg font-semibold mb-4">模型使用分布</h3>
-            <div className="space-y-3">
-              {modelDistribution.map((item, index) => {
-                const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444']
-                return (
-                  <div key={index} className="flex items-center">
-                    <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: colors[index % colors.length] }}></div>
-                    <div className="flex-1">
-                      <div className="flex justify-between text-sm mb-1">
-                        <span>{item.name}</span>
-                        <span className="font-medium">{item.value}%</span>
-                      </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
-                        <div
-                          className="h-2 rounded-full"
-                          style={{ width: `${item.value}%`, backgroundColor: colors[index % colors.length] }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          </div>
-
+      {durationDistribution.length > 0 && (
+        <div className="mb-6">
           {/* 耗时分布 */}
           <div className="bg-white rounded-lg shadow p-6">
             <h3 className="text-lg font-semibold mb-4">请求耗时分布</h3>
@@ -391,11 +346,12 @@ export default function TraceManagement() {
               {durationDistribution.map((item, index) => {
                 const maxCount = Math.max(...durationDistribution.map(d => d.count))
                 const height = (item.count / maxCount) * 100
+                const colors = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#7c3aed']
                 return (
                   <div key={index} className="flex flex-col items-center flex-1 mx-1">
                     <div
-                      className="w-full bg-blue-500 rounded-t-sm"
-                      style={{ height: `${height}%` }}
+                      className="w-full rounded-t-sm"
+                      style={{ height: `${height}%`, backgroundColor: colors[index % colors.length] }}
                     ></div>
                     <div className="text-xs text-gray-500 mt-2">{item.range}</div>
                     <div className="text-xs font-medium">{item.count}</div>
@@ -533,10 +489,6 @@ export default function TraceManagement() {
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">项目ID</label>
                   <p className="text-sm">{currentTrace.project_id || '-'}</p>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-500 mb-1">使用模型</label>
-                  <p className="text-sm">{currentTrace.model || '-'}</p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-500 mb-1">参数配置</label>

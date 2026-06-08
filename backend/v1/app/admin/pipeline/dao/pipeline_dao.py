@@ -1,6 +1,6 @@
 """流水线执行记录DAO层"""
 from typing import List, Optional
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
@@ -97,11 +97,12 @@ class PipelineDAO:
         success_rate = (completed / total * 100) if total > 0 else 0
 
         # 平均执行时间（最近7天）
+        # MySQL专用：使用TIMESTAMPDIFF计算秒数差
         avg_time_query = select(func.avg(
-            func.extract('epoch', PipelineExecution.completed_at - PipelineExecution.created_at)
+            func.timestampdiff(text('SECOND'), PipelineExecution.created_at, PipelineExecution.completed_at)
         )).where(
             PipelineExecution.status == PipelineExecutionStatus.COMPLETED,
-            PipelineExecution.completed_at >= func.now() - func.interval('7 days')
+            PipelineExecution.completed_at >= func.date_sub(func.now(), text('INTERVAL 7 DAY'))
         )
         avg_time_result = await db.execute(avg_time_query)
         avg_duration = avg_time_result.scalar_one() or 0

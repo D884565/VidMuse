@@ -2,181 +2,58 @@
 import inspect
 import functools
 import asyncio
-import threading
-from dataclasses import dataclass
-from typing import Any, Callable, Optional, TypeVar, Tuple, TYPE_CHECKING
-
-# 类型检查时导入，运行时延迟导入
-if TYPE_CHECKING:
-    from sqlalchemy.orm import Session
-
+from typing import Any, Callable, Optional, TypeVar, TYPE_CHECKING
 from .context import start_span, end_span, get_trace_id
 from .dao import add_to_batch
-
-# 延迟导入，避免循环依赖
-_get_db = None
-_push_service = None
-
-def _get_db_session():
-    """获取数据库会话实例"""
-    from backend.store.database.async_database import SessionLocal
-    return SessionLocal()
-
-def _get_push_service():
-    global _push_service
-    if _push_service is None:
-        from backend.v1.app.push import push_service
-        _push_service = push_service
-    return _push_service
-
-
+from .hooks import TraceHooks
+from .compat import PushConfig, PushConfigType, _sync_push
+__all__ = ["trace", "PushConfig", "_sync_push"]
 T = TypeVar("T", bound=Callable[..., Any])
-
-# 后台事件循环用于同步函数中的异步操作
-_background_loop: asyncio.AbstractEventLoop | None = None
-_loop_thread: threading.Thread | None = None
-
-
-@dataclass
-class PushConfig:
+def _get_create_push_hooks():
     """
-    Trace推送配置类
-    用于配置@trace注解的自动推送行为
-    """
-    # 基础开关
-    enable_push: bool = False  # 是否启用自动推送
-
-    # 用户ID获取
-    user_id_getter: Optional[Callable[..., int]] = None  # 从函数参数中获取用户ID的回调
-
-    # 推送时机配置
-    push_on_start: bool = False  # 函数执行开始时推送
-    push_on_end: bool = False  # 函数执行成功结束时推送
-    push_on_error: bool = True  # 函数执行异常时推送
-
-    # 消息生成回调
-    # 回调返回格式: (message_type: str, title: str, content: Any, level: str = "info")
-    start_message_generator: Optional[Callable[..., Tuple[str, str, Any] | Tuple[str, str, Any, str]]] = None
-    end_message_generator: Optional[Callable[..., Tuple[str, str, Any] | Tuple[str, str, Any, str]]] = None
-    error_message_generator: Optional[Callable[..., Tuple[str, str, Any] | Tuple[str, str, Any, str]]] = None
-
-    # 持久化配置
-    persist_messages: bool = True  # 是否将消息持久化到数据库
-
-
-# 推送配置类型别名
-PushConfigType = Optional[PushConfig]
-
-
-def _get_background_loop() -> asyncio.AbstractEventLoop:
-    """获取或创建后台事件循环"""
-    global _background_loop, _loop_thread
-
-    if _background_loop is None:
-        _background_loop = asyncio.new_event_loop()
-        _loop_thread = threading.Thread(target=_background_loop.run_forever, daemon=True)
-        _loop_thread.start()
-
-    return _background_loop
-
-
-def _run_async(coro):
-    """在后台事件循环中运行协程"""
-    loop = _get_background_loop()
-    asyncio.run_coroutine_threadsafe(coro, loop)
-
-
-async def _do_push(
-    push_config: PushConfig,
-    user_id: int,
-    message_generator: Callable,
-    *generator_args: Any,
-    **generator_kwargs: Any
-) -> None:
-    """
-    内部推送执行函数
-    :param push_config: 推送配置
-    :param user_id: 目标用户ID
-    :param message_generator: 消息生成回调
-    :param generator_args: 传递给消息生成器的参数
-    :param generator_kwargs: 传递给消息生成器的关键字参数
+    动态获取push_config转hooks的函数
+    避免trace框架依赖push服务
     """
     try:
-        # 生成消息
-        msg_data = message_generator(*generator_args, **generator_kwargs)
-        if len(msg_data) == 3:
-            message_type, title, content = msg_data
-            level = "info"
-        else:
-            message_type, title, content, level = msg_data
-
-        # 获取数据库会话（延迟导入）
-        async with _get_db_session() as db:
-            # 获取推送服务（延迟导入）
-            push_service = _get_push_service()
-
-            # 推送消息
-            await push_service.push_message(
-                db=db,
-                user_id=user_id,
-                message_type=message_type,
-                title=title,
-                content=content,
-                level=level,
-                persist=push_config.persist_messages
-            )
-
-    except Exception as e:
-        # 推送过程中的异常不影响主业务流程，只记录日志
-        import logging
-        logger = logging.getLogger(__name__)
-        logger.error(f"Failed to push message in trace decorator: {e}", exc_info=True)
-
-
-def _sync_push(
-    push_config: PushConfig,
-    user_id: int,
-    message_generator: Callable,
-    *generator_args: Any,
-    **generator_kwargs: Any
-) -> None:
-    """同步函数中调用推送，在后台执行"""
-    _run_async(_do_push(
-        push_config, user_id, message_generator,
-        *generator_args, **generator_kwargs
-    ))
-
-
+        from backend.v1.app.push.trace_extension import create_push_hooks
+        return create_push_hooks
+    except ImportError:
+        # 如果push服务不可用，返回空函数
+        return lambda push_config, *args, **kwargs: TraceHooks()
 def trace(
     *args: Any,
     name: Optional[str] = None,
     meta_data: Optional[dict] = None,
-    push_config: PushConfigType = None
+    push_config: PushConfigType = None,
+    hooks: Optional[TraceHooks] = None
 ) -> Callable[[T], T]:
     """
     装饰器，用于标记需要追踪的函数
-
     Args:
         name: 自定义span名称，默认使用函数名
         meta_data: 扩展元数据
-        push_config: 推送配置，启用后自动在函数执行的不同阶段推送消息
-
+        push_config: （已废弃）推送配置，建议使用hooks参数替代
+        hooks: 生命周期钩子，用于在函数执行的不同阶段注入自定义行为
     Examples:
         @trace
         def my_function():
             pass
-
         @trace(name="自定义名称", meta_data={"type": "database"})
         def query_data():
             pass
-
-        # 带推送配置的使用示例
+        # 使用钩子的新方式
+        from backend.framework.trace import TraceHooks
+        def on_start(span):
+            print(f"函数开始执行: {span.name}")
+        @trace(hooks=TraceHooks(on_start=on_start))
+        def my_function():
+            pass
+        # 兼容原有推送配置
+        from backend.framework.trace import PushConfig
         def get_user_id(*args, **kwargs):
             return kwargs.get("user_id")
-
         def start_msg(*args, **kwargs):
             return ("agent_progress", "开始处理", {"progress": 0})
-
         @trace(
             push_config=PushConfig(
                 enable_push=True,
@@ -195,24 +72,26 @@ def trace(
         sig = inspect.signature(func)
         params = list(sig.parameters.keys())
         is_class_method = False
-
         # 检查是否是类方法或实例方法
         if params and params[0] in ("self", "cls"):
             is_class_method = True
-
+        # 处理hooks：合并push_config转换的hooks和传入的hooks
+        final_hooks = TraceHooks()
+        if push_config:
+            create_push_hooks = _get_create_push_hooks()
+            push_hooks = create_push_hooks(push_config, func)
+            final_hooks = TraceHooks.merge(final_hooks, push_hooks)
+        if hooks:
+            final_hooks = TraceHooks.merge(final_hooks, hooks)
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
             # 确定类名和绑定方法
             class_name = None
-            bound_func = func  # 默认使用原始函数
             if is_class_method and args:
                 if params[0] == "self":
                     class_name = args[0].__class__.__name__
-                    bound_func = func.__get__(args[0], args[0].__class__)
                 else:  # cls
                     class_name = args[0].__name__
-                    bound_func = func.__get__(args[0], args[0])
-
             # 启动span
             span = start_span(
                 name=func_name,
@@ -220,68 +99,41 @@ def trace(
                 class_name=class_name,
                 meta_data=meta_data,
             )
-
             # 记录参数
             span.args = args
             span.kwargs = kwargs
-
-            # 推送：函数开始
-            user_id = None
-            if push_config and push_config.enable_push and push_config.push_on_start:
+            # 执行on_start钩子
+            if final_hooks.on_start:
                 try:
-                    if push_config.user_id_getter:
-                        user_id = push_config.user_id_getter(*args, **kwargs)
-                        if push_config.start_message_generator:
-                            _sync_push(
-                                push_config, user_id,
-                                push_config.start_message_generator,
-                                bound_func, args, kwargs
-                            )
+                    final_hooks.on_start(span)
                 except Exception as e:
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"Failed to push start message: {e}")
-
+                    logger.warning(f"Failed to execute on_start hook: {e}", exc_info=True)
             try:
                 # 执行函数
                 result = func(*args, **kwargs)
                 span.return_value = result
-
-                # 推送：函数成功结束
-                if push_config and push_config.enable_push and push_config.push_on_end and user_id is not None:
+                # 执行on_end钩子
+                if final_hooks.on_end:
                     try:
-                        if push_config.end_message_generator:
-                            _sync_push(
-                                push_config, user_id,
-                                push_config.end_message_generator,
-                                bound_func, result
-                            )
+                        final_hooks.on_end(span)
                     except Exception as e:
                         import logging
                         logger = logging.getLogger(__name__)
-                        logger.warning(f"Failed to push end message: {e}")
-
+                        logger.warning(f"Failed to execute on_end hook: {e}", exc_info=True)
                 return result
-
             except Exception as e:
                 span.set_exception(e)
-
-                # 推送：函数异常
-                if push_config and push_config.enable_push and push_config.push_on_error and user_id is not None:
+                # 执行on_error钩子
+                if final_hooks.on_error:
                     try:
-                        if push_config.error_message_generator:
-                            _sync_push(
-                                push_config, user_id,
-                                push_config.error_message_generator,
-                                bound_func, e
-                            )
-                    except Exception as push_e:
+                        final_hooks.on_error(span, e)
+                    except Exception as hook_e:
                         import logging
                         logger = logging.getLogger(__name__)
-                        logger.warning(f"Failed to push error message: {push_e}")
-
+                        logger.warning(f"Failed to execute on_error hook: {hook_e}", exc_info=True)
                 raise
-
             finally:
                 # 结束span
                 end_span(span)
@@ -292,22 +144,17 @@ def trace(
                     if not span.trace_id:
                         import uuid
                         span.trace_id = uuid.uuid4().hex[:8]
-                    # 在后台事件循环中异步添加到批量队列
-                    _run_async(add_to_batch(span))
-
+                    # 异步添加到批量队列
+                    asyncio.create_task(add_to_batch(span))
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             # 确定类名和绑定方法
             class_name = None
-            bound_func = func  # 默认使用原始函数
             if is_class_method and args:
                 if params[0] == "self":
                     class_name = args[0].__class__.__name__
-                    bound_func = func.__get__(args[0], args[0].__class__)
                 else:  # cls
                     class_name = args[0].__name__
-                    bound_func = func.__get__(args[0], args[0])
-
             # 启动span
             span = start_span(
                 name=func_name,
@@ -315,82 +162,60 @@ def trace(
                 class_name=class_name,
                 meta_data=meta_data,
             )
-
             # 记录参数
             span.args = args
             span.kwargs = kwargs
-
-            # 推送：函数开始
-            user_id = None
-            if push_config and push_config.enable_push and push_config.push_on_start:
+            # 执行on_start钩子
+            if final_hooks.on_start:
                 try:
-                    if push_config.user_id_getter:
-                        user_id = push_config.user_id_getter(*args, **kwargs)
-                        if push_config.start_message_generator:
-                            # 异步推送，不阻塞主流程
-                            asyncio.create_task(_do_push(
-                                push_config, user_id,
-                                push_config.start_message_generator,
-                                bound_func, args, kwargs
-                            ))
+                    if asyncio.iscoroutinefunction(final_hooks.on_start):
+                        await final_hooks.on_start(span)
+                    else:
+                        final_hooks.on_start(span)
                 except Exception as e:
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.warning(f"Failed to push start message: {e}")
-
+                    logger.warning(f"Failed to execute on_start hook: {e}", exc_info=True)
             try:
                 # 执行函数
                 result = await func(*args, **kwargs)
                 span.return_value = result
-
-                # 推送：函数成功结束
-                if push_config and push_config.enable_push and push_config.push_on_end and user_id is not None:
+                # 执行on_end钩子
+                if final_hooks.on_end:
                     try:
-                        if push_config.end_message_generator:
-                            asyncio.create_task(_do_push(
-                                push_config, user_id,
-                                push_config.end_message_generator,
-                                bound_func, result
-                            ))
+                        if asyncio.iscoroutinefunction(final_hooks.on_end):
+                            await final_hooks.on_end(span)
+                        else:
+                            final_hooks.on_end(span)
                     except Exception as e:
                         import logging
                         logger = logging.getLogger(__name__)
-                        logger.warning(f"Failed to push end message: {e}")
-
+                        logger.warning(f"Failed to execute on_end hook: {e}", exc_info=True)
                 return result
-
             except Exception as e:
                 span.set_exception(e)
-
-                # 推送：函数异常
-                if push_config and push_config.enable_push and push_config.push_on_error and user_id is not None:
+                # 执行on_error钩子
+                if final_hooks.on_error:
                     try:
-                        if push_config.error_message_generator:
-                            asyncio.create_task(_do_push(
-                                push_config, user_id,
-                                push_config.error_message_generator,
-                                bound_func, e
-                            ))
-                    except Exception as push_e:
+                        if asyncio.iscoroutinefunction(final_hooks.on_error):
+                            await final_hooks.on_error(span, e)
+                        else:
+                            final_hooks.on_error(span, e)
+                    except Exception as hook_e:
                         import logging
                         logger = logging.getLogger(__name__)
-                        logger.warning(f"Failed to push error message: {push_e}")
-
+                        logger.warning(f"Failed to execute on_error hook: {hook_e}", exc_info=True)
                 raise
-
             finally:
                 # 结束span（异步函数的span会在中间件中统一保存，不需要单独添加到批量队列）
                 end_span(span)
-
         # 判断是同步还是异步函数
         if inspect.iscoroutinefunction(func):
             return async_wrapper  # type: ignore
         else:
             return sync_wrapper  # type: ignore
-
     # 处理无参数的装饰器调用情况：@trace
     if len(args) == 1 and callable(args[0]):
         return decorator(args[0])
-
     # 处理带参数的装饰器调用情况：@trace(name="xxx")
     return decorator

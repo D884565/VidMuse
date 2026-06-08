@@ -95,57 +95,90 @@ export default function PipelineList({
       width: 180,
       render: (time) => time ? new Date(time).toLocaleString() : '-'
     },
-    {
-      key: 'actions',
-      title: '操作',
-      width: 150,
-      fixed: 'right',
-      render: (_, row) => (
-        <div className="flex items-center gap-1">
-          <Button
-            type="text"
-            size="small"
-            icon={<Eye className="w-4 h-4" />}
-            onClick={() => onViewDetail(row)}
-            title="查看详情"
-          />
-          {row.status === 'failed' && (
-            <Button
-              type="text"
-              size="small"
-              icon={<RefreshCw className="w-4 h-4 text-green-600" />}
-              onClick={() => onRetry(row)}
-              title="重试"
-            />
-          )}
-          {['pending', 'running'].includes(row.status) && (
-            <Button
-              type="text"
-              size="small"
-              icon={<XCircle className="w-4 h-4 text-red-600" />}
-              onClick={() => onCancel(row)}
-              title="取消"
-            />
-          )}
-        </div>
-      )
-    }
   ]
+
+  // 分页渲染
+  const renderPagination = () => {
+    if (!pagination || pagination.total <= pagination.page_size) return null
+
+    const totalPages = Math.ceil(pagination.total / pagination.page_size)
+    const pages = Array.from({ length: totalPages }, (_, i) => i + 1)
+
+    return (
+      <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200">
+        <div className="text-sm text-gray-500">
+          共 {pagination.total} 条记录，第 {pagination.page} / {totalPages} 页
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => onPageChange(pagination.page - 1, pagination.page_size)}
+            disabled={pagination.page <= 1}
+            className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          >
+            上一页
+          </button>
+          {pages.map(page => (
+            <button
+              key={page}
+              onClick={() => onPageChange(page, pagination.page_size)}
+              className={`px-3 py-1 border rounded ${
+                page === pagination.page
+                  ? 'bg-blue-600 text-white border-blue-600'
+                  : 'border-gray-300 hover:bg-gray-50'
+              }`}
+            >
+              {page}
+            </button>
+          ))}
+          <button
+            onClick={() => onPageChange(pagination.page + 1, pagination.page_size)}
+            disabled={pagination.page >= totalPages}
+            className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+          >
+            下一页
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="bg-white rounded-lg shadow-sm">
       <Table
         columns={columns}
-        dataSource={data}
+        data={data}
         loading={loading}
-        rowKey="execution_id"
-        pagination={{
-          current: pagination.page,
-          pageSize: pagination.page_size,
-          total: pagination.total,
-          onChange: onPageChange
-        }}
+        actions={(row) => (
+          <div className="flex items-center gap-1 justify-end">
+            <Button
+              type="text"
+              size="small"
+              icon={<Eye className="w-4 h-4" />}
+              onClick={() => onViewDetail(row)}
+              title="查看详情"
+            />
+            {row.status === 'failed' && (
+              <Button
+                type="text"
+                size="small"
+                icon={<RefreshCw className="w-4 h-4 text-green-600" />}
+                onClick={() => onRetry(row)}
+                title="重试"
+              />
+            )}
+            {['pending', 'running'].includes(row.status) && (
+              <Button
+                type="text"
+                size="small"
+                icon={<XCircle className="w-4 h-4 text-red-600" />}
+                onClick={() => onCancel(row)}
+                title="取消"
+              />
+            )}
+          </div>
+        )}
       />
+      {renderPagination()}
     </div>
   )
 }
