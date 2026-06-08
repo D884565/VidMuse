@@ -7,8 +7,6 @@ import {
   LogOut,
   MessageSquarePlus,
   Package,
-  PanelLeftClose,
-  PanelLeftOpen,
   Film,
   Settings,
   Sparkles,
@@ -23,7 +21,6 @@ export default function Sidebar() {
   const activeView = useAppStore((state) => state.activeView)
   const setActiveView = useAppStore((state) => state.setActiveView)
   const collapsed = useAppStore((state) => state.sidebarCollapsed)
-  const toggleSidebar = useAppStore((state) => state.toggleSidebar)
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
   const clearDraftConversation = useAppStore((state) => state.clearDraftConversation)
   const isAdmin = useAppStore((state) => state.isAdmin())
@@ -81,14 +78,6 @@ export default function Sidebar() {
           <p className="m-0 text-base font-semibold">VidMuse</p>
           <p className="m-0 text-xs text-[var(--text-muted)]">带货视频生成系统</p>
         </div>
-        <button
-          aria-label="切换侧边栏"
-          className="ml-auto rounded-lg p-2 text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white max-[1024px]:hidden"
-          type="button"
-          onClick={toggleSidebar}
-        >
-          {collapsed ? <PanelLeftOpen size={18} /> : <PanelLeftClose size={18} />}
-        </button>
       </div>
 
       <nav className="flex-1 space-y-2 px-3 py-4">

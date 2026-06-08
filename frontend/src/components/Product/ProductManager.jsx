@@ -5,6 +5,9 @@ import ProductFormModal from './ProductFormModal.jsx'
 import { filterOwnedProducts } from './productFormUtils.js'
 import { createProduct, deleteProduct, listProducts, updateProduct } from '../../services/product.js'
 
+/* 商品管理页面 — 增删改查商品信息 */
+
+/** 格式化价格显示，未填写时返回提示文本 */
 function formatPrice(price) {
   if (price == null || price === '') return '未填写价格'
   return `¥${Number(price).toFixed(2)}`

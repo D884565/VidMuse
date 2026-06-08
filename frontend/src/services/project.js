@@ -5,8 +5,11 @@ export async function createProject(data) {
 }
 
 export async function generateProjectScript(projectId, options = {}) {
-  return api.post(`/v1/projects/${projectId}/script/generate`, null, {
+  return api.post(`/v1/projects/${projectId}/script/generate`, {
+    creation_mode: options.creationMode || null,
+  }, {
     params: { force: !!options.force },
+    timeout: 300000, // 5 分钟，剧本生成可能需要较长时间
   })
 }
 

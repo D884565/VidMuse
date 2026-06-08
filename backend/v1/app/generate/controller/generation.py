@@ -63,9 +63,32 @@ async def create_project(
     """创建视频项目。默认只保存项目；auto_render=true 时保留一键成片体验。"""
     from backend.v1.app.models.conversation import Conversation
     from backend.v1.app.models.project import Project
+    from backend.v1.app.models.product import Product
 
     product_info_str = None
+    product_obj = None
     selected_assets = project.selected_assets or []
+
+    # 如果传了 product_id，从商品表读取信息用于构建初始消息
+    if project.product_id:
+        product_row = await db.execute(select(Product).where(Product.id == project.product_id))
+        product_obj = product_row.scalar_one_or_none()
+        if product_obj:
+            product_images = []
+            if product_obj.images:
+                try:
+                    product_images = json.loads(product_obj.images) if isinstance(product_obj.images, str) else product_obj.images
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            product_info_dict = {
+                "title": product_obj.name,
+                "description": product_obj.description,
+                "brand": product_obj.brand,
+                "price": float(product_obj.price) if product_obj.price else None,
+                "main_image_url": product_obj.main_image_url,
+                "images": product_images,
+            }
+            product_info_str = json.dumps(product_info_dict, ensure_ascii=False)
     selected_asset_ids = []
 
     if selected_assets:
@@ -82,17 +105,17 @@ async def create_project(
             selected_asset_ids = resolved_materials["selected_asset_ids"]
 
 
-    # 自动生成标题：项目内使用简洁产品标题，避免侧栏展示整句用户原话。
-    title = project.title
-    if not title:
-        title = build_video_project_title(project.user_prompt)
+    # 自动生成标题和摘要：优先用商品名，否则从 user_prompt 提取
+    product_name = getattr(product_obj, "name", None) if product_obj else None
+    product_brand = getattr(product_obj, "brand", None) if product_obj else None
 
-    # 自动生成摘要：取 user_prompt 前100个字符
-    summary = None
-    if project.user_prompt:
-        summary = project.user_prompt[:100].strip()
-    elif title:
-        summary = title[:100].strip()
+    if product_name:
+        _auto_title = f"{product_brand}{product_name}带货视频" if product_brand else f"{product_name}带货视频"
+    else:
+        _auto_title = build_video_project_title(project.user_prompt)
+
+    title = project.title or _auto_title
+    summary = _auto_title
 
     p = Project(
         title=title,
@@ -144,6 +167,7 @@ async def create_project(
     initial_message = project_initial_message_builder.build(
         title=p.title,
         user_prompt=p.user_prompt,
+        display_user_prompt=project.display_user_prompt,
         style=p.style,
         target_audience=p.target_audience,
         key_points=p.key_points or [],
@@ -308,6 +332,7 @@ async def delete_project(
 async def generate_project_script(
     project_id: int = Path(..., gt=0),
     force: bool = Query(False),
+    creation_mode: str | None = Body(None, embed=True),
     current_user_id: int = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db),
 ):
@@ -333,7 +358,7 @@ async def generate_project_script(
         generation_workflow_service.mark_stage_running(project_model, "script", task.id)
         await db.commit()
 
-        frames = await script_generation_service.generate_script(db, project_id, force=force)
+        frames = await script_generation_service.generate_script(db, project_id, force=force, creation_mode=creation_mode)
         generation_workflow_service.mark_stage_review(project_model, "script", task.id)
         from backend.v1.app.models.conversation import Conversation
 
@@ -601,6 +626,7 @@ async def chat_refinement(
             "selected_assets": req.get("selected_assets") or [],
             "local_references": req.get("local_references") or [],
             "client_id": req.get("client_id"),
+            "assistant_client_id": req.get("assistant_client_id"),
         }
         if not content:
             raise BusinessException(VIDEO_ERROR, "content 不能为空")
@@ -628,6 +654,7 @@ async def chat_stream(
         "selected_assets": req.get("selected_assets") or [],
         "local_references": req.get("local_references") or [],
         "client_id": req.get("client_id"),
+        "assistant_client_id": req.get("assistant_client_id"),
     }
     if not content:
         raise BusinessException(VIDEO_ERROR, "content 不能为空")
@@ -739,37 +766,44 @@ async def chat_entry_stream(
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     async def stream_events():
-        # 使用LLM意图识别，失败时降级到硬编码规则
         try:
-            intent = intent_service.classify_entry(content)
-            action = "CREATE_PROJECT" if intent["should_create_project"] else "CONVERSE"
-        except Exception as e:
-            logger.warning(f"LLM intent failed, fallback to rule: {e}")
-            fallback = classify_no_project_message(content)
-            intent = {"should_create_project": fallback["should_create_project"]}
-            action = fallback["action"]
+            # 先发 thinking 事件，让前端有反馈
+            yield sse("thinking", {"message": "正在理解你的意图..."})
 
-        yield sse("start", {"action": action, "should_create_project": intent["should_create_project"]})
-        if intent["should_create_project"]:
+            # 使用LLM意图识别，失败时降级到硬编码规则
+            try:
+                intent = intent_service.classify_entry(content)
+                action = "CREATE_PROJECT" if intent["should_create_project"] else "CONVERSE"
+            except Exception as e:
+                logger.warning(f"LLM intent failed, fallback to rule: {e}")
+                fallback = classify_no_project_message(content)
+                intent = {"should_create_project": fallback["should_create_project"]}
+                action = fallback["action"]
+
+            yield sse("start", {"action": action, "should_create_project": intent["should_create_project"]})
+            if intent["should_create_project"]:
+                yield sse("done", {
+                    "action": "CREATE_PROJECT",
+                    "should_create_project": True,
+                    "user_prompt": content,
+                })
+                return
+
+            try:
+                for chunk in intent_service.stream_entry_converse(content):
+                    yield sse("token", {"content": chunk})
+            except Exception as exc:
+                logger.warning("[chat_entry_stream] LLM converse fallback: %s", exc)
+                reply = "我先按普通问题回答，不会创建项目。你可以继续提问；如果想开始做视频，请直接告诉我产品和目标。"
+                for char in reply:
+                    yield sse("token", {"content": char})
             yield sse("done", {
-                "action": "CREATE_PROJECT",
-                "should_create_project": True,
-                "user_prompt": content,
+                "action": "CONVERSE",
+                "should_create_project": False,
             })
-            return
-
-        try:
-            for chunk in intent_service.stream_entry_converse(content):
-                yield sse("token", {"content": chunk})
         except Exception as exc:
-            logger.warning("[chat_entry_stream] LLM converse fallback: %s", exc)
-            reply = "我先按普通问题回答，不会创建项目。你可以继续提问；如果想开始做视频，请直接告诉我产品和目标。"
-            for char in reply:
-                yield sse("token", {"content": char})
-        yield sse("done", {
-            "action": "CONVERSE",
-            "should_create_project": False,
-        })
+            logger.exception("[chat_entry_stream] stream failed")
+            yield sse("error", {"message": f"请求处理失败: {exc}"})
 
     return StreamingResponse(
         stream_events(),
@@ -900,7 +934,7 @@ async def update_project_frame(
         db.add(Conversation(
             project_id=project_id,
             role="assistant",
-            content=f"已在项目详情中保存分镜 {frame.get('sequence') or frame_id} 的草稿，可继续重新生成图片。",
+            content="已保存分镜修改，可继续重新生成图片。",
             message_type="text",
             stage=project.get("workflow_stage") or "script",
             action_type="storyboard_edit_save",
@@ -969,7 +1003,7 @@ async def regenerate_frame_image(
         db.add(Conversation(
             project_id=project_id,
             role="assistant",
-            content=f"已提交分镜 {result.get('sequence') or frame_id} 的图片重新生成任务，完成后即可继续生成新视频。",
+            content="已提交图片重新生成任务，完成后会在对话中展示新图。",
             message_type="text",
             stage=project.get("workflow_stage") or "image",
             action_type="storyboard_edit_regenerate_image",
@@ -1011,7 +1045,14 @@ async def regenerate_frame_video(
         frame = result.scalar_one_or_none()
         if not frame:
             raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
+        if not frame.image_url or frame.status != 2 or frame.dirty:
+            raise BusinessException(VIDEO_ERROR, "请先重新生成图片，确认当前分镜有最新图片后再生成视频。")
 
+        instruction = (req or {}).get("instruction")
+        if instruction:
+            ai_params = dict(frame.ai_params or {})
+            ai_params["video_revision_instruction"] = instruction
+            frame.ai_params = ai_params
         task = await generation_task_service.create_task(db, project_id, "frame_video", status="queued")
         project_model = await _load_project_for_workflow_update(db, project_id)
         if not project_model:
@@ -1022,6 +1063,22 @@ async def regenerate_frame_video(
         from backend.v1.app.generate.tasks.celery_app import celery_app
         sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
         await generation_task_service.set_celery_task_id(db, task.id, sent.id)
+        db.add(Conversation(
+            project_id=project_id,
+            role="assistant",
+            content="已提交分镜视频重新生成任务，完成后可在分镜编辑中预览。",
+            message_type="text",
+            stage=project.get("workflow_stage") or "video",
+            action_type="storyboard_edit_regenerate_video",
+            task_id=task.id,
+            frame_id=frame_id,
+            metadata_={
+                "source": "project_detail",
+                "action": "storyboard_edit_regenerate_video",
+                "task_id": task.id,
+            },
+        ))
+        await db.commit()
         return Response.success(data={
             "project_id": project_id,
             "frame_id": frame_id,

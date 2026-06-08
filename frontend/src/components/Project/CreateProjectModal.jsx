@@ -5,11 +5,8 @@ import { createProject } from '../../services/project.js'
 
 // 语音类型选项（火山引擎音色）
 const VOICE_OPTIONS = [
-  { value: 'zh_female_cancan_mars_bigtts', label: '灿灿（活泼女声）' },
-  { value: 'zh_female_shuangkuai_moon_bigtts', label: '爽快（自信女声）' },
-  { value: 'zh_male_chunhou_mars_bigtts', label: '淳厚（沉稳男声）' },
-  { value: 'zh_female_tianmei_mars_bigtts', label: '甜美（温柔女声）' },
-  { value: 'zh_male_yangguang_mars_bigtts', label: '阳光（专业男声）' },
+  { value: 'zh_female_cancan_mars_bigtts', label: '温柔女声' },
+  { value: 'zh_male_kailangxuezhang_uranus_bigtts', label: '清爽男声' },
 ]
 
 export default function CreateProjectModal({ isOpen, onClose, onCreated }) {

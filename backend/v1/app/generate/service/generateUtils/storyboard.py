@@ -72,14 +72,45 @@ class StoryboardService:
                     value = max(1.0, float(value))
                 except (TypeError, ValueError):
                     continue
+            if field == "sequence":
+                try:
+                    value = max(1, int(value))
+                except (TypeError, ValueError):
+                    continue
+            current_value = getattr(frame, field)
+            if field == "duration":
+                try:
+                    current_value = max(1.0, float(current_value or 0))
+                except (TypeError, ValueError):
+                    current_value = None
+            if field == "sequence":
+                try:
+                    current_value = max(1, int(current_value or 0))
+                except (TypeError, ValueError):
+                    current_value = None
+            if current_value == value:
+                continue
             setattr(frame, field, value)
             changed = True
             changed_fields.add(field)
 
         if changed:
+            # 当 image_prompt 变更但 video_prompt 未单独修改时，同步 video_prompt
+            if "image_prompt" in changed_fields and "video_prompt" not in changed_fields:
+                frame.video_prompt = frame.image_prompt
+
             project = await db.get(Project, project_id)
             duration_result = await db.execute(select(Frame).where(Frame.project_id == project_id))
             frames = list(duration_result.scalars().all())
+            narration_only = changed_fields == {"narration"}
+            self._sync_legacy_fields(frame)
+            frame.dirty = 1  # Mark manual edits before any warning response.
+            frame.version = (frame.version or 1) + 1
+            frame.last_edited_at = datetime.utcnow()
+            dirty_stage = self._infer_dirty_stage(changed_fields)
+            if project:
+                generation_workflow_service.invalidate_from(project, dirty_stage)
+            await self._sync_project_script_snapshot(db, project, frames)
             # 总时长校验，溢出则返回警告而不是抛异常
             durations = [float(item.duration or 0) for item in frames]
             total = sum(durations)
@@ -97,9 +128,7 @@ class StoryboardService:
                     "frame": self._frame_to_dict(frame),
                 }
             self._sync_legacy_fields(frame)
-            frame.dirty = 1  # 标记帧已被手动编辑
-            frame.version = (frame.version or 1) + 1
-            frame.last_edited_at = datetime.utcnow()
+            frame.dirty = 0 if narration_only else 1  # 只改旁白时只需要重新生成配音/成片。
             # 旁白溢出检测
             if "narration" in changed_fields and frame.narration:
                 estimated_seconds = len(frame.narration) / 3
@@ -125,10 +154,6 @@ class StoryboardService:
                 ai_params = dict(frame.ai_params or {})
                 ai_params["tts_dirty"] = True
                 frame.ai_params = ai_params
-            dirty_stage = self._infer_dirty_stage(changed_fields)
-            if project:
-                generation_workflow_service.invalidate_from(project, dirty_stage)
-            await self._sync_project_script_snapshot(db, project, frames)
             await db.commit()
             await db.refresh(frame)
 
@@ -153,7 +178,7 @@ class StoryboardService:
         if "sequence" in changed_fields:
             return "script"
         if "image_prompt" in changed_fields:
-            return "image"
+            return "image"  # image 变更会同步 video_prompt，invalidate_from("image") 覆盖 image+video
         if "video_prompt" in changed_fields or "duration" in changed_fields:
             return "video"
         if (

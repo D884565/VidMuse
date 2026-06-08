@@ -6,11 +6,14 @@ import logging
 import random
 from typing import Any
 
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from backend.providers import VolcanoLLM
 from backend.providers.dto.schema import ChatRequest, ChatMessage
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
+from backend.v1.app.models.asset import Asset
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +96,43 @@ class BGMSelectorService:
 
         return None
 
+    async def select_bgm_async(
+        self,
+        db: AsyncSession,
+        script_content: dict,
+        exclude_ids: list[int] | None = None,
+    ) -> int | None:
+        """AsyncSession 版 BGM 选曲，用于 FastAPI 异步接口路径。"""
+        style_info = self._extract_style_info(script_content)
+        if not style_info:
+            logger.info("[BGM选曲] 无风格信息，跳过")
+            return None
+
+        candidates = await self._get_candidates_async(db, exclude_ids)
+        if not candidates:
+            logger.info("[BGM选曲] BGM 库为空，跳过")
+            return None
+
+        scored = self._score_candidates(style_info, candidates)
+        top_candidates = scored[:MAX_CANDIDATES]
+
+        try:
+            bgm_id = self._llm_select(style_info, top_candidates)
+            if bgm_id:
+                logger.info("[BGM选曲] LLM 选择了 bgm_id=%s", bgm_id)
+                return bgm_id
+        except Exception as exc:
+            logger.warning("[BGM选曲] LLM 调用失败，降级到标签匹配: %s", exc)
+
+        if top_candidates:
+            top_score = top_candidates[0].get("_score", 0)
+            top_tier = [c for c in top_candidates if c.get("_score", 0) == top_score]
+            chosen = random.choice(top_tier)
+            logger.info("[BGM选曲] 随机选择 bgm_id=%s (top_tier %d 首, score=%d)", chosen["id"], len(top_tier), top_score)
+            return chosen["id"]
+
+        return None
+
     def _extract_style_info(self, script_content: dict) -> str:
         """从剧本内容中提取风格描述文本。"""
         parts = []
@@ -128,6 +168,19 @@ class BGMSelectorService:
         _, assets = AssetDAO.list_assets(
             db, type=3, scope="bgm_library", page_size=200
         )
+        return self._assets_to_candidates(assets, exclude_ids)
+
+    async def _get_candidates_async(self, db: AsyncSession, exclude_ids: list[int] | None) -> list[dict]:
+        """从异步数据库会话获取 BGM 候选列表。"""
+        result = await db.execute(
+            select(Asset)
+            .where(Asset.type == 3, Asset.scope == "bgm_library")
+            .order_by(Asset.created_at.desc())
+            .limit(200)
+        )
+        return self._assets_to_candidates(result.scalars().all(), exclude_ids)
+
+    def _assets_to_candidates(self, assets, exclude_ids: list[int] | None) -> list[dict]:
         candidates = []
         exclude_set = set(exclude_ids or [])
         for asset in assets:

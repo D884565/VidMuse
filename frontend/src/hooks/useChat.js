@@ -9,10 +9,12 @@ import {
   appendOptimisticMessages,
   appendTokenToMessage,
   clearPersistedDraftState,
+  getProjectActivity,
   getProjectKey,
   getProjectMessages,
   mergeFetchedMessages,
   promoteDraftMessagesToProject,
+  setProjectActivity,
   readPersistedDraftState,
   setProjectMessages,
   updateProjectMessage,
@@ -22,8 +24,8 @@ import {
 export function useChat(options = {}) {
   const { onMessageHandled } = options
   const [messagesByProject, setMessagesByProject] = useState({})
-  const [isTyping, setIsTyping] = useState(false)
-  const [isThinking, setIsThinking] = useState(false)
+  const [typingByProject, setTypingByProject] = useState({})
+  const [thinkingByProject, setThinkingByProject] = useState({})
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const activeProjectId = useAppStore((state) => state.activeProjectId)
@@ -37,6 +39,7 @@ export function useChat(options = {}) {
   const bumpProjectListVersion = useAppStore((state) => state.bumpProjectListVersion)
   const streamingIdRef = useRef(null)
   const streamingProjectKeyRef = useRef(null)
+  const prevProjectIdRef = useRef(activeProjectId)
 
   useEffect(() => {
     const persistedDraft = readPersistedDraftState()
@@ -67,9 +70,12 @@ export function useChat(options = {}) {
   useEffect(() => {
     let cancelled = false
     const projectKey = getProjectKey(activeProjectId)
+    const prevProjectId = prevProjectIdRef.current
+    prevProjectIdRef.current = activeProjectId
 
+    // 草稿模式：仅在从项目切回草稿时同步消息（sendMessage 已直接更新 messagesByProject）
     if (!activeProjectId) {
-      if (draftConversationMessages.length) {
+      if (prevProjectId !== activeProjectId && draftConversationMessages.length) {
         setMessagesByProject((current) =>
           setProjectMessages(current, projectKey, draftConversationMessages)
         )
@@ -98,8 +104,12 @@ export function useChat(options = {}) {
         if (normalized.length > 0) {
           const last = normalized[normalized.length - 1]
           if (last.role === 'user') {
-            setIsThinking(true)
+            setThinkingByProject((current) => setProjectActivity(current, projectKey, true))
+          } else {
+            setThinkingByProject((current) => setProjectActivity(current, projectKey, false))
           }
+        } else {
+          setThinkingByProject((current) => setProjectActivity(current, projectKey, false))
         }
       })
       .catch((err) => {
@@ -115,13 +125,14 @@ export function useChat(options = {}) {
     return () => {
       cancelled = true
     }
-  }, [activeProjectId, draftConversationMessages, reloadToken, conversationVersion])
+  }, [activeProjectId, reloadToken, conversationVersion])
 
   const sendMessage = useCallback(async (payload) => {
     const inputContent = typeof payload === 'string' ? payload : payload?.content || ''
     const selectedAssets = Array.isArray(payload?.selectedAssets) ? payload.selectedAssets : []
     const selectedProduct = payload?.selectedProduct || null
     const localRefs = Array.isArray(payload?.localRefs) ? payload.localRefs : []
+    const creationMode = payload?.creationMode || null
     const submission = buildChatSubmission({
       content: inputContent,
       selectedAssets,
@@ -155,6 +166,7 @@ export function useChat(options = {}) {
       } : null,
       local_references: normalizedLocalRefs,
       client_id: clientUserId,
+      assistant_client_id: clientAssistantId,
     }
 
     let projectId = activeProjectId
@@ -205,7 +217,7 @@ export function useChat(options = {}) {
         return nextDraft[DRAFT_PROJECT_KEY] || []
       })
     }
-    setIsTyping(true)
+    setTypingByProject((current) => setProjectActivity(current, projectKey, true))
 
     let finalResult = null
     let entryResult = null
@@ -222,11 +234,11 @@ export function useChat(options = {}) {
       onStart() {},
       onThinking() {
         if (streamingIdRef.current !== assistantMsgId) return
-        setIsThinking(true)
+        setThinkingByProject((current) => setProjectActivity(current, projectKey, true))
       },
       onToken(data) {
         if (streamingIdRef.current !== assistantMsgId) return
-        setIsThinking(false)
+        setThinkingByProject((current) => setProjectActivity(current, projectKey, false))
         setMessagesByProject((current) =>
           appendTokenToMessage(current, projectKey, assistantMsgId, data.content || '')
         )
@@ -289,7 +301,7 @@ export function useChat(options = {}) {
         )
       },
       onError(err) {
-        setIsThinking(false)
+        setThinkingByProject((current) => setProjectActivity(current, projectKey, false))
         setMessagesByProject((current) =>
           updateProjectMessage(current, projectKey, assistantMsgId, (message) => ({
             ...message,
@@ -312,15 +324,48 @@ export function useChat(options = {}) {
     if (!projectId) {
       setDraftConversationTitle(trimmedContent)
       await sendEntryChatMessageStream(requestPayload, callbacks)
+
+      // 如果 entryResult 为 null（流异常关闭），清理 streaming 状态
+      if (!entryResult) {
+        setMessagesByProject((current) =>
+          updateProjectMessage(current, projectKey, assistantMsgId, (message) => ({
+            ...message,
+            content: message.content || '请求未完成，请重试',
+            streaming: false,
+            optimistic: false,
+          }))
+        )
+        updateDraftMessage((cache) =>
+          updateProjectMessage(cache, projectKey, assistantMsgId, (message) => ({
+            ...message,
+            content: message.content || '请求未完成，请重试',
+            streaming: false,
+            optimistic: false,
+          }))
+        )
+      }
+
       if (entryResult?.action === 'CREATE_PROJECT') {
         try {
+          // 步骤1: 创建项目
+          setMessagesByProject((current) =>
+            updateProjectMessage(current, projectKey, assistantMsgId, (message) => ({
+              ...message,
+              content: '正在为您创建项目...',
+              streaming: true,
+            }))
+          )
           const project = await createProject({
             user_prompt: submission.content,
+            display_user_prompt: submission.displayContent,
             selected_assets: submission.selectedAssets,
             product_id: submission.selectedProduct?.id || null,
+            style: useAppStore.getState().parameters?.style || null,
+            voice_type: useAppStore.getState().parameters?.voice_type || null,
             auto_render: false,
           })
           projectId = project.id
+          const draftProjectKey = projectKey
           projectKey = getProjectKey(projectId)
           clearDraftConversation()
           clearPersistedDraftState()
@@ -330,8 +375,32 @@ export function useChat(options = {}) {
           setMessagesByProject((current) =>
             promoteDraftMessagesToProject(current, project.id, assistantMsgId)
           )
+          setTypingByProject((current) => ({
+            ...setProjectActivity(current, draftProjectKey, false),
+            [projectKey]: true,
+          }))
+          setThinkingByProject((current) => setProjectActivity(current, draftProjectKey, false))
           setActiveProjectId(projectId)
-          const scriptResult = await generateProjectScript(projectId)
+
+          // 步骤2: 生成剧本
+          setMessagesByProject((current) =>
+            updateProjectMessage(current, projectKey, assistantMsgId, (message) => ({
+              ...message,
+              content: '项目已创建，正在为您生成剧本，请稍候...',
+              streaming: true,
+            }))
+          )
+          const scriptResult = await generateProjectScript(projectId, { creationMode })
+
+          // 步骤3: 完成
+          setMessagesByProject((current) =>
+            updateProjectMessage(current, projectKey, assistantMsgId, (message) => ({
+              ...message,
+              content: '剧本已生成！您可以在右侧分镜面板中查看和调整。',
+              streaming: false,
+              optimistic: false,
+            }))
+          )
           setReloadToken((value) => value + 1)
           onMessageHandled?.({ projectId, result: scriptResult })
         } catch (err) {
@@ -349,7 +418,8 @@ export function useChat(options = {}) {
       await sendChatMessageStream(projectId, requestPayload, callbacks)
     }
 
-    setIsTyping(false)
+    setTypingByProject((current) => setProjectActivity(current, projectKey, false))
+    setThinkingByProject((current) => setProjectActivity(current, projectKey, false))
     streamingIdRef.current = null
     streamingProjectKeyRef.current = null
 
@@ -366,7 +436,13 @@ export function useChat(options = {}) {
     setDraftConversationTitle,
   ])
 
+  const reload = useCallback(() => {
+    setReloadToken((value) => value + 1)
+  }, [])
+
   const messages = getProjectMessages(messagesByProject, activeProjectId)
+  const isTyping = getProjectActivity(typingByProject, activeProjectId)
+  const isThinking = getProjectActivity(thinkingByProject, activeProjectId)
 
   return {
     messages,
@@ -374,7 +450,7 @@ export function useChat(options = {}) {
     isThinking,
     sendMessage,
     historyLoaded,
-    reload: () => setReloadToken((value) => value + 1),
+    reload,
   }
 }
 

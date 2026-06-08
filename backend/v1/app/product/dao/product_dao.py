@@ -29,7 +29,7 @@ class ProductDAO:
                 product_data[field] = json.dumps(product_data[field], ensure_ascii=False)
         product = Product(**product_data)
         db.add(product)
-        db.commit()
+        db.flush()
         db.refresh(product)
         return product
 
@@ -66,7 +66,7 @@ class ProductDAO:
             if isinstance(update_data.get(field), (list, dict)):
                 update_data[field] = json.dumps(update_data[field], ensure_ascii=False)
         db.query(Product).filter(Product.id == product_id).update(update_data)
-        db.commit()
+        db.flush()
         return ProductDAO.get_product_by_id(db, product_id)
 
     @staticmethod
@@ -78,7 +78,7 @@ class ProductDAO:
         :return: 是否删除成功
         """
         result = db.query(Product).filter(Product.id == product_id).delete()
-        db.commit()
+        db.flush()
         return result > 0
 
     @staticmethod

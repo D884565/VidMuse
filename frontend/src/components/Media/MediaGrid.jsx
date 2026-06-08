@@ -3,6 +3,8 @@ import { FileText, ImagePlus, Loader2, Plus } from 'lucide-react'
 import ConfirmDialog from '../Common/ConfirmDialog.jsx'
 import MediaCard from './MediaCard.jsx'
 import AssetEditModal from './AssetEditModal.jsx'
+
+/* 素材库页面 — 管理图片、视频、文本等素材资源 */
 import {
   createTextAsset,
   deleteAsset,

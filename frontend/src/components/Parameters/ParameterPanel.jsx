@@ -1,8 +1,12 @@
 import { useAppStore } from '../../store/appStore.js'
 import { formatVideoStyle } from '../../utils/videoStyle.js'
-import DurationSlider from './DurationSlider.jsx'
 
-const styles = ['cinematic', 'product', 'anime', 'realistic']
+const styles = ['product', 'cinematic', 'anime', 'realistic']
+
+const VOICE_OPTIONS = [
+  { value: 'zh_female_cancan_mars_bigtts', label: '温柔女声' },
+  { value: 'zh_male_kailangxuezhang_uranus_bigtts', label: '清爽男声' },
+]
 
 export default function ParameterPanel() {
   const parameters = useAppStore((state) => state.parameters)
@@ -15,12 +19,8 @@ export default function ParameterPanel() {
         <span className="text-xs text-[var(--text-muted)]">应用到当前对话</span>
       </div>
 
-      <DurationSlider
-        value={parameters.target_duration}
-        onChange={(target_duration) => updateParameters({ target_duration })}
-      />
-
-      <div className="mt-5">
+      {/* 风格 */}
+      <div>
         <p className="mb-3 text-xs text-[var(--text-muted)]">风格</p>
         <div className="flex flex-wrap gap-2">
           {styles.map((style) => (
@@ -35,6 +35,27 @@ export default function ParameterPanel() {
               onClick={() => updateParameters({ style })}
             >
               {formatVideoStyle(style)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 音色 */}
+      <div className="mt-5">
+        <p className="mb-3 text-xs text-[var(--text-muted)]">音色</p>
+        <div className="flex flex-wrap gap-2">
+          {VOICE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              className={`rounded-lg border px-3 py-2 text-sm ${
+                parameters.voice_type === opt.value
+                  ? 'border-[#7c3aed] bg-[rgba(124,58,237,0.18)] text-white shadow-[0_0_18px_rgba(124,58,237,0.22)]'
+                  : 'border-[var(--border-soft)] text-[var(--text-muted)] hover:border-[rgba(124,58,237,0.45)] hover:text-white'
+              }`}
+              type="button"
+              onClick={() => updateParameters({ voice_type: opt.value })}
+            >
+              {opt.label}
             </button>
           ))}
         </div>

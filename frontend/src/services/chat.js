@@ -1,5 +1,6 @@
 import api from './api'
 
+/** 发送聊天消息到指定项目 */
 export async function sendChatMessage(projectId, payload, frameId = null) {
   const requestPayload = typeof payload === 'string'
     ? { content: payload, frame_id: frameId }

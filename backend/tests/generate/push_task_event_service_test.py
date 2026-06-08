@@ -194,3 +194,49 @@ def test_emit_event_sync_persists_task_event_metadata():
     assert row.status == "running"
     assert row.progress == 10
     assert row.content["current_step"] == "PROJECT_VALIDATION"
+
+
+def test_task_steps_accept_dict_events_from_serialized_history():
+    events = [
+        {
+            "event_type": "step_started",
+            "status": "running",
+            "progress": 30,
+            "created_at": "2026-06-06T12:02:00",
+            "step": {
+                "step_key": "IMAGE_GENERATING",
+                "frame_id": 9,
+                "status": "running",
+                "progress": 30,
+            },
+        },
+        {
+            "event_type": "step_finished",
+            "status": "running",
+            "progress": 45,
+            "created_at": "2026-06-06T12:03:00",
+            "step": {
+                "step_key": "IMAGE_GENERATING",
+                "frame_id": 9,
+                "status": "succeeded",
+                "progress": 45,
+                "output_snapshot": {"image_url": "u"},
+            },
+        },
+    ]
+
+    steps = task_event_service.aggregate_steps(events)
+
+    assert steps == [
+        {
+            "step_name": "IMAGE_GENERATING",
+            "frame_id": 9,
+            "status": "succeeded",
+            "progress": 45,
+            "input_snapshot": None,
+            "output_snapshot": {"image_url": "u"},
+            "error_message": None,
+            "started_at": "2026-06-06T12:02:00",
+            "finished_at": "2026-06-06T12:03:00",
+        }
+    ]

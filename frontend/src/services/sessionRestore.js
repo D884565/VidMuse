@@ -1,3 +1,4 @@
+/** 为 Promise 添加超时控制 */
 function withTimeout(promise, timeoutMs) {
   if (!timeoutMs || timeoutMs <= 0) return promise
 
@@ -9,6 +10,7 @@ function withTimeout(promise, timeoutMs) {
   ])
 }
 
+/** 恢复登录会话 — 调用用户信息接口，超时则自动登出 */
 export async function restoreSession(loadCurrentUser, options = {}) {
   const timeoutMs = options.timeoutMs ?? 8000
   const data = await withTimeout(loadCurrentUser({ timeout: timeoutMs }), timeoutMs)

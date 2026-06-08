@@ -97,6 +97,7 @@ class ImageGenerationService:
         project_id: int,
         product_images: dict[str, str] | None = None,
         reference_images: list[str] | None = None,
+        style: str | None = None,
     ) -> list[Frame]:
         """
         为每个 Frame 并行生成图片，回填 image_url 并更新状态。
@@ -114,7 +115,7 @@ class ImageGenerationService:
         selected_reference_images = self._select_reference_images(reference_images, product_images)
 
         # 过滤出需要生成的帧（跳过已完成的）
-        pending_frames = [f for f in frames if not (f.status == 2 and f.image_url)]
+        pending_frames = [f for f in frames if not (f.status == 2 and f.image_url and not getattr(f, "dirty", 0))]
         skipped = len(frames) - len(pending_frames)
         if skipped:
             logger.info(f"[image generation] skipped {skipped} frames with existing images")
@@ -127,10 +128,10 @@ class ImageGenerationService:
             frame.status = 1
 
         # 并行生成：每帧独立提交到线程池
-        max_workers = min(4, len(pending_frames))
+        max_workers = min(5, len(pending_frames))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             future_to_frame = {
-                executor.submit(self._generate_single_frame, frame, project_id, selected_reference_images): frame
+                executor.submit(self._generate_single_frame, frame, project_id, selected_reference_images, style): frame
                 for frame in pending_frames
             }
             for future in as_completed(future_to_frame):
@@ -148,10 +149,11 @@ class ImageGenerationService:
         frame: Frame,
         project_id: int,
         reference_images: list[str],
+        style: str | None = None,
     ) -> None:
         """生成单帧图片并回填状态。成功写入 frame.status=2，失败写入 frame.status=3。"""
         try:
-            prompt = resolve_image_generation_prompt(frame)
+            prompt = resolve_image_generation_prompt(frame, style=style)
             if reference_images:
                 prompt = self._build_reference_image_prompt(prompt)
                 image_path = self._call_image_to_image(prompt, reference_images)

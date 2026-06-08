@@ -7,8 +7,10 @@ import {
   appendTokenToMessage,
   clearPersistedDraftState,
   getProjectMessages,
+  getProjectActivity,
   mergeFetchedMessages,
   readPersistedDraftState,
+  setProjectActivity,
   writePersistedDraftState,
 } from './chatState.js'
 
@@ -136,6 +138,98 @@ test('mergeFetchedMessages replaces optimistic messages with persisted server id
   assert.equal(merged.some((message) => message.id === 'assistant-local'), false)
 })
 
+test('mergeFetchedMessages keeps local generated script message during stale history refresh', () => {
+  const projectKey = '54'
+  const localMessages = [
+    {
+      id: 'assistant-local',
+      role: 'assistant',
+      content: '剧本已生成！您可以在右侧分镜面板中查看和调整。',
+      blocks: [{ type: 'storyboard_table', frames: [{ id: 1 }] }],
+      streaming: false,
+      optimistic: false,
+      client_id: 'client-assistant-54',
+      stage: 'script',
+      action_type: 'GENERATE_SCRIPT',
+    },
+  ]
+
+  const merged = mergeFetchedMessages(
+    localMessages,
+    [
+      { id: 336, role: 'assistant', content: '欢迎使用带货视频生成系统！', blocks: [] },
+      { id: 337, role: 'user', content: '生成这个洗面奶带货视频', blocks: [] },
+    ]
+  )
+
+  assert.equal(merged.length, 3)
+  assert.equal(merged.at(-1)?.id, 'assistant-local')
+  assert.equal(merged.at(-1)?.blocks?.[0]?.type, 'storyboard_table')
+
+  const refreshed = mergeFetchedMessages(
+    merged,
+    [
+      { id: 336, role: 'assistant', content: '欢迎使用带货视频生成系统！', blocks: [] },
+      { id: 337, role: 'user', content: '生成这个洗面奶带货视频', blocks: [] },
+      {
+        id: 338,
+        role: 'assistant',
+        content: '剧本阶段已完成。请检查主题、风格和每个分镜内容，满意后可以确认并生成图片。',
+        blocks: [{ type: 'storyboard_table', frames: [{ id: 1 }] }],
+        stage: 'script',
+        action_type: 'GENERATE_SCRIPT',
+      },
+    ]
+  )
+
+  assert.equal(refreshed.length, 3)
+  assert.equal(refreshed.at(-1)?.id, 338)
+})
+
+test('mergeFetchedMessages removes orphan optimistic assistant when persisted content already exists', () => {
+  const projectKey = '101'
+  const optimisticCache = appendOptimisticMessages({}, projectKey, {
+    userMessage: {
+      id: 'user-local',
+      role: 'user',
+      content: '继续',
+      blocks: [],
+      optimistic: true,
+      client_id: 'client-user-orphan',
+    },
+    assistantMessage: {
+      id: 'assistant-local',
+      role: 'assistant',
+      content: '好的，已确认剧本，正在生成分镜图片。',
+      blocks: [{ type: 'progress_card', stage: 'image' }],
+      optimistic: true,
+      client_id: 'client-assistant-orphan',
+    },
+  })
+
+  const merged = mergeFetchedMessages(
+    getProjectMessages(optimisticCache, projectKey),
+    [
+      {
+        id: 41,
+        role: 'user',
+        content: '继续',
+        blocks: [],
+      },
+      {
+        id: 42,
+        role: 'assistant',
+        content: '好的，已确认剧本，正在生成分镜图片。',
+        blocks: [{ type: 'progress_card', stage: 'image' }],
+      },
+    ]
+  )
+
+  assert.equal(merged.length, 2)
+  assert.equal(merged.some((message) => message.id === 'assistant-local'), false)
+  assert.equal(merged[1]?.id, 42)
+})
+
 test('appendTokenToMessage updates only the originating project cache', () => {
   const projectOne = '101'
   const projectTwo = '202'
@@ -153,6 +247,17 @@ test('appendTokenToMessage updates only the originating project cache', () => {
   assert.equal(updated[projectOne].at(-1)?.content, ' world')
   assert.deepEqual(updated[projectTwo], cache[projectTwo])
   assert.equal(getProjectMessages(updated, DRAFT_PROJECT_KEY).length, 0)
+})
+
+test('project activity flags are isolated per project', () => {
+  const activity = setProjectActivity({}, '101', true)
+
+  assert.equal(getProjectActivity(activity, '101'), true)
+  assert.equal(getProjectActivity(activity, '202'), false)
+  assert.equal(getProjectActivity(activity, DRAFT_PROJECT_KEY), false)
+
+  const cleared = setProjectActivity(activity, '101', false)
+  assert.equal(getProjectActivity(cleared, '101'), false)
 })
 
 test('mergeFetchedMessages prefers metadata display content while deduplicating optimistic user messages by client id', () => {

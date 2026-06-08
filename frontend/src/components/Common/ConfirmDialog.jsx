@@ -1,5 +1,13 @@
 import { useEffect } from 'react'
 
+/**
+ * 通用确认对话框
+ * @param open - 是否显示
+ * @param title - 标题
+ * @param message - 提示内容
+ * @param onConfirm - 确认回调
+ * @param onCancel - 取消回调
+ */
 export default function ConfirmDialog({ open, title, message, onConfirm, onCancel }) {
   useEffect(() => {
     if (!open) return

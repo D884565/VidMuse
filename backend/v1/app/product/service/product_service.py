@@ -144,6 +144,7 @@ class ProductService(BaseParsingService):
                         asset_ids=asset_ids,
                         roles=data.asset_roles
                     )
+            db.commit()
             # 事务提交成功
         except Exception as e:
             # 事务回滚，重新抛出异常
@@ -226,6 +227,7 @@ class ProductService(BaseParsingService):
                     update_data["category_path"] = None
 
                 product = ProductDAO.update_product(db, product_id, update_data)
+            db.commit()
             # 事务提交成功
         except Exception as e:
             # 事务回滚，重新抛出异常
@@ -260,6 +262,7 @@ class ProductService(BaseParsingService):
                 ProductAssetDAO.delete_all_by_product_id(db, product_id)
                 # 再删除商品
                 ProductDAO.delete_product(db, product_id)
+            db.commit()
             # 事务提交成功
         except Exception as e:
             # 事务回滚，重新抛出异常

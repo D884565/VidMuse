@@ -146,7 +146,7 @@ class AssetService(BaseParsingService):
                 "ai_features": None,
                 "content_text": content,
                 "source_type": 0,
-                "scope": {"type": "library"},
+                "scope": "library",
             },
         )
         AssetService._parse_asset_sync(db, asset.id, force=True)
@@ -236,7 +236,6 @@ class AssetService(BaseParsingService):
         source_type: int = 0,
         is_internal: bool = False,
         user_id: int | None = None,
-        is_skip_analysis: bool = False,
     ) -> dict:
         ext = AssetService._validate_file(file, type)
         object_name = AssetService.generate_object_name(asset_type=type, ext=ext, is_internal=is_internal)
@@ -260,15 +259,9 @@ class AssetService(BaseParsingService):
                 "user_id": AssetService._library_owner_id(user_id),
                 "storage_key": object_name,
                 "upload_status": "completed",
-                "scope": {"type": "library"},
+                "scope": "library",
             },
         )
-        if is_skip_analysis:
-            return asset.to_dict()
-        if type in [1, 2]:
-            AssetService._parse_asset_sync(db, asset.id, force=True)
-            refreshed = AssetDAO.get_asset_by_id(db, asset.id)
-            return refreshed.to_dict()
         return asset.to_dict()
 
     @staticmethod
@@ -290,8 +283,22 @@ class AssetService(BaseParsingService):
             source_type=source_type,
             is_internal=False,
             user_id=user_id,
-            is_skip_analysis=skip_analysis,
         )
+        # 图片/视频素材：后台异步解析，不阻塞上传响应
+        if not skip_analysis and type in [1, 2]:
+            asset_id = asset_dict["id"]
+            def _bg_parse():
+                try:
+                    from backend.store.database.sync_database import SessionLocal
+                    bg_db = SessionLocal()
+                    try:
+                        AssetService._parse_asset_sync(bg_db, asset_id, force=True)
+                    finally:
+                        bg_db.close()
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"[后台解析] asset_id={asset_id} 失败: {e}")
+            background_tasks.add_task(_bg_parse)
         return {
             "id": asset_dict["id"],
             "type": asset_dict["type"],
@@ -314,7 +321,6 @@ class AssetService(BaseParsingService):
         type: int,
         title: Optional[str] = None,
         source_type: int = 1,
-        skip_ai_analysis: bool = True,
         user_id: int = 0,
     ) -> dict:
         asset_dict = AssetService._upload_asset_common(
@@ -325,7 +331,6 @@ class AssetService(BaseParsingService):
             source_type=source_type,
             is_internal=True,
             user_id=user_id,
-            is_skip_analysis=skip_ai_analysis,
         )
         return {
             "id": asset_dict["id"],
@@ -637,9 +642,18 @@ class AssetService(BaseParsingService):
                 storage.delete_object(asset.storage_key)
             except Exception:
                 pass
-        success = AssetDAO.delete_asset(db, asset_id)
-        if not success:
-            raise BusinessException(PARAM_ERROR, "delete failed")
+        try:
+            with db.begin_nested():
+                from backend.v1.app.product.dao.product_asset_dao import ProductAssetDAO
+
+                ProductAssetDAO.delete_all_by_asset_id(db, asset_id)
+                success = AssetDAO.delete_asset(db, asset_id)
+                if not success:
+                    raise BusinessException(PARAM_ERROR, "delete failed")
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
 
     @staticmethod
     def get_path_after_baseurl(url: str, baseurl: str = "https://vidmuse.tos-cn-beijing.volces.com") -> str:

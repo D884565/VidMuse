@@ -72,7 +72,6 @@ async def upload_internal_asset(
     type: int = Form(..., description="Asset type: 1-image, 2-video, 3-audio"),
     title: Optional[str] = Form(None, description="Asset title"),
     source_type: Optional[int] = Form(1, description="Source type"),
-    skip_ai_analysis: Optional[bool] = Form(True, description="Skip AI analysis"),
     db: Session = Depends(get_db),
     current_user_id: int = Depends(get_current_user_id),
 ):
@@ -82,7 +81,6 @@ async def upload_internal_asset(
         type=type,
         title=title,
         source_type=source_type,
-        skip_ai_analysis=skip_ai_analysis,
         user_id=current_user_id,
     )
     return Response.success(data=result, message="Internal asset uploaded successfully")

@@ -29,43 +29,133 @@ from backend.v1.app.generate.service.workflow.blocks import (
 from backend.v1.app.models.conversation import Conversation
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
+from backend.v1.app.models.asset import Asset
+from backend.v1.app.models.project_asset import ProjectAsset
 
 logger = logging.getLogger(__name__)
 
-EDITABLE_FRAME_FIELDS = ("description", "narration", "image_prompt", "video_prompt")
+EDITABLE_FRAME_FIELDS = ("description", "narration", "image_prompt", "video_prompt", "subtitle_text", "text_overlay")
 PROJECT_REGENERATION_ACTIONS = {
     "REGENERATE_PROJECT_ALL",
     "REGENERATE_IMAGES_AND_VIDEO",
     "REGENERATE_VIDEO_ONLY",
 }
+PRICE_TEXT_FIELDS = ("description", "narration", "image_prompt", "subtitle_text", "text_overlay")
+
+
+def _apply_price_modification(frame, new_price: str) -> None:
+    for field in PRICE_TEXT_FIELDS:
+        current = getattr(frame, field, None)
+        if not isinstance(current, str) or "元" not in current:
+            continue
+
+        rebuilt = []
+        token = ""
+        replaced = False
+        for char in current:
+            if char.isdigit() or char in ".¥￥":
+                token += char
+                continue
+            if char == "元" and any(ch.isdigit() for ch in token):
+                rebuilt.append(new_price)
+                token = ""
+                replaced = True
+                continue
+            if token:
+                rebuilt.append(token)
+                token = ""
+            rebuilt.append(char)
+        if token:
+            rebuilt.append(token)
+        if replaced:
+            setattr(frame, field, "".join(rebuilt))
+
+
+def _apply_single_modification(frame, field: str, value) -> str | None:
+    """对单个字段执行修改，返回实际修改后的值（用于级联同步）。支持 replace 指令和整段覆写。"""
+    if not hasattr(frame, field) or field not in EDITABLE_FRAME_FIELDS:
+        return None
+
+    current = getattr(frame, field) or ""
+
+    # 替换指令格式：{"replace": ["旧文本", "新文本"]}
+    if isinstance(value, dict) and "replace" in value:
+        old, new = value["replace"]
+        if old in current:
+            new_value = current.replace(old, new)
+            setattr(frame, field, new_value)
+            return new_value
+        return current
+
+    # 整段覆写格式：直接赋值
+    if isinstance(value, str):
+        setattr(frame, field, value)
+        return value
+
+    return current
 
 
 def apply_frame_modifications(frame, modifications: dict) -> None:
-    """Apply chat-driven frame edits while keeping generation prompts consistent."""
+    """Apply chat-driven frame edits while keeping generation prompts consistent.
+
+    支持两种 modifications 格式：
+    - 替换指令: {"field": {"replace": ["old", "new"]}} — 精确文本替换
+    - 整段覆写: {"field": "new_value"} — 直接赋值（兼容旧格式）
+    """
     if not modifications:
         return
 
+    # 处理价格特殊逻辑（兼容旧格式）
+    price_value = modifications.get("price")
+    if isinstance(price_value, str) and price_value.strip():
+        _apply_price_modification(frame, price_value.strip())
+
     explicit_image_prompt = "image_prompt" in modifications
+    description_new_value = None
+
     for field, value in modifications.items():
-        if hasattr(frame, field) and field in EDITABLE_FRAME_FIELDS:
-            setattr(frame, field, value)
-        elif field == "duration" and value is not None:
+        if field == "price":
+            continue  # 已在上面处理
+        if field == "duration" and value is not None:
             try:
-                frame.duration = max(1.0, float(value))
+                dur_val = value.get("replace", [None, None])[1] if isinstance(value, dict) else value
+                frame.duration = max(1.0, float(dur_val))
             except (TypeError, ValueError):
                 pass
+            continue
 
-    if "description" in modifications and not explicit_image_prompt:
-        frame.image_prompt = modifications["description"]
+        result = _apply_single_modification(frame, field, value)
+        if field == "description":
+            description_new_value = result
+
+    # description 变化时自动同步 image_prompt（除非 image_prompt 被显式修改）
+    # 如果 description 用 replace 格式，对 image_prompt 也做同样的 replace 而非整段覆盖
+    if description_new_value is not None and not explicit_image_prompt:
+        desc_mod = modifications.get("description")
+        if isinstance(desc_mod, dict) and "replace" in desc_mod:
+            old, new = desc_mod["replace"]
+            current_img = getattr(frame, "image_prompt") or ""
+            if old in current_img:
+                frame.image_prompt = current_img.replace(old, new)
+            # 如果 image_prompt 不包含旧文本，不覆盖
+        else:
+            frame.image_prompt = description_new_value
 
     # 旁白溢出检测：预估 TTS 时长，溢出则写入 ai_params 警告
-    if "narration" in modifications and modifications["narration"]:
-        estimated = len(modifications["narration"]) / 3
+    narration_value = modifications.get("narration")
+    narration_text = None
+    if isinstance(narration_value, dict) and "replace" in narration_value:
+        narration_text = getattr(frame, "narration", None)
+    elif isinstance(narration_value, str):
+        narration_text = narration_value
+
+    if narration_text:
+        estimated = len(narration_text) / 3
         dur = float(frame.duration or 5)
         if estimated > dur * 1.5:
             ai_params = dict(frame.ai_params or {})
             ai_params["tts_overflow_warning"] = {
-                "narration_chars": len(modifications["narration"]),
+                "narration_chars": len(narration_text),
                 "estimated_seconds": round(estimated),
                 "duration": dur,
             }
@@ -125,126 +215,9 @@ class ChatService:
             conversation_history=history,
         )
 
-        task_result = None
-        updated_frames = []
-        blocks = []
-        pending_action = None
-
-        if plan["action"] == "GENERATE_SCRIPT":
-            task_result, blocks = await self._generate_script_from_chat(db, project, project_id, metadata=metadata)
-            plan["assistant_content"] = (
-                "风格和分镜方案已经就位，下面是剧本与画面方案。"
-                "你先看一下节奏、卖点和每个镜头的画面方向；如果没问题，回复「继续」或「可以生成图片」，我就开始生成首帧图片。"
-                "如果哪里不满意，直接告诉我要改哪一段。"
-            )
-        elif plan["action"] == "CONFIRM_AND_ADVANCE":
-            task_result, blocks = await self._handle_confirm_and_advance(db, project, project_id)
-        elif plan["action"] == "GENERATE_IMAGES":
-            task_result = await image_workflow_service.submit_image_task(db, project_id)
-            blocks = [
-                build_progress_block(
-                    "image",
-                    "running",
-                    task_result.get("task_id"),
-                    "Image generation has been queued from chat.",
-                )
-            ]
-        elif plan["action"] == "GENERATE_VIDEO":
-            task_result = await video_generation_service.submit_generation_task(db, project_id)
-            blocks = [
-                build_progress_block(
-                    "video",
-                    "running",
-                    task_result.get("task_id"),
-                    "Video generation has been queued from chat.",
-                )
-            ]
-        elif plan["action"] == "EDIT_FRAME":
-            updated_frames, blocks = await self._handle_edit_frame(
-                db, project, plan["affected_frame_ids"], plan.get("modifications", {})
-            )
-        elif plan["action"] == "REGENERATE_FRAME_IMAGE":
-            if plan.get("needs_confirmation", True):
-                pending_action = self._build_pending_action(plan, content, frame_id)
-                blocks = [build_confirmation_preview_block(
-                    "REGENERATE_FRAME_IMAGE",
-                    plan["assistant_content"],
-                    target_frames=plan["affected_frame_ids"],
-                    modifications=plan.get("modifications", {}),
-                    pending_action_id=pending_action["id"],
-                )]
-            else:
-                updated_frames, task_result = await self._submit_frame_image_regeneration_tasks(
-                    db, project, plan["affected_frame_ids"], content
-                )
-                blocks = [
-                    build_progress_block(
-                        "image",
-                        "running",
-                        task_result.get("task_id"),
-                        "已记录图片修改要求，请使用图片阶段操作重生成对应图片。",
-                    )
-                ]
-        elif plan["action"] == "REGENERATE_FRAME_VIDEO":
-            if plan.get("needs_confirmation", True):
-                pending_action = self._build_pending_action(plan, content, frame_id)
-                blocks = [build_confirmation_preview_block(
-                    "REGENERATE_FRAME_VIDEO",
-                    plan["assistant_content"],
-                    target_frames=plan["affected_frame_ids"],
-                    modifications=plan.get("modifications", {}),
-                    pending_action_id=pending_action["id"],
-                )]
-            else:
-                updated_frames, task_result = await self._submit_frame_video_regeneration_tasks(
-                    db, project, plan["affected_frame_ids"]
-                )
-                blocks = [
-                    build_progress_block(
-                        "video",
-                        "running",
-                        task_result.get("task_id"),
-                        "已记录视频修改要求，将重新生成对应分镜视频。",
-                    )
-                ]
-        elif plan["action"] == "REGENERATE_TTS":
-            task_result = await self._submit_project_tts_regeneration_task(db, project, project_id)
-            blocks = [
-                build_progress_block(
-                    "video",
-                    "running",
-                    task_result.get("task_id"),
-                    "Project TTS regeneration has been queued from chat.",
-                )
-            ]
-        elif plan["action"] in PROJECT_REGENERATION_ACTIONS:
-            if plan.get("needs_confirmation", True):
-                pending_action = self._build_pending_action(plan, content, frame_id)
-                blocks = [build_confirmation_preview_block(
-                    plan["action"],
-                    plan["assistant_content"],
-                    target_frames=plan.get("affected_frame_ids", []),
-                    modifications=plan.get("modifications", {}),
-                    pending_action_id=pending_action["id"],
-                )]
-            else:
-                task_result = await self._submit_project_regeneration(db, project, project_id, plan["action"])
-                blocks = [build_progress_block(
-                    plan.get("affected_stage") or "video",
-                    "running",
-                    task_result.get("task_id"),
-                    "Project regeneration has been queued from chat.",
-                )]
-        elif plan["action"] == "CHANGE_BGM":
-            updated_frames, blocks = await self._handle_change_bgm(db, project, project_id)
-        elif plan["action"] == "CONVERSE":
-            # 普通对话，不触发任何工作流操作
-            blocks = []
-        elif plan["action"] == "ASK_CLARIFYING":
-            blocks = []
-
         task_id = task_result.get("task_id") if task_result else project.last_task_id
-        assistant_message = Conversation(
+        if assistant_message is None:
+            assistant_message = Conversation(
             project_id=project_id,
             role="assistant",
             content=plan["assistant_content"],
@@ -259,6 +232,7 @@ class ChatService:
                 "estimated_cost_label": plan.get("estimated_cost_label", "low"),
                 "needs_confirmation": plan.get("needs_confirmation", False),
                 "pending_action": pending_action,
+                "client_id": (metadata or {}).get("assistant_client_id"),
             },
         )
         db.add(assistant_message)
@@ -334,7 +308,47 @@ class ChatService:
 
         # 5. 流式输出文本
         full_content = ""
-        if action == "CONVERSE":
+        task_result = None
+        updated_frames = []
+        blocks = []
+        pending_action = None
+        assistant_message = None
+
+        if action not in ("CONVERSE", "ASK_CLARIFYING"):
+            full_content = plan.get("assistant_content", "")
+            task_result, updated_frames, blocks, pending_action = await self._execute_action(
+                db,
+                project,
+                project_id,
+                plan,
+                content,
+                frame_id=frame_id,
+                metadata=metadata,
+            )
+
+            task_id = task_result.get("task_id") if task_result else project.last_task_id
+            assistant_message = Conversation(
+                project_id=project_id, role="assistant", content=full_content,
+                message_type="stage_card" if blocks else "text",
+                stage=plan.get("affected_stage", "") or project.workflow_stage,
+                blocks=blocks, action_type=action, task_id=task_id,
+                metadata_={
+                    "affected_frame_ids": plan.get("affected_frame_ids", []),
+                    "next_stage": plan.get("next_stage"),
+                    "estimated_cost_label": plan.get("estimated_cost_label", "low"),
+                    "needs_confirmation": plan.get("needs_confirmation", False),
+                    "pending_action": pending_action,
+                    "client_id": (metadata or {}).get("assistant_client_id"),
+                },
+            )
+            db.add(assistant_message)
+            await db.commit()
+            await db.refresh(assistant_message)
+
+            for char in full_content:
+                yield sse("token", {"content": char})
+                await asyncio.sleep(0.02)
+        elif action == "CONVERSE":
             local_text = plan.get("assistant_content", "")
             if local_text:
                 full_content = local_text
@@ -352,85 +366,31 @@ class ChatService:
                 ):
                     full_content += chunk
                     yield sse("token", {"content": chunk})
-        else:
-            text = plan.get("assistant_content", "")
-            full_content = text
-            for char in text:
-                yield sse("token", {"content": char})
-                await asyncio.sleep(0.02)
-
         # 5. 执行动作
-        task_result = None
-        updated_frames = []
-        blocks = []
-        pending_action = None
-
-        if action == "GENERATE_SCRIPT":
-            task_result, blocks = await self._generate_script_from_chat(db, project, project_id, metadata=metadata)
-        elif action == "CONFIRM_AND_ADVANCE":
-            task_result, blocks = await self._handle_confirm_and_advance(db, project, project_id)
-        elif action == "GENERATE_IMAGES":
-            task_result = await image_workflow_service.submit_image_task(db, project_id)
-            blocks = [build_progress_block("image", "running", task_result.get("task_id"), "图片生成已排队。")]
-        elif action == "GENERATE_VIDEO":
-            task_result = await video_generation_service.submit_generation_task(db, project_id)
-            blocks = [build_progress_block("video", "running", task_result.get("task_id"), "视频生成已排队。")]
-        elif action == "EDIT_FRAME":
-            updated_frames, blocks = await self._handle_edit_frame(db, project, plan["affected_frame_ids"], plan.get("modifications", {}))
-        elif action == "REGENERATE_FRAME_IMAGE":
-            if plan.get("needs_confirmation", True):
-                pending_action = self._build_pending_action(plan, content, frame_id)
-                blocks = [build_confirmation_preview_block("REGENERATE_FRAME_IMAGE", plan["assistant_content"],
-                    target_frames=plan["affected_frame_ids"], modifications=plan.get("modifications", {}),
-                    pending_action_id=pending_action["id"])]
-            else:
-                updated_frames, task_result = await self._submit_frame_image_regeneration_tasks(db, project, plan["affected_frame_ids"], content)
-                blocks = [build_progress_block("image", "running", task_result.get("task_id"), "已提交图片重生成。")]
-        elif action == "REGENERATE_FRAME_VIDEO":
-            if plan.get("needs_confirmation", True):
-                pending_action = self._build_pending_action(plan, content, frame_id)
-                blocks = [build_confirmation_preview_block("REGENERATE_FRAME_VIDEO", plan["assistant_content"],
-                    target_frames=plan["affected_frame_ids"], modifications=plan.get("modifications", {}),
-                    pending_action_id=pending_action["id"])]
-            else:
-                updated_frames, task_result = await self._submit_frame_video_regeneration_tasks(db, project, plan["affected_frame_ids"])
-                blocks = [build_progress_block("video", "running", task_result.get("task_id"), "已提交视频重生成。")]
-        elif action == "REGENERATE_TTS":
-            task_result = await self._submit_project_tts_regeneration_task(db, project, project_id)
-            blocks = [build_progress_block("video", "running", task_result.get("task_id"), "TTS 重生成已排队。")]
-        elif action in PROJECT_REGENERATION_ACTIONS:
-            if plan.get("needs_confirmation", True):
-                pending_action = self._build_pending_action(plan, content, frame_id)
-                blocks = [build_confirmation_preview_block(action, plan["assistant_content"],
-                    target_frames=plan.get("affected_frame_ids", []), modifications=plan.get("modifications", {}),
-                    pending_action_id=pending_action["id"])]
-            else:
-                task_result = await self._submit_project_regeneration(db, project, project_id, action)
-                blocks = [build_progress_block(plan.get("affected_stage") or "video", "running", task_result.get("task_id"), "Project regeneration has been queued.")]
-        elif action == "CHANGE_BGM":
-            updated_frames, blocks = await self._handle_change_bgm(db, project, project_id)
-
         # 6. 发送 blocks 事件
         task_id = task_result.get("task_id") if task_result else project.last_task_id
         if blocks:
             yield sse("blocks", {"blocks": blocks, "stage": project.workflow_stage, "task_id": task_id})
 
         # 7. 保存 assistant 消息到 DB
-        assistant_message = Conversation(
-            project_id=project_id, role="assistant", content=full_content,
-            message_type="stage_card" if blocks else "text",
-            stage=plan.get("affected_stage", "") or project.workflow_stage,
-            blocks=blocks, action_type=action, task_id=task_id,
-            metadata_={
-                "affected_frame_ids": plan.get("affected_frame_ids", []),
-                "next_stage": plan.get("next_stage"),
-                "estimated_cost_label": plan.get("estimated_cost_label", "low"),
-                "needs_confirmation": plan.get("needs_confirmation", False),
-                "pending_action": pending_action,
-            },
-        )
-        db.add(assistant_message)
-        await db.commit()
+        if assistant_message is None:
+            assistant_message = Conversation(
+                project_id=project_id, role="assistant", content=full_content,
+                message_type="stage_card" if blocks else "text",
+                stage=plan.get("affected_stage", "") or project.workflow_stage,
+                blocks=blocks, action_type=action, task_id=task_id,
+                metadata_={
+                    "affected_frame_ids": plan.get("affected_frame_ids", []),
+                    "next_stage": plan.get("next_stage"),
+                    "estimated_cost_label": plan.get("estimated_cost_label", "low"),
+                    "needs_confirmation": plan.get("needs_confirmation", False),
+                    "pending_action": pending_action,
+                    "client_id": (metadata or {}).get("assistant_client_id"),
+                },
+            )
+            db.add(assistant_message)
+            await db.commit()
+            await db.refresh(assistant_message)
 
         # 8. 发送 done 事件
         yield sse("done", {
@@ -453,12 +413,14 @@ class ChatService:
             generation_workflow_service.advance_stage(project, "script")
             await db.commit()
             task_result = await image_workflow_service.submit_image_task(db, project_id)
+            project_workflow_state.mark_project_stage_running(project, "image", task_result.get("task_id"))
             blocks = [build_progress_block("image", "running", task_result.get("task_id"), "已确认剧本，正在生成分镜图片。")]
             return task_result, blocks
         elif stage == "image":
             generation_workflow_service.advance_stage(project, "image")
             await db.commit()
             task_result = await video_generation_service.submit_generation_task(db, project_id)
+            project_workflow_state.mark_project_stage_running(project, "video", task_result.get("task_id"))
             blocks = [build_progress_block("video", "running", task_result.get("task_id"), "已确认图片，正在生成视频。")]
             return task_result, blocks
         elif stage == "video":
@@ -467,6 +429,101 @@ class ChatService:
             await db.commit()
             return {}, [build_progress_block("completed", "confirmed", project.last_task_id, "视频已确认完成。")]
         return {}, []
+
+    async def _execute_action(
+        self,
+        db: AsyncSession,
+        project: Project,
+        project_id: int,
+        plan: dict,
+        content: str,
+        frame_id: int | None = None,
+        metadata: dict | None = None,
+    ) -> tuple[dict | None, list[dict], list[dict], dict | None]:
+        task_result = None
+        updated_frames = []
+        blocks = []
+        pending_action = None
+        action = plan["action"]
+
+        if action == "GENERATE_SCRIPT":
+            task_result, blocks = await self._generate_script_from_chat(db, project, project_id, metadata=metadata)
+            plan["assistant_content"] = (
+                "风格和分镜方案已经就位，下面是剧本与画面方案。"
+                "你先看一下节奏、卖点和每个镜头的画面方向；如果没问题，回复「继续」或「可以生成图片」，我就开始生成首帧图片。"
+                "如果哪里不满意，直接告诉我要改哪一段。"
+            )
+        elif action == "CONFIRM_AND_ADVANCE":
+            task_result, blocks = await self._handle_confirm_and_advance(db, project, project_id)
+        elif action == "GENERATE_IMAGES":
+            task_result = await image_workflow_service.submit_image_task(db, project_id)
+            blocks = [build_progress_block("image", "running", task_result.get("task_id"), "图片生成已排队。")]
+        elif action == "GENERATE_VIDEO":
+            task_result = await video_generation_service.submit_generation_task(db, project_id)
+            blocks = [build_progress_block("video", "running", task_result.get("task_id"), "视频生成已排队。")]
+        elif action == "EDIT_FRAME":
+            task_result, updated_frames, blocks = await self._handle_edit_frame(
+                db, project, plan.get("affected_frame_ids", []), plan.get("modifications", {})
+            )
+        elif action == "REGENERATE_FRAME_IMAGE":
+            if plan.get("needs_confirmation", True):
+                pending_action = self._build_pending_action(plan, content, frame_id)
+                blocks = [build_confirmation_preview_block(
+                    "REGENERATE_FRAME_IMAGE",
+                    plan["assistant_content"],
+                    target_frames=plan.get("affected_frame_ids", []),
+                    modifications=plan.get("modifications", {}),
+                    pending_action_id=pending_action["id"],
+                )]
+            else:
+                updated_frames, task_result = await self._submit_frame_image_regeneration_tasks(
+                    db, project, plan.get("affected_frame_ids", []), content
+                )
+                blocks = [build_progress_block("image", "running", task_result.get("task_id"), "已提交图片重生成。")]
+        elif action == "REGENERATE_FRAME_VIDEO":
+            if plan.get("needs_confirmation", True):
+                pending_action = self._build_pending_action(plan, content, frame_id)
+                blocks = [build_confirmation_preview_block(
+                    "REGENERATE_FRAME_VIDEO",
+                    plan["assistant_content"],
+                    target_frames=plan.get("affected_frame_ids", []),
+                    modifications=plan.get("modifications", {}),
+                    pending_action_id=pending_action["id"],
+                )]
+            else:
+                updated_frames, task_result = await self._submit_frame_video_regeneration_tasks(
+                    db, project, plan.get("affected_frame_ids", [])
+                )
+                blocks = [build_progress_block("video", "running", task_result.get("task_id"), "已提交视频重生成。")]
+        elif action == "REGENERATE_TTS":
+            task_result = await self._submit_project_tts_regeneration_task(db, project, project_id)
+            blocks = [build_progress_block("video", "running", task_result.get("task_id"), "TTS 重生成已排队。")]
+        elif action in PROJECT_REGENERATION_ACTIONS:
+            if plan.get("needs_confirmation", True):
+                pending_action = self._build_pending_action(plan, content, frame_id)
+                blocks = [build_confirmation_preview_block(
+                    action,
+                    plan["assistant_content"],
+                    target_frames=plan.get("affected_frame_ids", []),
+                    modifications=plan.get("modifications", {}),
+                    pending_action_id=pending_action["id"],
+                )]
+            else:
+                task_result = await self._submit_project_regeneration(db, project, project_id, action)
+                blocks = [build_progress_block(
+                    plan.get("affected_stage") or "video",
+                    "running",
+                    task_result.get("task_id"),
+                    "Project regeneration has been queued from chat.",
+                )]
+        elif action == "CHANGE_BGM":
+            updated_frames, blocks = await self._handle_change_bgm(db, project, project_id)
+        elif action == "CONVERSE":
+            blocks = []
+        elif action == "ASK_CLARIFYING":
+            blocks = []
+
+        return task_result, updated_frames, blocks, pending_action
 
     def _build_pending_action(self, plan: dict, content: str, frame_id: int | None) -> dict:
         return {
@@ -562,33 +619,22 @@ class ChatService:
         plan: dict,
         content: str,
     ) -> tuple[dict | None, list[dict], list[dict]]:
-        task_result = None
-        updated_frames = []
-        blocks = []
-        if plan["action"] == "REGENERATE_FRAME_IMAGE":
-            updated_frames, task_result = await self._submit_frame_image_regeneration_tasks(
-                db, project, plan.get("affected_frame_ids", []), content
-            )
-            blocks = [build_progress_block("image", "running", task_result.get("task_id"))]
-        elif plan["action"] == "REGENERATE_FRAME_VIDEO":
-            updated_frames, task_result = await self._submit_frame_video_regeneration_tasks(
-                db, project, plan.get("affected_frame_ids", [])
-            )
-            blocks = [build_progress_block("video", "running", task_result.get("task_id"))]
-        elif plan["action"] == "REGENERATE_TTS":
-            task_result = await self._submit_project_tts_regeneration_task(db, project, project_id)
-            blocks = [build_progress_block("video", "running", task_result.get("task_id"))]
-        elif plan["action"] == "GENERATE_IMAGES":
-            task_result = await image_workflow_service.submit_image_task(db, project_id)
-            blocks = [build_progress_block("image", "running", task_result.get("task_id"))]
-        elif plan["action"] == "GENERATE_VIDEO":
-            task_result = await video_generation_service.submit_generation_task(db, project_id)
-            blocks = [build_progress_block("video", "running", task_result.get("task_id"))]
-        elif plan["action"] in PROJECT_REGENERATION_ACTIONS:
-            task_result = await self._submit_project_regeneration(db, project, project_id, plan["action"])
-            blocks = [build_progress_block(plan.get("affected_stage") or "video", "running", task_result.get("task_id"))]
-        else:
+        if plan["action"] not in {
+            "REGENERATE_FRAME_IMAGE",
+            "REGENERATE_FRAME_VIDEO",
+            "REGENERATE_TTS",
+            "GENERATE_IMAGES",
+            "GENERATE_VIDEO",
+            *PROJECT_REGENERATION_ACTIONS,
+        }:
             raise ValueError(f"unsupported pending action: {plan['action']}")
+        task_result, updated_frames, blocks, _ = await self._execute_action(
+            db,
+            project,
+            project_id,
+            {**plan, "needs_confirmation": False},
+            content,
+        )
         return task_result, updated_frames, blocks
 
     async def _get_pending_action_message(
@@ -614,17 +660,18 @@ class ChatService:
         project: Project,
         frame_ids: list[int],
         modifications: dict,
-    ) -> tuple[list[dict], list[dict]]:
+    ) -> tuple[dict | None, list[dict], list[dict]]:
         """处理 EDIT_FRAME 动作：修改分镜字段并返回 frame_editor blocks。
         如果修改了影响图片的字段且工作流已过 script 阶段，自动触发图片重生成。
         """
         if not frame_ids or not modifications:
-            return [], []
+            return None, [], []
 
         result = await db.execute(select(Frame).where(Frame.project_id == project.id, Frame.id.in_(frame_ids)))
         frames = list(result.scalars().all())
         updated = []
         blocks = []
+        task_result = None
 
         # 判断是否修改了影响图片的字段
         image_affecting_fields = {"description", "image_prompt"}
@@ -634,12 +681,18 @@ class ChatService:
         # narration 修改标记 TTS dirty
         narration_affecting_fields = {"narration"}
         affects_narration = bool(narration_affecting_fields & set(modifications.keys()))
+        should_regen_tts = affects_narration and project.workflow_stage in ("video", "completed") and not should_regen_image
+        narration_only = affects_narration and set(modifications.keys()) <= narration_affecting_fields
 
         for frame in frames:
             apply_frame_modifications(frame, modifications)
-            frame.dirty = 1
+            frame.dirty = 0 if narration_only else 1
             frame.version = (frame.version or 1) + 1
             frame.last_edited_at = datetime.utcnow()
+            if should_regen_image:
+                frame.image_url = None
+                frame.video_url = None
+                frame.status = 0
             # narration 修改且已过 script 阶段，标记 TTS dirty
             if affects_narration and project.workflow_stage in ("video", "completed"):
                 ai_params = dict(frame.ai_params or {})
@@ -650,8 +703,26 @@ class ChatService:
 
         # 修改分镜后回退工作流状态
         # 如果需要重生成图片，由 _mark_frames_for_image_regeneration 统一处理失效
-        if not should_regen_image:
-            if project.workflow_stage == "completed":
+        if should_regen_tts:
+            await db.flush()
+            generation_workflow_service.invalidate_from(project, "video")
+            await db.commit()
+            task_result = await video_generation_service.submit_generation_task(
+                db,
+                project.id,
+                require_ready_images=True,
+                trigger_source="chat_narration_edit",
+            )
+            blocks.append(build_progress_block(
+                "video",
+                "running",
+                task_result.get("task_id"),
+                "旁白已修改，正在重新合成带新配音的视频。",
+            ))
+        elif not should_regen_image:
+            if project.workflow_stage == "script" and project.stage_status in ("awaiting_review", "confirmed"):
+                project_workflow_state.mark_project_stage_review(project, "script", project.last_task_id)
+            elif project.workflow_stage == "completed":
                 generation_workflow_service.invalidate_from(project, "video")
             elif project.workflow_stage in ("video", "image"):
                 generation_workflow_service.invalidate_from(project, "image")
@@ -659,23 +730,20 @@ class ChatService:
                 generation_workflow_service.invalidate_from(project, "script")
             await db.commit()
         else:
-            await db.flush()
-            # 如果项目已完成，先失效视频阶段，再由图片重生成处理 image 阶段失效
-            if project.workflow_stage == "completed":
-                generation_workflow_service.invalidate_from(project, "video")
-            # 自动触发图片重生成（内部会处理工作流失效和 commit）
-            instruction = "剧本修改后自动重生成图片"
-            _, task_result = await self._submit_frame_image_regeneration_tasks(
-                db, project, frame_ids, instruction
+            updated, task_result = await self._submit_frame_image_regeneration_tasks(
+                db,
+                project,
+                frame_ids,
+                "镜头内容已修改，请重新生成这一张图片。",
             )
             blocks.append(build_progress_block(
                 "image",
                 "running",
                 task_result.get("task_id"),
-                "剧本已修改，对应图片正在重新生成。",
+                "镜头内容已修改，正在重新生成这张图片。",
             ))
 
-        return updated, blocks
+        return task_result, updated, blocks
 
     async def _handle_change_bgm(
         self,
@@ -695,13 +763,18 @@ class ChatService:
         script_content = script.content if script and script.content else {}
 
         # 查找上次使用的 BGM ID，排除它确保换到不同的
-        exclude_ids = []
-        bgm_id = bgm_selector_service.select_bgm(db, script_content, exclude_ids=exclude_ids)
+        music_config = dict(getattr(project, "music_config", None) or {})
+        current_bgm_id = music_config.get("current_bgm_id")
+        exclude_ids = [int(current_bgm_id)] if current_bgm_id else []
+        bgm_id = await bgm_selector_service.select_bgm_async(db, script_content, exclude_ids=exclude_ids)
         if not bgm_id:
             return [], [{
                 "type": "text",
                 "content": "BGM 库为空，请先导入背景音乐文件。",
             }]
+
+        music_config["current_bgm_id"] = int(bgm_id)
+        project.music_config = music_config
 
         # 触发视频重生成（如果项目已完成或在视频阶段）
         if project.workflow_stage in ("video", "completed"):
@@ -734,7 +807,11 @@ class ChatService:
         conversations = list(result.scalars().all())
         conversations.reverse()  # 按时间正序
         return [
-            {"role": c.role, "content": c.content or ""}
+            {
+                "role": c.role,
+                "content": c.content or "",
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
             for c in conversations
             if c.content
         ]
@@ -750,10 +827,12 @@ class ChatService:
         try:
             project_workflow_state.mark_project_stage_running(project, "script", task.id)
             await db.commit()
+            await self._bind_selected_assets_to_project(db, project_id, (metadata or {}).get("selected_assets") or [])
             local_refs = (metadata or {}).get("local_references") or []
             frames = await script_generation_service.generate_script(
                 db, project_id,
                 local_references=local_refs,
+                force=True,
             )
             generation_workflow_service.mark_stage_review(project, "script", task.id)
             task.status = "succeeded"
@@ -785,6 +864,42 @@ class ChatService:
             task.finished_at = datetime.utcnow()
             await db.commit()
             raise
+
+    async def _bind_selected_assets_to_project(
+        self,
+        db: AsyncSession,
+        project_id: int,
+        selected_assets: list[dict] | None,
+    ) -> list[int]:
+        asset_ids = []
+        for item in selected_assets or []:
+            try:
+                asset_ids.append(int(item.get("id")))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        if not asset_ids:
+            return []
+
+        result = await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+        assets = list(result.scalars().all())
+        asset_map = {int(asset.id): asset for asset in assets if getattr(asset, "id", None) is not None}
+        valid_ids = [asset_id for asset_id in asset_ids if asset_id in asset_map]
+        if not valid_ids:
+            return []
+
+        existing_result = await db.execute(
+            select(ProjectAsset.asset_id).where(
+                ProjectAsset.project_id == project_id,
+                ProjectAsset.asset_id.in_(valid_ids),
+                ProjectAsset.role == "reference",
+            )
+        )
+        existing_ids = set(existing_result.scalars().all())
+        for asset_id in valid_ids:
+            if asset_id not in existing_ids:
+                db.add(ProjectAsset(project_id=project_id, asset_id=asset_id, role="reference"))
+        await db.flush()
+        return valid_ids
 
     async def _submit_frame_image_regeneration_tasks(
         self,
@@ -1016,8 +1131,14 @@ class ChatService:
         # 找最近一条对话消息的时间
         last_msg_time = None
         for msg in reversed(history):
-            if msg.created_at:
-                last_msg_time = msg.created_at
+            created_at = msg.get("created_at") if isinstance(msg, dict) else getattr(msg, "created_at", None)
+            if isinstance(created_at, str):
+                try:
+                    created_at = datetime.fromisoformat(created_at)
+                except ValueError:
+                    created_at = None
+            if created_at:
+                last_msg_time = created_at
                 break
         if not last_msg_time:
             return []

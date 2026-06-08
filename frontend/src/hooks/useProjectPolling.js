@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { getProjectDetail } from '../services/project.js'
 
 /**
@@ -7,7 +7,8 @@ import { getProjectDetail } from '../services/project.js'
  */
 function isProjectTerminal(data) {
   if (data.workflow_stage === 'completed') return true
-  if (data.stage_status === 'failed') return true
+  // failed 但有 last_task_id 时不立即停止，让 FrameGrid 有机会恢复任务并显示错误
+  if (data.stage_status === 'failed' && !data.last_task_id) return true
   // created/idle 等待用户触发，不算终态，但也不需要轮询
   if (data.workflow_stage === 'created' && data.stage_status === 'idle') return true
   return false
@@ -29,6 +30,40 @@ export function useProjectPolling(projectId) {
   const [error, setError] = useState(null)
   const [refreshToken, setRefreshToken] = useState(0)
   const intervalRef = useRef(null)
+  const stableFetchCountRef = useRef(0)
+  const lastSnapshotRef = useRef(null)
+
+  const stopPolling = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }
+
+  const applyFrameUpdates = useCallback((updatedFrames = []) => {
+    if (!Array.isArray(updatedFrames) || updatedFrames.length === 0) return
+    setFrames((currentFrames) => {
+      const patchById = new Map(updatedFrames.map((frame) => [frame.frame_id || frame.id, frame]))
+      return currentFrames.map((frame) => {
+        const patch = patchById.get(frame.id)
+        return patch ? { ...frame, ...patch, id: patch.id || patch.frame_id || frame.id } : frame
+      })
+    })
+  }, [])
+
+  const applyProjectSnapshot = useCallback((snapshot = {}) => {
+    if (!snapshot?.workflow_stage && !snapshot?.stage_status && !snapshot?.task_id) return
+    setProject((currentProject) => {
+      if (!currentProject) return currentProject
+      return {
+        ...currentProject,
+        workflow_stage: snapshot.workflow_stage || currentProject.workflow_stage,
+        stage_status: snapshot.stage_status || currentProject.stage_status,
+        dirty_stage: snapshot.dirty_stage ?? currentProject.dirty_stage,
+        last_task_id: snapshot.task_id ?? snapshot.last_task_id ?? currentProject.last_task_id,
+      }
+    })
+  }, [])
 
   useEffect(() => {
     if (!projectId) {
@@ -36,11 +71,13 @@ export function useProjectPolling(projectId) {
     }
 
     let cancelled = false
+    stableFetchCountRef.current = 0
 
     async function fetchProject() {
       if (cancelled) return
 
-      setLoading(true)
+      // 只在首次加载时显示 loading，轮询时不闪烁
+      if (!project) setLoading(true)
       try {
         const data = await getProjectDetail(projectId)
         if (cancelled) return
@@ -50,12 +87,27 @@ export function useProjectPolling(projectId) {
         setAudioUrl(data.audio_url || null)
         setAssets(data.assets || [])
         setError(null)
+        const snapshot = [
+          data.workflow_stage,
+          data.stage_status,
+          data.last_task_id,
+          data.video_url,
+          data.audio_url,
+        ].join('|')
+        if (lastSnapshotRef.current !== snapshot) {
+          stableFetchCountRef.current = 0
+          lastSnapshotRef.current = snapshot
+        }
 
         // 停止轮询：workflow 阶段为终态，或等待用户操作（running/awaiting_review 期间继续轮询）
         const workflowRunning = data.stage_status === 'running'
-        const awaitingWorkflowReview = data.stage_status === 'awaiting_review'
-        if (!workflowRunning && !awaitingWorkflowReview && isProjectTerminal(data)) {
-          clearInterval(intervalRef.current)
+        const stableReview = data.stage_status === 'awaiting_review'
+        const stableTerminal = isProjectTerminal(data)
+        if (!workflowRunning && (stableReview || stableTerminal)) {
+          stableFetchCountRef.current += 1
+          if (stableFetchCountRef.current >= 2) {
+            stopPolling()
+          }
         }
       } catch (err) {
         if (!cancelled) setError(err.message)
@@ -71,7 +123,7 @@ export function useProjectPolling(projectId) {
 
     return () => {
       cancelled = true
-      clearInterval(intervalRef.current)
+      stopPolling()
     }
   }, [projectId, refreshToken])
 
@@ -86,6 +138,8 @@ export function useProjectPolling(projectId) {
       loading: false,
       error: null,
       refetch: () => {},
+      applyFrameUpdates: () => {},
+      applyProjectSnapshot: () => {},
     }
   }
 
@@ -98,5 +152,7 @@ export function useProjectPolling(projectId) {
     loading,
     error,
     refetch: () => setRefreshToken((value) => value + 1),
+    applyFrameUpdates,
+    applyProjectSnapshot,
   }
 }

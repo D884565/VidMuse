@@ -24,7 +24,7 @@ class ProductAssetDAO:
             role=role
         )
         db.add(product_asset)
-        db.commit()
+        db.flush()
         db.refresh(product_asset)
         return product_asset
 
@@ -49,7 +49,7 @@ class ProductAssetDAO:
             )
             product_assets.append(product_asset)
             db.add(product_asset)
-        db.commit()
+        db.flush()
         for pa in product_assets:
             db.refresh(pa)
         return product_assets
@@ -92,7 +92,7 @@ class ProductAssetDAO:
         if role is not None:
             query = query.filter(ProductAsset.role == role)
         result = query.delete()
-        db.commit()
+        db.flush()
         return result > 0
 
     @staticmethod
@@ -103,5 +103,16 @@ class ProductAssetDAO:
         :return: 是否删除成功
         """
         result = db.query(ProductAsset).filter(ProductAsset.product_id == product_id).delete()
-        db.commit()
+        db.flush()
+        return result > 0
+
+    @staticmethod
+    def delete_all_by_asset_id(db: Session, asset_id: int) -> bool:
+        """删除资产的所有商品关联
+        :param db: 数据库会话
+        :param asset_id: 资产ID
+        :return: 是否删除成功
+        """
+        result = db.query(ProductAsset).filter(ProductAsset.asset_id == asset_id).delete()
+        db.flush()
         return result > 0

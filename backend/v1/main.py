@@ -43,6 +43,9 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(settings.LOCAL_STORAGE_ROOT, exist_ok=True)
+    from backend.store.database.schema_bootstrap import ensure_product_assets_table
+
+    ensure_product_assets_table()
     yield
 
 

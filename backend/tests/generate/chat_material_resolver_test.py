@@ -78,3 +78,55 @@ def test_resolver_skips_assets_without_parsed_material_prompt_text():
 
     assert result["material_prompt_text"] == ""
     assert result["selected_asset_ids"] == [31, 32]
+
+
+def test_resolver_reads_nested_product_data_format():
+    assets = [
+        SimpleNamespace(
+            id=41,
+            title="product analysis",
+            ai_features={
+                "product_data": {
+                    "basic_info": {
+                        "product_name": "Foldable Desk Lamp",
+                        "description": "portable eye-care lamp",
+                        "target_audience": "students",
+                        "scenarios": ["dorm", "office"],
+                    },
+                    "selling_points": ["long battery", "soft light"],
+                    "tags": ["portable"],
+                    "keywords": ["study lamp"],
+                }
+            },
+        )
+    ]
+
+    result = MaterialResolver.resolve_selected_assets([{"id": 41}], assets)
+
+    assert result["selected_asset_ids"] == [41]
+    assert "Foldable Desk Lamp" in result["material_prompt_text"]
+    assert "long battery" in result["material_prompt_text"]
+    assert "study lamp" in result["material_prompt_text"]
+
+
+def test_resolver_reads_structured_prompt_summary_without_reference_text():
+    assets = [
+        SimpleNamespace(
+            id=42,
+            title="structured summary",
+            ai_features={
+                "prompt_summary": {
+                    "selling_points": ["fast warm-up"],
+                    "visual_points": ["steam close-up"],
+                    "audience": "busy parents",
+                    "scenarios": ["morning breakfast"],
+                }
+            },
+        )
+    ]
+
+    result = MaterialResolver.resolve_selected_assets([{"id": 42}], assets)
+
+    assert "fast warm-up" in result["material_prompt_text"]
+    assert "steam close-up" in result["material_prompt_text"]
+    assert "busy parents" in result["material_prompt_text"]

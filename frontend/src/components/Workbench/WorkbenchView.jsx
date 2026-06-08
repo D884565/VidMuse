@@ -1,4 +1,4 @@
-import { WandSparkles } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { useProjectEditor } from '../../hooks/useProjectEditor.js'
 import { useAppStore } from '../../store/appStore.js'
 import SmartInput from '../Input/SmartInput.jsx'
@@ -9,7 +9,7 @@ import TypingIndicator from '../Chat/TypingIndicator.jsx'
 const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
-  content: `欢迎使用带货视频生成系统！我会像导演助理一样陪你一步步完成短视频：
+  content: `我是 VidMuse——带货视频生成 Agent。我会帮你一步步创建带货短视频：
 
 1. 先确认风格、卖点和分镜脚本
 2. 再生成每个镜头的首帧图片
@@ -20,7 +20,21 @@ const WELCOME_MESSAGE = {
 
 export default function WorkbenchView() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
+  const creationMode = useAppStore((state) => state.creationMode)
+  const setCreationMode = useAppStore((state) => state.setCreationMode)
   const editor = useProjectEditor()
+  const scrollRef = useRef(null)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const raf = requestAnimationFrame(() => {
+      setTimeout(() => {
+        el.scrollTop = el.scrollHeight
+      }, 50)
+    })
+    return () => cancelAnimationFrame(raf)
+  }, [editor.messages, activeProjectId, editor.isTyping, editor.historyLoaded])
 
   function handleActionComplete() {
     editor.reloadChat()
@@ -44,16 +58,12 @@ export default function WorkbenchView() {
                 像聊天一样推进剧本、首帧图片和视频生成
               </p>
             </div>
-            <div className="hidden items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[rgba(26,26,46,0.65)] px-3 py-1.5 text-xs text-[var(--text-muted)] sm:flex">
-              <WandSparkles size={14} className="text-[#38bdf8]" />
-              工作流助手在线
-            </div>
           </div>
           {activeProjectId && <StageProgress project={editor.project} />}
         </div>
       </header>
 
-      <div className="relative z-10 flex-1 overflow-y-auto px-4 pb-44 pt-8 lg:px-10">
+      <div ref={scrollRef} className="relative z-10 flex-1 overflow-y-auto px-4 pb-44 pt-8 lg:px-10">
         <div className="mx-auto max-w-6xl space-y-5">
           {displayMessages.map((message, index) => (
             <MessageBubble
@@ -67,7 +77,7 @@ export default function WorkbenchView() {
         </div>
       </div>
 
-      <SmartInput onSend={editor.sendMessage} />
+      <SmartInput onSend={editor.sendMessage} creationMode={creationMode} onCreationModeChange={setCreationMode} />
     </section>
   )
 }

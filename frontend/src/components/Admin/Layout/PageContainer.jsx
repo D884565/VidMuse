@@ -1,3 +1,4 @@
+/** 管理后台页面容器 — 统一的标题栏 + 操作按钮 + 内容区域布局 */
 export default function PageContainer({ title, children, actions }) {
   return (
     <div>

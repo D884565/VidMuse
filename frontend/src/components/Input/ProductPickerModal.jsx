@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react'
 import { Search, X } from 'lucide-react'
 import { listProducts } from '../../services/product.js'
 
+/**
+ * 商品选择弹窗
+ * 搜索并选择一个商品，确认后回调 onConfirm(selectedProduct)。
+ */
 export default function ProductPickerModal({ open, selectedProduct, onClose, onConfirm }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(false)

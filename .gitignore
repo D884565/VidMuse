@@ -42,7 +42,8 @@ openspec/
 .superpowers/
 test_output/
 localTest/
-
+.worktrees/
+node_modules/
 
 
 __pycache__/

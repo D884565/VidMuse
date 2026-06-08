@@ -36,6 +36,7 @@ class VideoComposer:
         output_dir: str,
         target_duration: float | None = None,
         *,
+        style: str | None = None,
         allow_placeholder_segments: bool = False,
         on_segment_ready=None,
     ) -> str:
@@ -55,7 +56,7 @@ class VideoComposer:
             try:
                 logger.info(f"[视频生成] 开始生成帧 {frame.sequence}/{len(frames)}")
 
-                local_path = self._generate_frame_video(frame, output_dir)
+                local_path = self._generate_frame_video(frame, output_dir, style=style)
 
                 video_paths.append(local_path)
                 generated_segments.append((frame, local_path))
@@ -95,7 +96,7 @@ class VideoComposer:
             return self._trim_final_video(final_path, output_dir, target_duration)
         return final_path
 
-    def _generate_frame_video(self, frame: Frame, output_dir: str) -> str:
+    def _generate_frame_video(self, frame: Frame, output_dir: str, style: str | None = None) -> str:
         """生成或复用单帧视频片段。"""
         existing_url = getattr(frame, "video_url", None)
         if existing_url and str(existing_url).startswith("http") and not getattr(frame, "dirty", 0):
@@ -108,7 +109,7 @@ class VideoComposer:
             except Exception as stale_err:
                 logger.warning(f"[视频复用] 帧 {frame.sequence} 已有视频不可用，重新生成: {stale_err}")
 
-        prompt = resolve_video_generation_prompt(frame)
+        prompt = resolve_video_generation_prompt(frame, style=style)
         ai_params = frame.ai_params or {}
         camera = ai_params.get("camera", "")
         mood = ai_params.get("mood", "")

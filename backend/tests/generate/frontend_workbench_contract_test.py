@@ -49,13 +49,22 @@ def test_frame_grid_uses_workflow_status_for_busy_and_render_controls():
     assert "project?.workflow_stage === 'video'" in source
 
 
-def test_frame_grid_has_single_frame_video_regenerate_and_edit_entrypoints():
+def test_frame_grid_hides_stale_project_video_while_video_stage_is_running():
     source = Path("frontend/src/components/Keyframes/FrameGrid.jsx").read_text(encoding="utf-8")
 
-    assert "regenerateFrameVideo" in source
+    assert "isVideoGenerating" in source
+    assert "displayVideoUrl" in source
+    assert "appendVideoCacheBuster" in source
+    assert "videoUrl && !isVideoGenerating" in source
+
+
+def test_frame_grid_keeps_bulk_image_regeneration_and_edit_entrypoints():
+    source = Path("frontend/src/components/Keyframes/FrameGrid.jsx").read_text(encoding="utf-8")
+
+    assert "regenerateFrameImage" in source
     assert "updateFrame" in source
-    assert "handleRegenerateVideo" in source
-    assert "handleSaveFrameEdit" in source
+    assert "handleGlobalRegenerateImages" in source
+    assert "handleConfirmEdit" in source
 
 
 def test_frame_grid_polls_active_task_and_surfaces_retry_and_action_guidance():
@@ -106,14 +115,36 @@ def test_storyboard_timeline_supports_selected_frame_highlight():
     assert "is-active" in source
 
 
-def test_project_detail_storyboard_panel_only_keeps_save_and_regenerate_actions():
+def test_project_detail_storyboard_panel_supports_two_step_image_then_video_regeneration():
     source = Path("frontend/src/components/Project/ProjectDetail.jsx").read_text(encoding="utf-8")
 
     assert "handleSaveFrame" in source
     assert "handleRegenerateImage" in source
-    assert "handleRegenerateVideo" not in source
+    assert "handleRegenerateVideo" in source
+    assert "canRegenerateVideo" in source
+    assert "mustRegenerateImageFirst" in source
+    assert "regenerateFrameVideo" in source
     assert "handleRegenerateTts" not in source
     assert "regenerateProjectTts" not in source
+
+
+def test_project_detail_header_replaces_raw_timeline_summary_with_regeneration_buttons():
+    source = Path("frontend/src/components/Project/ProjectDetail.jsx").read_text(encoding="utf-8")
+
+    assert "timelineSummary" not in source
+    assert "重新生成图片" in source
+    assert "重新生成视频" in source
+    assert "请先重新生成图片" in source
+
+
+def test_frame_grid_bulk_regenerate_only_updates_images_and_refreshes_chat():
+    source = Path("frontend/src/components/Keyframes/FrameGrid.jsx").read_text(encoding="utf-8")
+
+    assert "bumpConversationVersion" in source
+    assert "handleGlobalRegenerateImages" in source
+    assert "handleGlobalRegenerateVideos" not in source
+    assert "renderProject(activeProjectId)" not in source
+    assert "regenerateFrameVideo(activeProjectId, frame.id)" not in source
 
 
 def test_project_detail_can_refresh_chat_after_side_panel_actions():
@@ -168,6 +199,18 @@ def test_message_blocks_does_not_render_workflow_action_bar_buttons():
     assert "block.type === 'action_bar'" not in source
 
 
+def test_message_blocks_progress_cards_poll_tasks_and_notify_on_completion():
+    source = Path("frontend/src/components/Chat/MessageBlocks.jsx").read_text(encoding="utf-8")
+
+    assert "getGenerationTask" in source
+    assert "setInterval" in source
+    assert "clearInterval" in source
+    assert "onActionComplete?.()" in source
+    assert "SUCCESS_STATUSES" in source
+    assert "TERMINAL_STATUSES" in source
+    assert "<ProgressCard key={index} block={block} onActionComplete={onActionComplete}" in source
+
+
 def test_message_blocks_replaces_inline_edit_buttons_with_conversational_follow_up():
     source = Path("frontend/src/components/Chat/MessageBlocks.jsx").read_text(encoding="utf-8")
 
@@ -177,6 +220,17 @@ def test_message_blocks_replaces_inline_edit_buttons_with_conversational_follow_
     assert "确认执行" not in source
     assert "这个版本你想怎么调？" in source
     assert "方向有没有要调的？" in source
+
+
+def test_message_blocks_formats_chat_duration_values_for_people_not_raw_precision():
+    source = Path("frontend/src/components/Chat/MessageBlocks.jsx").read_text(encoding="utf-8")
+
+    assert "function formatDurationLabel" in source
+    assert "Number.isInteger" in source
+    assert "toFixed(1)" in source
+    assert "{formatDurationLabel(block.total_duration)}" in source
+    assert "{formatDurationLabel(frame.duration)}" in source
+    assert "key === 'duration' ? formatDurationLabel(field.value) : String(field.value ?? '')" in source
 
 
 def test_streaming_chat_parser_handles_sse_error_events():
@@ -215,14 +269,14 @@ def test_project_creation_keeps_draft_chat_visible_until_backend_history_catches
 
     assert "promoteDraftMessagesToProject" in chat_state
     assert "promoteDraftMessagesToProject(current, project.id, assistantMsgId)" in use_chat
-    assert "mergeFetchedMessages(existing, normalized, streamingMessageId)" in use_chat
+    assert "mergeFetchedMessages(existing, normalized)" in use_chat
 
 
 def test_project_creation_auto_triggers_script_generation_from_entry_chat():
     use_chat = Path("frontend/src/hooks/useChat.js").read_text(encoding="utf-8")
 
     assert "generateProjectScript" in use_chat
-    assert "await generateProjectScript(projectId)" in use_chat or "await generateProjectScript(project.id)" in use_chat
+    assert "await generateProjectScript(projectId" in use_chat or "await generateProjectScript(project.id" in use_chat
 
 
 def test_draft_chat_state_is_persisted_beyond_sidebar_title():
@@ -238,7 +292,21 @@ def test_draft_chat_state_is_persisted_beyond_sidebar_title():
 def test_project_creation_for_entry_chat_forwards_selected_assets():
     use_chat = Path("frontend/src/hooks/useChat.js").read_text(encoding="utf-8")
 
+    assert "display_user_prompt: submission.displayContent" in use_chat
     assert "selected_assets: submission.selectedAssets" in use_chat
+
+
+def test_welcome_message_introduces_vidmuse_as_video_generation_agent():
+    chat_source = Path("frontend/src/components/Chat/ChatContainer.jsx").read_text(encoding="utf-8")
+    workbench_source = Path("frontend/src/components/Workbench/WorkbenchView.jsx").read_text(encoding="utf-8")
+    backend_source = Path("backend/v1/app/generate/service/chat/initial_message.py").read_text(encoding="utf-8")
+
+    expected_intro = "我是 VidMuse——带货视频生成 Agent。我会帮你一步步创建带货短视频："
+    assert expected_intro in chat_source
+    assert expected_intro in workbench_source
+    assert expected_intro in backend_source
+    assert "欢迎使用带货视频生成系统" not in chat_source
+    assert "欢迎使用带货视频生成系统" not in workbench_source
 
 
 def test_backend_material_flow_no_longer_injects_raw_material_text_or_image_urls():

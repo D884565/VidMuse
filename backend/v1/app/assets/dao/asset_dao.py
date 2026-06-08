@@ -40,7 +40,7 @@ class AssetDAO:
     def delete_asset(db: Session, asset_id: int) -> bool:
         """删除资产"""
         result = db.query(Asset).filter(Asset.id == asset_id).delete()
-        db.commit()
+        db.flush()
         return result > 0
 
     @staticmethod

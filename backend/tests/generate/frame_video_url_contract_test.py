@@ -21,3 +21,13 @@ def test_project_detail_exposes_frame_video_url():
     source = Path("backend/v1/app/generate/service/stages/video_workflow.py").read_text(encoding="utf-8")
 
     assert '"video_url": f.video_url' in source
+
+
+def test_project_output_video_uses_task_scoped_object_key_to_avoid_cache_races():
+    source = Path("backend/v1/app/generate/tasks/video_tasks.py").read_text(encoding="utf-8")
+    start = source.index("def generate_video_task")
+    body = source[start:]
+
+    assert "outputs/{output_task_key}" in body
+    assert "output_task_key = task_id" in body
+    assert 'video_object = f"projects/{project_id}/output.mp4"' not in body
