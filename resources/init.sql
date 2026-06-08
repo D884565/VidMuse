@@ -204,6 +204,7 @@ CREATE TABLE IF NOT EXISTS frames (
     status          TINYINT DEFAULT 0 COMMENT '状态: 0-待生成, 1-生成中, 2-已完成, 3-失败',
     error_message   TEXT COMMENT '生成失败的错误信息',
     dirty           INT NOT NULL DEFAULT 0 COMMENT '脏数据标记: 0-干净, 1-已修改',
+    version         INT NOT NULL DEFAULT 1 COMMENT '帧版本号，每次修改+1，Celery任务完成时校验',
     last_edited_at  DATETIME COMMENT '最后编辑时间',
     ai_params       JSON COMMENT 'AI生成参数',
     metadata        JSON COMMENT '额外元数据',

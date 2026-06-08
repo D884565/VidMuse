@@ -23,6 +23,7 @@ class TaskReference:
     celery_task_id: str | None = None
     current_step: str | None = None
     current_frame_id: int | None = None
+    retry_count: int = 0
 
 
 @dataclass
@@ -45,13 +46,12 @@ class GenerationTaskService:
         trace_id: str | None = None,
         commit: bool = True,
     ) -> TaskReference:
-        event = task_event_service.create_task_sync(
-            db=db.sync_session,
-            task_domain="generation",
-            task_type=task_type,
-            project_id=project_id,
-            status=status,
-            trace_id=trace_id,
+        event = await db.run_sync(
+            self._create_task_event_sync,
+            project_id,
+            task_type,
+            status,
+            trace_id,
         )
         if commit:
             await db.commit()
@@ -60,15 +60,10 @@ class GenerationTaskService:
         return self._reference_from_event(event, project_id, task_type)
 
     async def set_celery_task_id(self, db: AsyncSession, task_id: str, celery_task_id: str) -> None:
-        task_event_service.emit_event_sync(
-            db=db.sync_session,
-            task_id=task_id,
-            task_domain="generation",
-            task_type="unknown",
-            event_type="celery_task_bound",
-            status=None,
-            progress=None,
-            celery_task_id=celery_task_id,
+        await db.run_sync(
+            self._bind_celery_task_id_sync,
+            task_id,
+            celery_task_id,
         )
         await db.commit()
 
@@ -99,6 +94,7 @@ class GenerationTaskService:
 
     def get_task_sync(self, db: Session, task_id: str) -> TaskReference:
         snapshot = task_event_service.get_task_snapshot_sync(db, str(task_id))
+        result_data = snapshot.get("result") or {}
         return TaskReference(
             id=snapshot["task_id"],
             project_id=snapshot.get("project_id") or 0,
@@ -109,6 +105,7 @@ class GenerationTaskService:
             celery_task_id=snapshot.get("celery_task_id"),
             current_step=snapshot.get("current_step"),
             current_frame_id=snapshot.get("current_frame_id"),
+            retry_count=result_data.get("retry_count") or 0,
         )
 
     def start_task_sync(
@@ -146,6 +143,7 @@ class GenerationTaskService:
         current_frame_id: int | None = None,
         error_code: str | None = None,
         error_message: str | None = None,
+        retry_count: int | None = None,
     ) -> None:
         snapshot = task_event_service.get_task_snapshot_sync(db, str(task_id))
         event_type = "task_progress"
@@ -155,6 +153,7 @@ class GenerationTaskService:
             event_type = "task_failed"
         elif status == "cancelled":
             event_type = "task_cancelled"
+        result = {"retry_count": retry_count} if retry_count is not None else None
         task_event_service.emit_event_sync(
             db=db,
             task_id=str(task_id),
@@ -168,6 +167,7 @@ class GenerationTaskService:
             current_step=current_step,
             current_frame_id=current_frame_id,
             error={"code": error_code, "message": error_message} if (error_code or error_message) else None,
+            result=result,
         )
 
     def start_step_sync(
@@ -251,6 +251,42 @@ class GenerationTaskService:
             status=event["status"],
             progress=event["progress"],
             trace_id=event["trace_id"],
+        )
+
+    @staticmethod
+    def _create_task_event_sync(
+        sync_db: Session,
+        project_id: int,
+        task_type: str,
+        status: str,
+        trace_id: str | None,
+    ) -> dict[str, Any]:
+        return task_event_service.create_task_sync(
+            db=sync_db,
+            task_domain="generation",
+            task_type=task_type,
+            project_id=project_id,
+            status=status,
+            trace_id=trace_id,
+            commit=False,
+        )
+
+    @staticmethod
+    def _bind_celery_task_id_sync(
+        sync_db: Session,
+        task_id: str,
+        celery_task_id: str,
+    ) -> None:
+        task_event_service.emit_event_sync(
+            db=sync_db,
+            task_id=task_id,
+            task_domain="generation",
+            task_type="unknown",
+            event_type="celery_task_bound",
+            status=None,
+            progress=None,
+            commit=False,
+            celery_task_id=celery_task_id,
         )
 
 

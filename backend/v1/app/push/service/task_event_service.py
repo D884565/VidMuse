@@ -92,6 +92,7 @@ class TaskEventService:
         task_id: str | None = None,
         celery_task_id: str | None = None,
         extra: dict[str, Any] | None = None,
+        commit: bool = True,
     ) -> dict[str, Any]:
         from backend.framework.trace import get_trace_id
         from backend.v1.app.push.dao.message_dao import message_dao
@@ -134,6 +135,7 @@ class TaskEventService:
                 progress=0,
             ),
             message_id,
+            commit=commit,
         )
         return {
             "task_id": resolved_task_id,
@@ -162,6 +164,7 @@ class TaskEventService:
         step: dict[str, Any] | None = None,
         result: dict[str, Any] | None = None,
         error: dict[str, Any] | None = None,
+        commit: bool = True,
     ) -> dict[str, Any]:
         from backend.framework.trace import get_trace_id
         from backend.v1.app.push.dao.message_dao import message_dao
@@ -208,6 +211,7 @@ class TaskEventService:
                 progress=clamped_progress,
             ),
             message_id,
+            commit=commit,
         )
         return payload
 

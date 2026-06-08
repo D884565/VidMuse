@@ -19,7 +19,6 @@ from backend.v1.app.generate.service.generateUtils.reference_image_utils import 
 from backend.v1.app.generate.service.stages.video_composer import video_composer
 from backend.v1.app.generate.service.workflow.media_resolvers import resolve_tts_text
 from backend.ffmpeg import ffmpeg_tool
-from backend.v1.app.generate.service.stages.music_service import music_generation_service
 from backend.v1.app.generate.service.stages.bgm_selector import bgm_selector_service
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
 from backend.v1.app.generate.service.generateUtils.task_tracker import generation_task_tracker
@@ -277,8 +276,7 @@ def _update_task_failure_state(
     try:
         if task_id:
             task = generation_task_service.get_task_sync(fail_db, task_id)
-            if will_retry:
-                task.retry_count = (task.retry_count or 0) + 1
+            new_retry_count = (task.retry_count or 0) + 1 if will_retry else task.retry_count
             generation_task_service.update_task_sync(
                 fail_db,
                 task_id,
@@ -287,6 +285,7 @@ def _update_task_failure_state(
                 current_step="RETRYING" if will_retry else current_step,
                 error_code=None if will_retry else error_code,
                 error_message=error_message,
+                retry_count=new_retry_count if will_retry else None,
             )
         # 只有最终失败才标记项目阶段失败；重试中的任务仍保持可恢复状态。
         if project_id is not None and stage and not will_retry:
@@ -926,6 +925,8 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
         frame = db.execute(
             select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id)
         ).scalar_one()
+        # 记录任务开始时的版本号，用于完成后校验
+        frame_version_at_start = frame.version or 1
         project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
         reference_images = extract_reference_images(project)
         frame.image_url = None
@@ -936,6 +937,25 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
             reference_images=reference_images,
         )
         db.commit()
+
+        # 版本校验：如果任务期间帧被用户编辑过，丢弃本次结果
+        frame_current = db.execute(
+            select(Frame).where(Frame.id == frame_id)
+        ).scalar_one()
+        if (frame_current.version or 1) != frame_version_at_start:
+            logger.warning(
+                f"[单帧图片任务] 帧 {frame_id} 在任务期间被编辑（版本 {frame_version_at_start} -> {frame_current.version}），丢弃本次结果"
+            )
+            generation_task_service.finish_step_sync(
+                db, step, status="skipped", progress=100,
+                output_snapshot={"skipped": True, "reason": "frame_edited_during_task"},
+            ) if task_id else None
+            generation_task_service.update_task_sync(
+                db, task_id, status="succeeded", progress=100, current_step="FRAME_IMAGE_SKIPPED",
+            ) if task_id else None
+            db.commit()
+            return
+
         failed = [item.id for item in frames if item.status == 3]
         if failed:
             generation_task_service.finish_step_sync(
@@ -1037,6 +1057,7 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
             db, task_id, status="succeeded", progress=100, current_step="FRAME_VIDEO_GENERATED",
             current_frame_id=frame_id,
         ) if task_id else None
+        db.commit()
     except SoftTimeLimitExceeded as exc:
         logger.error(f"[单帧视频任务超时] project_id={project_id}, frame_id={frame_id}", exc_info=True)
         will_retry = self.request.retries < self.max_retries
@@ -1080,7 +1101,6 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
     finally:
         if db:
             db.close()
-        import shutil
         if os.path.exists(temp_dir):
             shutil.rmtree(temp_dir, ignore_errors=True)
 

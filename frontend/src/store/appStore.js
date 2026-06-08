@@ -7,6 +7,7 @@ export const useAppStore = create((set, get) => ({
   draftConversationTitle: '',
   draftConversationMessages: [],
   projectListVersion: 0,
+  conversationVersion: 0,
   isLoggedIn: !!localStorage.getItem('token'),
   authLoading: false,
   // 用户信息（会话内有效，可通过 /users/me 刷新）
@@ -31,6 +32,7 @@ export const useAppStore = create((set, get) => ({
     })),
   clearDraftConversation: () => set({ draftConversationTitle: '', draftConversationMessages: [] }),
   bumpProjectListVersion: () => set((state) => ({ projectListVersion: state.projectListVersion + 1 })),
+  bumpConversationVersion: () => set((state) => ({ conversationVersion: state.conversationVersion + 1 })),
   setUser: (user) => set({ user }),
   setAuthLoading: (authLoading) => set({ authLoading }),
   setRefreshToken: (refreshToken) => {

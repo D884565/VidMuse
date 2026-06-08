@@ -194,8 +194,10 @@ def classify_project_intent(
             seq = getattr(f, "sequence", "?")
             desc = getattr(f, "description", "") or "无描述"
             status = getattr(f, "status", 0)
+            dirty = getattr(f, "dirty", 0)
             status_map = {0: "待处理", 1: "生成中", 2: "已完成", 3: "失败"}
-            lines.append(f"  第{seq}个(id={f.id}): {desc[:50]}... ({status_map.get(status, '未知')})")
+            dirty_mark = " [已修改待重生成]" if dirty else ""
+            lines.append(f"  第{seq}个(id={f.id}): {desc[:50]}... ({status_map.get(status, '未知')}{dirty_mark})")
         frame_summaries = "\n".join(lines)
 
     system_prompt = PROJECT_SYSTEM_PROMPT_TEMPLATE.format(

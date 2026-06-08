@@ -109,9 +109,11 @@ def test_create_task_sync_returns_push_task_reference(monkeypatch):
 @pytest.mark.asyncio
 async def test_create_task_returns_push_task_reference(monkeypatch):
     created = {}
+    allowed_sync_db = object()
 
     def fake_create_task_sync(**kwargs):
         created.update(kwargs)
+        assert kwargs["db"] is allowed_sync_db
         return {
             "task_id": "gen_async",
             "trace_id": "trace_async",
@@ -121,14 +123,19 @@ async def test_create_task_returns_push_task_reference(monkeypatch):
 
     class FakeAsyncSession:
         def __init__(self):
-            self.sync_session = SimpleNamespace()
+            self.sync_session = object()
             self.commits = 0
+            self.run_sync_calls = 0
 
         async def commit(self):
             self.commits += 1
 
         async def flush(self):
             raise AssertionError("flush should not be called when commit=True")
+
+        async def run_sync(self, fn, *args, **kwargs):
+            self.run_sync_calls += 1
+            return fn(allowed_sync_db, *args, **kwargs)
 
     monkeypatch.setattr(
         "backend.v1.app.generate.service.generateUtils.task_service.task_event_service.create_task_sync",
@@ -144,4 +151,75 @@ async def test_create_task_returns_push_task_reference(monkeypatch):
     assert task.status == "queued"
     assert task.trace_id == "trace_async"
     assert db.commits == 1
-    assert created["db"] is db.sync_session
+    assert db.run_sync_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_set_celery_task_id_uses_run_sync(monkeypatch):
+    emitted = {}
+    allowed_sync_db = object()
+
+    def fake_emit_event_sync(**kwargs):
+        emitted.update(kwargs)
+        assert kwargs["db"] is allowed_sync_db
+
+    class FakeAsyncSession:
+        def __init__(self):
+            self.sync_session = object()
+            self.commits = 0
+            self.run_sync_calls = 0
+
+        async def commit(self):
+            self.commits += 1
+
+        async def run_sync(self, fn, *args, **kwargs):
+            self.run_sync_calls += 1
+            return fn(allowed_sync_db, *args, **kwargs)
+
+    monkeypatch.setattr(
+        "backend.v1.app.generate.service.generateUtils.task_service.task_event_service.emit_event_sync",
+        fake_emit_event_sync,
+    )
+
+    db = FakeAsyncSession()
+    await generation_task_service.set_celery_task_id(db, "gen_async", "celery_123")
+
+    assert db.run_sync_calls == 1
+    assert db.commits == 1
+    assert emitted["task_id"] == "gen_async"
+    assert emitted["celery_task_id"] == "celery_123"
+
+
+def test_task_event_service_uses_non_committing_message_writes(monkeypatch):
+    from backend.v1.app.push.service.task_event_service import task_event_service
+
+    calls = []
+
+    def fake_create_message(_db, _message_create, _message_id, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(message_id=_message_id)
+
+    monkeypatch.setattr(
+        "backend.v1.app.push.service.task_event_service.message_dao.create_message",
+        fake_create_message,
+        raising=False,
+    )
+
+    task_event_service.create_task_sync(
+        db=SimpleNamespace(),
+        task_domain="generation",
+        task_type="script",
+        project_id=25,
+        user_id=1,
+    )
+    task_event_service.emit_event_sync(
+        db=SimpleNamespace(),
+        task_id="gen_test",
+        task_domain="generation",
+        task_type="script",
+        event_type="task_started",
+        project_id=25,
+        user_id=1,
+    )
+
+    assert calls == [{"commit": False}, {"commit": False}]

@@ -37,7 +37,13 @@ class MessageDAO:
     """消息数据访问层"""
 
     @staticmethod
-    def create_message(db: Session, message_create: PushMessageCreate, message_id: str) -> PushMessage:
+    def create_message(
+        db: Session,
+        message_create: PushMessageCreate,
+        message_id: str,
+        *,
+        commit: bool = True,
+    ) -> PushMessage:
         """创建消息"""
         db_message = PushMessage(
             message_id=message_id,
@@ -66,7 +72,10 @@ class MessageDAO:
         )
         db.add(db_user_message)
 
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
         db.refresh(db_message)
         return db_message
 

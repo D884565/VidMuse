@@ -61,6 +61,7 @@ class Frame(Base):
     transition_type: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", comment="transition")
     status: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", comment="generation status")
     dirty: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0", comment="dirty flag")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1", comment="帧版本号，每次修改+1，Celery任务完成时校验")
     last_edited_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
     ai_params: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="ai params")
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True, comment="extra metadata")

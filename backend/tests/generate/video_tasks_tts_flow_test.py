@@ -84,6 +84,13 @@ def test_tts_service_exposes_duration_and_concat_helpers():
     assert "def concat_audio_clips" in source
 
 
+def test_generation_controller_exposes_project_tts_regeneration_endpoint():
+    source = Path("backend/v1/app/generate/controller/generation.py").read_text(encoding="utf-8")
+
+    assert "/projects/{project_id}/tts/regenerate" in source
+    assert "submit_project_tts_regeneration_task" in source
+
+
 def test_render_task_finishes_as_reviewable_video_stage_not_completed():
     source = Path("backend/v1/app/generate/tasks/video_tasks.py").read_text(encoding="utf-8")
     completion_section = source[

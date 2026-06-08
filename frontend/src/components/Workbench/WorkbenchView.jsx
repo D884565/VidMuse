@@ -16,15 +16,6 @@ const WELCOME_MESSAGE = {
 3. 最后合成视频并支持继续对话修改
 
 请描述你想推广的产品，或直接粘贴商品链接，我会先给出画面方案。`,
-  blocks: [
-    {
-      type: 'quick_actions',
-      actions: [
-        { label: '发个产品链接开始', hint: '粘贴淘宝/京东/抖音链接' },
-        { label: '用文字描述产品', hint: '告诉我你想推什么、卖点是什么' },
-      ],
-    },
-  ],
 }
 
 export default function WorkbenchView() {

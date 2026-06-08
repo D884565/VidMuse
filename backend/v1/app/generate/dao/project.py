@@ -13,6 +13,7 @@ class ProjectBase(BaseModel):
 
 class ProjectCreate(ProjectBase):
     title: str | None = None
+    product_id: int | None = None
     auto_render: bool = False
     user_prompt: str | None = None
     reference_images: list[str] = Field(default_factory=list, max_length=5)
@@ -22,7 +23,7 @@ class ProjectCreate(ProjectBase):
     key_points: list[str] = Field(default_factory=list)
     avoid: list[str] = Field(default_factory=list)
     rag_weight: float = 0.3
-    target_duration: int = 15
+    target_duration: int = Field(default=15, ge=10, le=25)
     voice_type: str = "zh_female_cancan_mars_bigtts"
 
 
