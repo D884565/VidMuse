@@ -9,7 +9,8 @@ import {
   Video,
   Lightbulb,
   Activity,
-  Server
+  Server,
+  Workflow
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 
@@ -19,6 +20,7 @@ const menuItems = [
   { path: '/admin/assets', icon: Image, label: '资产管理' },
   { path: '/admin/videos', icon: Video, label: '视频库' },
   { path: '/admin/inspiration', icon: Lightbulb, label: '灵感模板' },
+  { path: '/admin/pipelines', icon: Workflow, label: '流水线管理' },
   { path: '/admin/traces', icon: Activity, label: 'Agent链路追踪' },
   { path: '/admin/system-traces', icon: Server, label: '系统链路追踪' },
 ]
