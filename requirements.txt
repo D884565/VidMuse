@@ -37,8 +37,8 @@ minio==7.2.15
 redis==7.4.1                   # Redis 客户端，用于ID生成器和缓存
 
 # ==================== 爬虫层 ====================
-playwright==1.49.1             # 浏览器自动化（商品页面渲染）
-beautifulsoup4==4.13.4         # HTML 解析
+playwright==1.49.1             # 浏览器自动化
+beautifulsoup4==4.13.4       # HTML 解析
 opencv-python
 websockets==12.0          # WebSocket客户端，用于豆包语音合成
 numpy
@@ -46,7 +46,6 @@ ffmpeg-python
 jsonschema==4.23.0        # JSON Schema校验
 
 celery==5.3.0            # 分布式任务队列
-
 
 
 PyJWT>=2.8.0

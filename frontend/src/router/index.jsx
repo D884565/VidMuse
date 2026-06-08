@@ -10,6 +10,7 @@ import VideoLibrary from '../pages/Admin/VideoLibrary.jsx'
 import InspirationTemplate from '../pages/Admin/InspirationTemplate.jsx'
 import TraceManagement from '../pages/Admin/TraceManagement.jsx'
 import SystemTraceManagement from '../pages/Admin/SystemTraceManagement.jsx'
+import PipelineManagement from '../pages/Admin/PipelineManagement.jsx'
 import NotFound from '../pages/NotFound.jsx'
 import Forbidden from '../pages/Forbidden.jsx'
 
@@ -63,6 +64,10 @@ export const router = createBrowserRouter([
       {
         path: 'system-traces',
         element: <SystemTraceManagement />
+      },
+      {
+        path: 'pipelines',
+        element: <PipelineManagement />
       }
     ]
   },

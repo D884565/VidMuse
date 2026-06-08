@@ -115,11 +115,17 @@ def list_assets(
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_payload: dict = Depends(get_current_user_payload),
 ):
+    user_id = int(current_user_payload["sub"])
+    user_role = current_user_payload.get("role")
+
+    # 管理员可以查看所有资产，普通用户只能查看自己的
+    query_user_id = user_id if user_role != 0 else None
+
     result = AssetService.list_assets(
         db=db,
-        user_id=current_user_id,
+        user_id=query_user_id,
         type=type,
         source_type=source_type,
         keyword=keyword,
@@ -134,9 +140,15 @@ def list_assets(
 def get_asset_detail(
     asset_id: int = Path(..., description="Asset ID"),
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_payload: dict = Depends(get_current_user_payload),
 ):
-    result = AssetService.get_asset_detail(db=db, user_id=current_user_id, asset_id=asset_id)
+    user_id = int(current_user_payload["sub"])
+    user_role = current_user_payload.get("role")
+
+    # 管理员可以查看所有资产，普通用户只能查看自己的
+    query_user_id = user_id if user_role != 0 else None
+
+    result = AssetService.get_asset_detail(db=db, user_id=query_user_id, asset_id=asset_id)
     return Response.success(data=result)
 
 
@@ -146,11 +158,17 @@ def update_asset(
     title: Optional[str] = Body(None, description="Asset title"),
     ai_features: Optional[dict] = Body(None, description="AI feature payload"),
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_payload: dict = Depends(get_current_user_payload),
 ):
+    user_id = int(current_user_payload["sub"])
+    user_role = current_user_payload.get("role")
+
+    # 管理员可以更新所有资产，普通用户只能更新自己的
+    query_user_id = user_id if user_role != 0 else None
+
     result = AssetService.update_asset(
         db=db,
-        user_id=current_user_id,
+        user_id=query_user_id,
         asset_id=asset_id,
         title=title,
         ai_features=ai_features,
@@ -164,9 +182,15 @@ async def parse_asset(
     force: bool = Body(False, description="Force re-parse"),
     product_id: Optional[int] = Body(None, description="关联的产品ID，用于建立资产和产品的关联"),
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_payload: dict = Depends(get_current_user_payload),
 ):
-    result = await AssetService.parse_asset(db=db, user_id=current_user_id, asset_id=asset_id, force=force, product_id=product_id)
+    user_id = int(current_user_payload["sub"])
+    user_role = current_user_payload.get("role")
+
+    # 管理员可以解析所有资产，普通用户只能解析自己的
+    query_user_id = user_id if user_role != 0 else None
+
+    result = await AssetService.parse_asset(db=db, user_id=query_user_id, asset_id=asset_id, force=force, product_id=product_id)
     return Response.success(data=result, message="Parse task started")
 
 
@@ -174,9 +198,15 @@ async def parse_asset(
 def get_parsing_progress(
     asset_id: int = Path(..., description="Asset ID"),
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_payload: dict = Depends(get_current_user_payload),
 ):
-    result = AssetService.get_parsing_progress(db=db, user_id=current_user_id, asset_id=asset_id)
+    user_id = int(current_user_payload["sub"])
+    user_role = current_user_payload.get("role")
+
+    # 管理员可以查看所有资产的解析进度，普通用户只能查看自己的
+    query_user_id = user_id if user_role != 0 else None
+
+    result = AssetService.get_parsing_progress(db=db, user_id=query_user_id, asset_id=asset_id)
     return Response.success(data=result)
 
 
@@ -185,9 +215,15 @@ async def retry_parsing(
     asset_id: int = Path(..., description="Asset ID"),
     product_id: Optional[int] = Body(None, description="关联的产品ID，用于建立资产和产品的关联"),
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_payload: dict = Depends(get_current_user_payload),
 ):
-    result = await AssetService.retry_parsing(db=db, user_id=current_user_id, asset_id=asset_id, product_id=product_id)
+    user_id = int(current_user_payload["sub"])
+    user_role = current_user_payload.get("role")
+
+    # 管理员可以重新解析所有资产，普通用户只能重新解析自己的
+    query_user_id = user_id if user_role != 0 else None
+
+    result = await AssetService.retry_parsing(db=db, user_id=query_user_id, asset_id=asset_id, product_id=product_id)
     return Response.success(data=result, message="Retry task started")
 
 
@@ -195,7 +231,13 @@ async def retry_parsing(
 def delete_asset(
     asset_id: int = Path(..., description="Asset ID"),
     db: Session = Depends(get_db),
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_payload: dict = Depends(get_current_user_payload),
 ):
-    AssetService.delete_asset(db=db, user_id=current_user_id, asset_id=asset_id)
+    user_id = int(current_user_payload["sub"])
+    user_role = current_user_payload.get("role")
+
+    # 管理员可以删除所有资产，普通用户只能删除自己的
+    query_user_id = user_id if user_role != 0 else None
+
+    AssetService.delete_asset(db=db, user_id=query_user_id, asset_id=asset_id)
     return Response.success(data=None, message="Deleted successfully")

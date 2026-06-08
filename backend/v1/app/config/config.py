@@ -154,6 +154,13 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str = "HS256"
     JWT_ACCESS_TOKEN_EXPIRE_SECONDS: int = 7200  # 2小时
 
+    # 接口并发限制配置
+    CONCURRENCY_LIMIT_ENABLED: bool = True  # 并发限制总开关
+    CONCURRENCY_LIMIT_DEFAULT: int = 5  # 每个接口默认最大并发数
+    CONCURRENCY_LIMIT_TIMEOUT: int = 30  # 排队超时时间（秒）
+    CONCURRENCY_LIMIT_CUSTOM: dict = {}  # 自定义接口并发数，格式：{"/v1/api/path": 并发数}
+    CONCURRENCY_LIMIT_EXCLUDE_PATHS: list = ["/", "/docs", "/openapi.json", "/redoc"]  # 不需要限流的路径
+
     model_config = {"env_file": ".env", "extra": "ignore"}
 
 

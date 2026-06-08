@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Plus, Edit, Trash2, Upload, Play, RefreshCw, Import } from 'lucide-react'
+import { Plus, Edit, Trash2, Upload, Play, RefreshCw, Import, FileCode } from 'lucide-react'
 import PageContainer from '../../components/Admin/Layout/PageContainer'
 import Table from '../../components/Admin/Common/Table'
 import { getVideoList, deleteVideo, triggerVideoParsing, batchImportHotVideos, uploadVideo, getCategoryTree } from '../../services/admin'
@@ -102,6 +102,10 @@ export default function VideoLibrary() {
   const [pagination, setPagination] = useState({ total: 0, page: 1, page_size: 20 })
   const [uploadModalVisible, setUploadModalVisible] = useState(false)
   const [importModalVisible, setImportModalVisible] = useState(false)
+  const [playModalVisible, setPlayModalVisible] = useState(false)
+  const [currentPlayingVideo, setCurrentPlayingVideo] = useState(null)
+  const [parseModalVisible, setParseModalVisible] = useState(false)
+  const [currentParseData, setCurrentParseData] = useState(null)
   const [uploadForm, setUploadForm] = useState({
     file: null,
     title: '',
@@ -277,13 +281,32 @@ export default function VideoLibrary() {
     return null
   }
 
+  const handlePlay = (video) => {
+    setCurrentPlayingVideo(video)
+    setPlayModalVisible(true)
+  }
+
+  const handleViewParseResult = (video) => {
+    setCurrentParseData(video)
+    setParseModalVisible(true)
+  }
+
   const actions = (row) => (
     <div className="flex items-center justify-end space-x-1">
       <button
+        onClick={() => handlePlay(row)}
         className="p-1 text-blue-600 hover:text-blue-800"
         title="播放"
       >
         <Play size={16} />
+      </button>
+      <button
+        onClick={() => handleViewParseResult(row)}
+        className={`p-1 ${row.parsed_data ? 'text-indigo-600 hover:text-indigo-800' : 'text-gray-400 cursor-not-allowed'}`}
+        title={row.parsed_data ? '查看AI解析结果' : '暂无解析结果'}
+        disabled={!row.parsed_data}
+      >
+        <FileCode size={16} />
       </button>
       <button
         className="p-1 text-purple-600 hover:text-purple-800"
@@ -593,6 +616,148 @@ export default function VideoLibrary() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 视频播放弹窗 */}
+      {playModalVisible && currentPlayingVideo && (
+        <div className="fixed inset-0 bg-black bg-opacity-80 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold truncate">
+                {currentPlayingVideo.title || '视频播放'}
+              </h3>
+              <button
+                onClick={() => setPlayModalVisible(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 p-4 bg-black overflow-auto">
+              <video
+                src={currentPlayingVideo.url}
+                controls
+                autoPlay
+                className="w-full h-full max-h-[70vh] object-contain"
+                poster={currentPlayingVideo.cover_url}
+                onError={(e) => {
+                  console.error('视频加载失败:', e)
+                  alert('视频加载失败，请检查视频URL是否有效')
+                }}
+              >
+                您的浏览器不支持视频播放。
+              </video>
+            </div>
+            <div className="p-4 border-t bg-gray-50">
+              <div className="grid grid-cols-2 gap-4 text-sm">
+                <div>
+                  <span className="font-medium text-gray-600">视频ID：</span>
+                  <span className="text-gray-800">{currentPlayingVideo.id}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">分类：</span>
+                  <span className="text-gray-800">{currentPlayingVideo.category || '未分类'}</span>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">大小：</span>
+                  <span className="text-gray-800">
+                    {currentPlayingVideo.file_size
+                      ? `${(currentPlayingVideo.file_size / (1024 * 1024)).toFixed(2)} MB`
+                      : '未知'}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-medium text-gray-600">时长：</span>
+                  <span className="text-gray-800">
+                    {currentPlayingVideo.duration
+                      ? `${currentPlayingVideo.duration} 秒`
+                      : '未知'}
+                  </span>
+                </div>
+              </div>
+              {currentPlayingVideo.description && (
+                <div className="mt-3 text-sm">
+                  <span className="font-medium text-gray-600">描述：</span>
+                  <p className="text-gray-800 mt-1">{currentPlayingVideo.description}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI解析结果弹窗 */}
+      {parseModalVisible && currentParseData && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-5xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <h3 className="text-lg font-semibold">
+                AI解析结果 - {currentParseData.title || `视频 #${currentParseData.id}`}
+              </h3>
+              <div className="flex items-center space-x-2">
+                <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                  currentParseData.parsing_status === 'completed' ? 'bg-green-100 text-green-800' :
+                  currentParseData.parsing_status === 'failed' ? 'bg-red-100 text-red-800' :
+                  currentParseData.parsing_status === 'running' ? 'bg-blue-100 text-blue-800' :
+                  'bg-yellow-100 text-yellow-800'
+                }`}>
+                  {currentParseData.parsing_status === 'completed' ? '解析成功' :
+                   currentParseData.parsing_status === 'failed' ? '解析失败' :
+                   currentParseData.parsing_status === 'running' ? '解析中' : '待解析'}
+                </span>
+                <button
+                  onClick={() => setParseModalVisible(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-auto p-4">
+              {currentParseData.parsing_status === 'failed' && currentParseData.parsing_error && (
+                <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <h4 className="text-sm font-medium text-red-800 mb-1">解析错误信息：</h4>
+                  <pre className="text-xs text-red-700 whitespace-pre-wrap">{currentParseData.parsing_error}</pre>
+                </div>
+              )}
+
+              {currentParseData.parsed_data ? (
+                <div>
+                  <div className="mb-3 flex items-center justify-between">
+                    <h4 className="text-sm font-medium text-gray-700">结构化解析数据：</h4>
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(currentParseData.parsed_data, null, 2))
+                        alert('解析结果已复制到剪贴板')
+                      }}
+                      className="text-xs px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded text-gray-700"
+                    >
+                      复制JSON
+                    </button>
+                  </div>
+                  <pre className="bg-gray-50 p-4 rounded-lg border border-gray-200 text-xs overflow-auto max-h-[60vh]">
+                    {JSON.stringify(currentParseData.parsed_data, null, 2)}
+                  </pre>
+                </div>
+              ) : (
+                <div className="text-center py-12 text-gray-500">
+                  <FileCode size={48} className="mx-auto mb-4 text-gray-300" />
+                  <p>暂无AI解析结果</p>
+                  {currentParseData.parsing_status === 'pending' && (
+                    <p className="text-sm mt-2 text-yellow-600">视频等待解析中，请稍后再试</p>
+                  )}
+                  {currentParseData.parsing_status === 'running' && (
+                    <p className="text-sm mt-2 text-blue-600">视频正在解析中，请稍后刷新查看</p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

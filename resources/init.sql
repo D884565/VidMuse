@@ -1,9 +1,21 @@
 DROP TABLE IF EXISTS spans;
 DROP TABLE IF EXISTS traces;
 DROP TABLE IF EXISTS agent_traces;
-
+DROP TABLE IF EXISTS trace_log;
+DROP TABLE IF EXISTS video_library;
+DROP TABLE IF EXISTS product_assets;
+DROP TABLE IF EXISTS asset_upload_sessions;
 DROP TABLE IF EXISTS trace_log;
 DROP TABLE IF EXISTS conversations;
+VALUES (
+    '1',
+    'admin',
+    'admin123',
+    'exap',
+    '0',
+    '2024-06-01 00:00:00',
+    '2024-06-01 00:00:00'
+  );
 DROP TABLE IF EXISTS scripts;
 DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS slices;
@@ -129,6 +141,41 @@ CREATE TABLE IF NOT EXISTS project_assets (
     UNIQUE KEY uq_project_assets_project_asset_role (project_id, asset_id, role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目素材绑定表';
 
+CREATE TABLE IF NOT EXISTS products (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '商品id',
+    user_id         BIGINT COMMENT '所属用户id(为空表示平台公共商品)',
+    name            VARCHAR(200) NOT NULL COMMENT '商品名称',
+    brand           VARCHAR(100) COMMENT '品牌',
+    category        VARCHAR(100) COMMENT '商品分类（冗余存储三级分类名称）',
+    category_id     BIGINT COMMENT '关联分类ID，对应product_categories.id',
+    category_path   VARCHAR(200) COMMENT '分类路径，冗余存储方便检索，如"/1/2/3/"',
+    description     TEXT COMMENT '商品描述',
+    selling_points  TEXT COMMENT '卖点JSON数组',
+    price           DECIMAL(12, 2) COMMENT '价格',
+    main_image_url  VARCHAR(500) COMMENT '主图URL',
+    detail_url      VARCHAR(1000) COMMENT '商品详情页链接',
+    platform        VARCHAR(50) COMMENT '来源平台: taobao, jd, pdd, douyin等',
+    platform_id     VARCHAR(100) COMMENT '平台商品ID',
+    auto_parse      TINYINT(1) DEFAULT 0 COMMENT '是否创建后自动触发解析',
+    images          TEXT COMMENT '商品图片URL列表，JSON数组格式',
+    parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
+    execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
+    parsing_error   TEXT COMMENT '解析错误信息',
+    ai_features     JSON COMMENT 'AI解析结果特征',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL,
+    INDEX idx_user (user_id),
+    INDEX idx_platform (platform, platform_id),
+    INDEX idx_category (category),
+    INDEX idx_category_id (category_id),
+    INDEX idx_category_path (category_path),
+    INDEX idx_parsing_status (parsing_status),
+    INDEX idx_execution_id (execution_id),
+    FULLTEXT INDEX ft_name_desc (name, description)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
+
 CREATE TABLE IF NOT EXISTS product_assets (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT,
     product_id      BIGINT NOT NULL COMMENT '商品ID',
@@ -215,43 +262,6 @@ CREATE TABLE IF NOT EXISTS frames (
     INDEX idx_project_status (project_id, status),
     INDEX idx_scene_type (scene_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='视频帧表';
-
-
-
-CREATE TABLE IF NOT EXISTS products (
-    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '商品id',
-    user_id         BIGINT COMMENT '所属用户id(为空表示平台公共商品)',
-    name            VARCHAR(200) NOT NULL COMMENT '商品名称',
-    brand           VARCHAR(100) COMMENT '品牌',
-    category        VARCHAR(100) COMMENT '商品分类（冗余存储三级分类名称）',
-    category_id     BIGINT COMMENT '关联分类ID，对应product_categories.id',
-    category_path   VARCHAR(200) COMMENT '分类路径，冗余存储方便检索，如"/1/2/3/"',
-    description     TEXT COMMENT '商品描述',
-    selling_points  TEXT COMMENT '卖点JSON数组',
-    price           DECIMAL(12, 2) COMMENT '价格',
-    main_image_url  VARCHAR(500) COMMENT '主图URL',
-    detail_url      VARCHAR(1000) COMMENT '商品详情页链接',
-    platform        VARCHAR(50) COMMENT '来源平台: taobao, jd, pdd, douyin等',
-    platform_id     VARCHAR(100) COMMENT '平台商品ID',
-    auto_parse      TINYINT(1) DEFAULT 0 COMMENT '是否创建后自动触发解析',
-    images          TEXT COMMENT '商品图片URL列表，JSON数组格式',
-    parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
-    execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
-    parsing_error   TEXT COMMENT '解析错误信息',
-    ai_features     JSON COMMENT 'AI解析结果特征',
-    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-    FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL,
-    INDEX idx_user (user_id),
-    INDEX idx_platform (platform, platform_id),
-    INDEX idx_category (category),
-    INDEX idx_category_id (category_id),
-    INDEX idx_category_path (category_path),
-    INDEX idx_parsing_status (parsing_status),
-    INDEX idx_execution_id (execution_id),
-    FULLTEXT INDEX ft_name_desc (name, description)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品表';
 
 
 

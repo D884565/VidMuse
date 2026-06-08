@@ -1,0 +1,5 @@
+# 测试用公开视频URL
+# 来源：国内可访问的测试资源
+https://www.w3school.com.cn/i/movie.mp4
+https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4
+https://sample-videos.com/video123/mp4/480/ForBiggerBlazes_480p_1mb.mp4

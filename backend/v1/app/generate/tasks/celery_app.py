@@ -15,6 +15,7 @@ celery_app = Celery(
     include=[
         "backend.v1.app.generate.tasks.video_tasks",
         "backend.v1.app.merge.service.merge_tasks",
+        "backend.v1.app.pipeline.tasks.pipeline_tasks",
     ],
 )
 

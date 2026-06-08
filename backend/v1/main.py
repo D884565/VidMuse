@@ -5,11 +5,14 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 from backend.framework.trace import TraceMiddleware
+from backend.framework.middleware.concurrency_limit import ConcurrencyLimitMiddleware
 from backend.framework.web.exception_handler import register_exception_handlers
 from backend.framework.web.response import Response
 from backend.v1.app.admin.inspiration_template.controller.inspiration_controller import router as inspiration_template_router
+from backend.v1.app.admin.pipeline.controller.pipeline_controller import router as pipeline_router
 from backend.v1.app.admin.rag_trace.controller.trace_controller import router as agent_trace_router
 from backend.v1.app.admin.trace_management.controller.trace_management_controller import router as trace_management_router
 from backend.v1.app.admin.video_library.controller.video_library_controller import router as video_library_router
@@ -26,6 +29,7 @@ from backend.v1.app.slice.controller.slice_controller import router as slice_rou
 from backend.v1.app.user.controller.user_controller import router as user_router
 from backend.v1.app.video.controller.video import router as video_router
 from backend.v1.app.task_scheduler.controller.task_controller import router as task_router
+from backend.v1.app.pipeline.controller import pipeline_router as pipeline_task_router
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from backend.v1.app.slice.controller.slice_controller import router as slice_router
@@ -49,10 +53,26 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="VidMuse", version="0.1.0", lifespan=lifespan,swagger_ui_parameters={"persistAuthorization": True})
+app = FastAPI(title="VidMuse", version="0.1.0", lifespan=lifespan, swagger_ui_parameters={"persistAuthorization": True})
 os.makedirs(settings.LOCAL_STORAGE_ROOT, exist_ok=True)
 app.mount(settings.LOCAL_STORAGE_URL_PREFIX, StaticFiles(directory=settings.LOCAL_STORAGE_ROOT), name="uploads")
+
+# 添加CORS中间件，允许前端跨域访问
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.add_middleware(TraceMiddleware)
+app.add_middleware(ConcurrencyLimitMiddleware)
 register_exception_handlers(app)
 
 app.include_router(generation_router)
@@ -71,6 +91,8 @@ app.include_router(script_router, prefix="/v1")
 app.include_router(video_library_router, prefix="/v1")
 app.include_router(trace_management_router, prefix="/v1")
 app.include_router(inspiration_template_router, prefix="/v1")
+app.include_router(pipeline_router, prefix="/v1")
+app.include_router(pipeline_task_router, prefix="/v1")
 app.include_router(ws_router, prefix="/v1")
 app.include_router(message_router, prefix="/v1")
 app.include_router(task_router)

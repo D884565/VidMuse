@@ -4,8 +4,11 @@ import traceback
 from abc import ABC
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
-from backend.framework.trace.decorator import _sync_push
+import asyncio
+from backend.v1.app.push.service import push_service
+from backend.v1.app.pipeline.service.pipeline_push_service import PipelinePushService
 from .processor import BaseProcessor
 from .context import PipelineContext
 from ..dao.pipeline_execution_dao import PipelineExecutionDAO
@@ -178,6 +181,9 @@ class BasePipeline:
             error_message_generator=_pipeline_error_msg
         )
 
+        # 初始化流水线推送服务
+        self.push_service = PipelinePushService()
+
     def run(self, input_data: Dict[str, Any], start_from_index: int = 0) -> Dict[str, Any]:
         """
         执行完整的流水线处理流程
@@ -246,6 +252,8 @@ class BasePipeline:
                     # 持久化当前状态
                     if execution_id and db_session and self.persist_after_each_processor:
                         self._persist_progress(db_session, execution_id, current_index, context)
+                        # 推送进度更新
+                        asyncio.create_task(self._on_status_change(execution_id))
 
                     # 推送进度更新
                     try:
@@ -253,24 +261,30 @@ class BasePipeline:
                         if user_id > 0:
                             # 计算进度百分比
                             progress = int((current_index + 1) / len(self.processors) * 100)
-                            # 使用trace包的同步推送方法
-                            _sync_push(
-                                self._push_config,
-                                user_id,
-                                lambda *args: (
-                                    "pipeline_progress",
-                                    f"{self.pipeline_type}流水线处理中",
-                                    {
-                                        "pipeline_type": self.pipeline_type,
-                                        "status": "running",
-                                        "progress": progress,
-                                        "current_processor": processor_name,
-                                        "current_index": current_index + 1,
-                                        "total_processors": len(self.processors),
-                                        "execution_id": execution_id
-                                    }
-                                )
-                            )
+                            # 直接调用推送服务
+                            async def push_progress():
+                                from backend.store.database.async_database import SessionLocal
+                                async with SessionLocal() as db:
+                                    await push_service.push_message(
+                                        db=db,
+                                        user_id=user_id,
+                                        message_type="pipeline_progress",
+                                        title=f"{self.pipeline_type}流水线处理中",
+                                        content={
+                                            "pipeline_type": self.pipeline_type,
+                                            "status": "running",
+                                            "progress": progress,
+                                            "current_processor": processor_name,
+                                            "current_index": current_index + 1,
+                                            "total_processors": len(self.processors),
+                                            "execution_id": execution_id
+                                        },
+                                        level="info",
+                                        persist=self._push_config.persist_messages
+                                    )
+
+                            # 异步推送，不阻塞主流程
+                            asyncio.create_task(push_progress())
                     except Exception as e:
                         logger.warning(f"Failed to push pipeline progress: {e}")
 
@@ -286,6 +300,8 @@ class BasePipeline:
                         PipelineExecutionDAO.update_execution_status(
                             db_session, execution_id, PipelineExecutionStatus.FAILED, str(e)
                         )
+                        # 推送状态更新
+                        asyncio.create_task(self._on_status_change(execution_id))
                     break
 
             total_duration = time.time() - start_time
@@ -304,12 +320,16 @@ class BasePipeline:
                         db_session, execution_id, PipelineExecutionStatus.COMPLETED
                     )
                     PipelineExecutionDAO.update_execution_result(db_session, execution_id, result)
+                    # 推送状态更新
+                    asyncio.create_task(self._on_status_change(execution_id))
                 else:
                     # 如果还没标记为失败（比如在循环外出错）
                     PipelineExecutionDAO.update_execution_status(
                         db_session, execution_id, PipelineExecutionStatus.FAILED,
                         context.get_errors()[0] if context.get_errors() else "未知错误"
                     )
+                    # 推送状态更新
+                    asyncio.create_task(self._on_status_change(execution_id))
 
             if success:
                 logger.debug(f"流水线执行结果: {self._build_result(context)}")
@@ -327,6 +347,8 @@ class BasePipeline:
                 PipelineExecutionDAO.update_execution_status(
                     db_session, execution_id, PipelineExecutionStatus.FAILED, str(e)
                 )
+                # 推送状态更新
+                asyncio.create_task(self._on_status_change(execution_id))
 
             return self._build_result(context)
 
@@ -365,6 +387,32 @@ class BasePipeline:
         except Exception as e:
             logger.error(f"持久化执行进度失败: {str(e)}", exc_info=True)
             # 持久化失败不影响流水线执行，只记录日志
+
+    async def _on_status_change(self, execution_id: str) -> None:
+        """
+        状态变化回调，推送执行更新
+        :param execution_id: 执行ID
+        """
+        try:
+            # 异步推送状态更新，使用独立的异步DB会话
+            async def push_update():
+                from backend.store.database.async_database import SessionLocal
+                from backend.v1.app.models.pipeline_execution import PipelineExecution
+
+                async with SessionLocal() as async_db:
+                    # 查询最新的执行记录
+                    result = await async_db.execute(
+                        select(PipelineExecution).where(PipelineExecution.execution_id == execution_id)
+                    )
+                    execution = result.scalar_one_or_none()
+
+                    if execution:
+                        await self.push_service.push_execution_update(async_db, execution)
+
+            import asyncio
+            asyncio.create_task(push_update())
+        except Exception as e:
+            logger.warning(f"推送流水线状态更新失败: {e}")
 
     @trace(
         push_config=PushConfig(
@@ -408,6 +456,9 @@ class BasePipeline:
             # 更新状态为运行中
             PipelineExecutionDAO.update_execution_status(db, execution_id, PipelineExecutionStatus.RUNNING)
 
+            # 推送状态更新
+            asyncio.create_task(self._on_status_change(execution_id))
+
             # 执行流水线
             result = self._run_internal(
                 input_data,
@@ -428,6 +479,8 @@ class BasePipeline:
                     PipelineExecutionDAO.update_execution_status(
                         db, execution_id, PipelineExecutionStatus.FAILED, error_msg
                     )
+                    # 推送状态更新
+                    asyncio.create_task(self._on_status_change(execution_id))
                 except:
                     pass
             return {
@@ -514,6 +567,9 @@ class BasePipeline:
             # 更新状态为运行中
             PipelineExecutionDAO.update_execution_status(db, execution_id, PipelineExecutionStatus.RUNNING)
 
+            # 推送状态更新
+            asyncio.create_task(self._on_status_change(execution_id))
+
             # 执行流水线
             result = self._run_internal(
                 execution.input_params,
@@ -529,6 +585,12 @@ class BasePipeline:
         except Exception as e:
             error_msg = f"恢复流水线执行失败: {str(e)}"
             logger.error(error_msg, exc_info=True)
+            if execution_id:
+                try:
+                    # 推送状态更新
+                    asyncio.create_task(self._on_status_change(execution_id))
+                except:
+                    pass
             return {
                 "success": False,
                 "data": {},

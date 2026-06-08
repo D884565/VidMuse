@@ -4,6 +4,25 @@
 -- 先禁用外键检查
 SET FOREIGN_KEY_CHECKS = 0;
 
+INSERT INTO users (
+    id,
+    username,
+    password_hash,
+    avatar_url,
+    role,
+    created_at,
+    updated_at
+  )
+VALUES (
+    '000',
+    'admin',
+    'admin123',
+    'example.com/avatar.jpg',
+    '0',
+    '2024-06-01 00:00:00',
+    '2024-06-01 00:00:00'
+  );
+
 -- ------------------------------
 -- 一级分类
 -- ------------------------------
@@ -125,3 +144,6 @@ SET FOREIGN_KEY_CHECKS = 1;
 SELECT '总分类数' as type, COUNT(*) as count FROM product_categories WHERE is_deleted = 0
 UNION ALL
 SELECT CONCAT('Level ', level, '级分类数') as type, COUNT(*) as count FROM product_categories WHERE is_deleted = 0 GROUP BY level ORDER BY type;
+
+
+

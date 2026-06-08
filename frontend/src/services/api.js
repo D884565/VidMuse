@@ -12,6 +12,8 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('token')
     if (token) {
+      // 先删除可能存在的小写authorization头，避免冲突
+      delete config.headers.authorization
       config.headers.Authorization = `Bearer ${token}`
     }
     return config
@@ -70,15 +72,13 @@ api.interceptors.response.use(
         await refreshPromise
         refreshPromise = null
 
-        // 用新 token 重放原请求
+        // 手动设置新的token，确保使用最新的，避免依赖拦截器可能的问题
         const newToken = localStorage.getItem('token')
         originalRequest.headers.Authorization = `Bearer ${newToken}`
-        const retryResp = await axios(originalRequest)
-        const { code, message, data } = retryResp.data
-        if (code !== '0000000') {
-          return Promise.reject(new Error(message || '请求失败'))
-        }
-        return data
+        // 清除可能存在的小写authorization头，避免冲突
+        delete originalRequest.headers.authorization
+        // 重放请求
+        return api(originalRequest)
       } catch (refreshErr) {
         refreshPromise = null
         // refresh 也失败，统一走登出流程，避免遗漏 authLoading 等状态。
