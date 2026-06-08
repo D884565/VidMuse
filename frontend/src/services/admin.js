@@ -79,7 +79,7 @@ export const retryParsing = (assetId) => {
 
 // ==================== 视频库管理 ====================
 export const getVideoList = (params) => {
-  return api.get('/v1/admin/video-library', { params })
+  return api.get('/v1/admin/video-library/', { params })
 }
 
 export const getVideoDetail = (videoId) => {
@@ -251,5 +251,26 @@ export const getSystemTraceStatistics = (params) => {
 
 export const querySystemTraces = (data) => {
   return api.post('/v1/admin/traces/query', data)
+}
+
+// ==================== 流水线管理 ====================
+export const getPipelineList = (params) => {
+  return api.get('/v1/admin/pipelines', { params })
+}
+
+export const getPipelineStatistics = () => {
+  return api.get('/v1/admin/pipelines/statistics')
+}
+
+export const getPipelineDetail = (executionId) => {
+  return api.get(`/v1/admin/pipelines/${executionId}`)
+}
+
+export const retryPipeline = (executionId, data = {}) => {
+  return api.post(`/v1/admin/pipelines/${executionId}/retry`, data)
+}
+
+export const cancelPipeline = (executionId) => {
+  return api.post(`/v1/admin/pipelines/${executionId}/cancel`)
 }
 
