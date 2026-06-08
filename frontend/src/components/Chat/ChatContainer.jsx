@@ -17,15 +17,6 @@ const WELCOME_MESSAGE = {
 3. 视频成片 - 将所有分镜合成为最终视频
 
 请描述您想要推广的产品，或直接粘贴产品链接，我会为您开始创作。`,
-  blocks: [
-    {
-      type: 'quick_actions',
-      actions: [
-        { label: '发个产品链接开始', hint: '粘贴淘宝/京东/抖音链接' },
-        { label: '用文字描述产品', hint: '告诉我你想推什么' },
-      ],
-    },
-  ],
 }
 
 export default function ChatContainer() {

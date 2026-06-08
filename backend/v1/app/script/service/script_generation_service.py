@@ -123,13 +123,13 @@ class ScriptGenerationService:
                 strategy = template_data["strategy"]
                 used_factors = template_data["used_factors"]
                 # 基于模板构建prompt
-                base_prompt = self._build_prompt(project, target_duration)
+                base_prompt = await self._build_prompt(db, project, target_duration)
                 prompt = template_script_service.build_prompt_with_template(base_prompt, template, template_params)
             else:
                 logger.warning(f"模板ID {template_id} 不存在，使用默认生成方式")
-                prompt = self._build_prompt(project, target_duration)
+                prompt = await self._build_prompt(db, project, target_duration)
         else:
-            prompt = self._build_prompt(project, target_duration)
+            prompt = await self._build_prompt(db, project, target_duration)
 
         # 构建素材参考内容
         material_reference = await self._build_material_reference(db, project_id)
@@ -141,6 +141,7 @@ class ScriptGenerationService:
         # 调用 Agent 生成剧本
         try:
             script_content = await self._call_agent(
+                db,
                 prompt,
                 project,
                 target_duration,
@@ -601,9 +602,62 @@ class ScriptGenerationService:
         except (json.JSONDecodeError, TypeError):
             return f"- 商品详情：{product_info_json}"
 
-    def _build_prompt(self, project: Project, target_duration: int) -> str:
+    async def _format_product_from_db(self, db: AsyncSession, product_id: int) -> str:
+        """从 Product 表读取完整商品信息，格式化为可读文本。"""
+        from backend.v1.app.models.product import Product
+        from backend.v1.app.product.dao.schema import _parse_json_field
+
+        result = await db.execute(select(Product).where(Product.id == product_id))
+        product = result.scalar_one_or_none()
+        if not product:
+            return ""
+
+        parts = []
+        if product.name:
+            parts.append(f"- 商品名称：{product.name}")
+        if product.brand:
+            parts.append(f"- 品牌：{product.brand}")
+        if product.category:
+            parts.append(f"- 商品分类：{product.category}")
+        if product.description:
+            parts.append(f"- 商品描述：{product.description}")
+        if product.price is not None:
+            parts.append(f"- 价格：{product.price}元")
+        selling_points = _parse_json_field(product.selling_points, [])
+        if selling_points:
+            parts.append(f"- 卖点：{'、'.join(selling_points)}")
+        specs = _parse_json_field(product.specs, {})
+        if specs:
+            specs_text = "、".join(f"{k}:{v}" for k, v in specs.items())
+            parts.append(f"- 规格参数：{specs_text}")
+        tags = _parse_json_field(product.tags, [])
+        if tags:
+            parts.append(f"- 标签：{'、'.join(tags)}")
+        # 从 ai_features 中提取解析结果
+        ai_features = product.ai_features or {}
+        if isinstance(ai_features, dict):
+            basic_info = ai_features.get("basic_info", {})
+            if isinstance(basic_info, dict):
+                if basic_info.get("target_audience"):
+                    parts.append(f"- 目标人群：{basic_info['target_audience']}")
+                if basic_info.get("scenarios"):
+                    scenarios = basic_info["scenarios"]
+                    if isinstance(scenarios, list):
+                        parts.append(f"- 使用场景：{'、'.join(str(s) for s in scenarios)}")
+            ai_selling = ai_features.get("selling_points", [])
+            if ai_selling and isinstance(ai_selling, list):
+                parts.append(f"- AI提炼卖点：{'、'.join(str(s) for s in ai_selling)}")
+
+        return "\n".join(parts) if parts else ""
+
+    async def _build_prompt(self, db: AsyncSession, project: Project, target_duration: int) -> str:
         """构造 LLM 生成 Prompt（分区加权结构）"""
         product_detail = self._format_product_info(project.product_info)
+        # 如果项目关联了商品，从 Product 表读取完整信息补充到商品详情
+        if project.product_id:
+            db_product_info = await self._format_product_from_db(db, project.product_id)
+            if db_product_info:
+                product_detail = db_product_info
 
         # === 核心区：用户输入 + 商品信息（必须遵循） ===
         core_sections = []
@@ -720,6 +774,7 @@ class ScriptGenerationService:
 
     async def _call_agent(
         self,
+        db: AsyncSession,
         prompt: str,
         project: Project,
         target_duration: int,
@@ -733,6 +788,11 @@ class ScriptGenerationService:
         """调用 ScriptAgent 生成剧本"""
         # 提取项目信息
         product_detail = self._format_product_info(project.product_info)
+        # 如果项目关联了商品，从 Product 表读取完整信息补充到商品详情
+        if project.product_id:
+            db_product_info = await self._format_product_from_db(db, project.product_id)
+            if db_product_info:
+                product_detail = db_product_info
 
         project_info = {
             "商品标题": project.title,

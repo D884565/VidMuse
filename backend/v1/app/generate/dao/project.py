@@ -13,6 +13,7 @@ class ProjectBase(BaseModel):
 
 class ProjectCreate(ProjectBase):
     title: str | None = None
+    product_id: int | None = None
     auto_render: bool = False
     user_prompt: str | None = None
     reference_images: list[str] = Field(default_factory=list, max_length=5)

@@ -98,6 +98,7 @@ class StoryboardService:
                 }
             self._sync_legacy_fields(frame)
             frame.dirty = 1  # 标记帧已被手动编辑
+            frame.version = (frame.version or 1) + 1
             frame.last_edited_at = datetime.utcnow()
             # 旁白溢出检测
             if "narration" in changed_fields and frame.narration:

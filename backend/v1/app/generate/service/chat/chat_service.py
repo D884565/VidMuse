@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import uuid
+from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select
@@ -306,6 +307,12 @@ class ChatService:
 
         frames = await self._get_frames(db, project_id)
         history = await self._get_recent_conversations(db, project_id)
+
+        # 检测帧是否被编辑窗口改过（last_edited_at 比最近一条对话消息更新）
+        recently_edited = self._detect_external_edits(frames, history)
+        if recently_edited:
+            edited_info = "、".join(f"第{e['sequence']}个(id={e['frame_id']})" for e in recently_edited)
+            content = f"[系统提示：以下分镜在编辑窗口被修改过：{edited_info}，请基于最新状态操作]\n{content}"
 
         # 2. 立刻告知前端"正在思考"，避免 LLM plan() 阻塞期间前端无反馈
         yield sse("thinking", {"message": "正在理解你的意图..."})
@@ -631,6 +638,8 @@ class ChatService:
         for frame in frames:
             apply_frame_modifications(frame, modifications)
             frame.dirty = 1
+            frame.version = (frame.version or 1) + 1
+            frame.last_edited_at = datetime.utcnow()
             # narration 修改且已过 script 阶段，标记 TTS dirty
             if affects_narration and project.workflow_stage in ("video", "completed"):
                 ai_params = dict(frame.ai_params or {})
@@ -993,6 +1002,35 @@ class ChatService:
     async def _get_frames(self, db: AsyncSession, project_id: int) -> list[Frame]:
         result = await db.execute(select(Frame).where(Frame.project_id == project_id).order_by(Frame.sequence))
         return list(result.scalars().all())
+
+    @staticmethod
+    def _detect_external_edits(frames: list[Frame], history: list[Conversation]) -> list[dict]:
+        """检测帧是否被编辑窗口改过。
+
+        比较帧的 last_edited_at 和最近一条对话消息的 created_at，
+        如果帧更新，说明是编辑窗口的外部修改。
+        """
+        if not frames or not history:
+            return []
+
+        # 找最近一条对话消息的时间
+        last_msg_time = None
+        for msg in reversed(history):
+            if msg.created_at:
+                last_msg_time = msg.created_at
+                break
+        if not last_msg_time:
+            return []
+
+        edited = []
+        for f in frames:
+            if f.last_edited_at and f.last_edited_at > last_msg_time:
+                edited.append({
+                    "frame_id": f.id,
+                    "sequence": f.sequence,
+                    "edited_at": f.last_edited_at.isoformat(),
+                })
+        return edited
 
 
 chat_service = ChatService()

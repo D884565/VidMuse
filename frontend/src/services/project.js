@@ -14,6 +14,10 @@ export async function renderProject(projectId) {
   return api.post(`/v1/projects/${projectId}/render`)
 }
 
+export async function regenerateProjectTts(projectId) {
+  return api.post(`/v1/projects/${projectId}/tts/regenerate`)
+}
+
 export async function confirmWorkflowStage(projectId, stage) {
   return api.post(`/v1/projects/${projectId}/workflow/confirm`, { stage })
 }

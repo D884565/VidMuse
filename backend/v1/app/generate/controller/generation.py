@@ -34,11 +34,12 @@ from backend.framework.web.auth import get_current_user_id
 from backend.framework.exceptions import BusinessException
 from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND, VIDEO_ERROR, UNAUTHORIZED
 from backend.v1.app.models.asset import Asset
+from backend.v1.app.models.conversation import Conversation
 from backend.v1.app.models.project_asset import ProjectAsset
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/generate/v1", tags=["视频生成"])
+router = APIRouter(prefix="/v1", tags=["视频生成"])
 
 SCRIPT_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering", "processing"}
 SCRIPT_REGENERATE_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering"}
@@ -107,6 +108,7 @@ async def create_project(
         description=project.description,
         product_url=project.product_url,
         product_info=product_info_str,
+        product_id=project.product_id,
         user_id=current_user_id,
         user_prompt=project.user_prompt,
         reference_images=project.reference_images,
@@ -899,14 +901,33 @@ async def update_project_frame(
     db: AsyncSession = Depends(get_db),
 ):
     """保存分镜编辑草稿，并标记为待合成。"""
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
-        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
     try:
+        project = await ProjectService.get_project(db, project_id)
+        if project.get("user_id") != current_user_id:
+            raise BusinessException(UNAUTHORIZED, "无权操作该项目")
         frame = await storyboard_service.update_frame(db, project_id, frame_id, patch)
+        db.add(Conversation(
+            project_id=project_id,
+            role="assistant",
+            content=f"已在项目详情中保存分镜 {frame.get('sequence') or frame_id} 的草稿，可继续重新生成图片。",
+            message_type="text",
+            stage=project.get("workflow_stage") or "script",
+            action_type="storyboard_edit_save",
+            frame_id=frame_id,
+            metadata_={
+                "source": "project_detail",
+                "action": "storyboard_edit_save",
+            },
+        ))
+        await db.commit()
         return Response.success(data=frame)
+    except BusinessException:
+        raise
     except ValueError as e:
         raise BusinessException(RESOURCE_NOT_FOUND, str(e))
+    except Exception as e:
+        logger.exception(f"[update_project_frame] project_id={project_id}, frame_id={frame_id}")
+        raise BusinessException(VIDEO_ERROR, f"保存分镜失败: {e}")
 
 
 @router.post("/projects/{project_id}/frames/{frame_id}/regenerate", response_model=Response)
@@ -918,15 +939,20 @@ async def regenerate_frame(
     db: AsyncSession = Depends(get_db),
 ):
     """重新生成指定帧的脚本+图片"""
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
-        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
     try:
+        project = await ProjectService.get_project(db, project_id)
+        if project.get("user_id") != current_user_id:
+            raise BusinessException(UNAUTHORIZED, "无权操作该项目")
         instruction = (req or {}).get("instruction")
         result = await chat_service.regenerate_frame(db, project_id, frame_id, instruction)
         return Response.success(data=result)
+    except BusinessException:
+        raise
     except ValueError as e:
         raise BusinessException(VIDEO_ERROR, str(e))
+    except Exception as e:
+        logger.exception(f"[regenerate_frame] project_id={project_id}, frame_id={frame_id}")
+        raise BusinessException(VIDEO_ERROR, f"重新生成失败: {e}")
 
 
 @router.post("/projects/{project_id}/frames/{frame_id}/regenerate-image", response_model=Response)
@@ -938,10 +964,10 @@ async def regenerate_frame_image(
     db: AsyncSession = Depends(get_db),
 ):
     """只重新生成指定帧的图片（脚本不变）"""
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
-        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
     try:
+        project = await ProjectService.get_project(db, project_id)
+        if project.get("user_id") != current_user_id:
+            raise BusinessException(UNAUTHORIZED, "无权操作该项目")
         instruction = (req or {}).get("instruction")
         result = await chat_service.regenerate_frame_image(db, project_id, frame_id, instruction)
         task = await generation_task_service.create_task(db, project_id, "frame_image", status="queued")
@@ -949,9 +975,30 @@ async def regenerate_frame_image(
         sent = celery_app.send_task("generate_frame_image_task", args=[project_id, frame_id, task.id])
         await generation_task_service.set_celery_task_id(db, task.id, sent.id)
         result.update({"task_id": task.id, "status": "queued"})
+        db.add(Conversation(
+            project_id=project_id,
+            role="assistant",
+            content=f"已提交分镜 {result.get('sequence') or frame_id} 的图片重新生成任务，完成后即可继续生成新视频。",
+            message_type="text",
+            stage=project.get("workflow_stage") or "image",
+            action_type="storyboard_edit_regenerate_image",
+            task_id=task.id,
+            frame_id=frame_id,
+            metadata_={
+                "source": "project_detail",
+                "action": "storyboard_edit_regenerate_image",
+                "task_id": task.id,
+            },
+        ))
+        await db.commit()
         return Response.success(data=result)
+    except BusinessException:
+        raise
     except ValueError as e:
         raise BusinessException(VIDEO_ERROR, str(e))
+    except Exception as e:
+        logger.exception(f"[regenerate_frame_image] project_id={project_id}, frame_id={frame_id}")
+        raise BusinessException(VIDEO_ERROR, f"图片重新生成失败: {e}")
 
 
 @router.post("/projects/{project_id}/frames/{frame_id}/regenerate-video", response_model=Response)
@@ -963,32 +1010,65 @@ async def regenerate_frame_video(
     db: AsyncSession = Depends(get_db),
 ):
     """提交单分镜视频重生成任务，成功后只更新该分镜视频产物，不自动整片合成。"""
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
-        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    try:
+        project = await ProjectService.get_project(db, project_id)
+        if project.get("user_id") != current_user_id:
+            raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+        from backend.v1.app.models.frame import Frame
 
-    from backend.v1.app.models.frame import Frame
+        result = await db.execute(select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id))
+        frame = result.scalar_one_or_none()
+        if not frame:
+            raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
 
-    result = await db.execute(select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id))
-    frame = result.scalar_one_or_none()
-    if not frame:
-        raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
+        task = await generation_task_service.create_task(db, project_id, "frame_video", status="queued")
+        project_model = await _load_project_for_workflow_update(db, project_id)
+        if not project_model:
+            raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
+        generation_workflow_service.invalidate_from(project_model, "video")
+        frame.dirty = 1
+        await db.commit()
+        from backend.v1.app.generate.tasks.celery_app import celery_app
+        sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
+        await generation_task_service.set_celery_task_id(db, task.id, sent.id)
+        return Response.success(data={
+            "project_id": project_id,
+            "frame_id": frame_id,
+            "task_id": task.id,
+            "status": "queued",
+            "message": "单分镜视频重生成任务已提交",
+        })
+    except BusinessException:
+        raise
+    except Exception as e:
+        logger.exception(f"[regenerate_frame_video] project_id={project_id}, frame_id={frame_id}")
+        raise BusinessException(VIDEO_ERROR, f"视频重新生成失败: {e}")
 
-    task = await generation_task_service.create_task(db, project_id, "frame_video", status="queued")
-    project_model = await _load_project_for_workflow_update(db, project_id)
-    generation_workflow_service.invalidate_from(project_model, "video")
-    frame.dirty = 1
-    await db.commit()
-    from backend.v1.app.generate.tasks.celery_app import celery_app
-    sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
-    await generation_task_service.set_celery_task_id(db, task.id, sent.id)
-    return Response.success(data={
-        "project_id": project_id,
-        "frame_id": frame_id,
-        "task_id": task.id,
-        "status": "queued",
-        "message": "单分镜视频重生成任务已提交",
-    })
+
+@router.post("/projects/{project_id}/tts/regenerate", response_model=Response)
+async def regenerate_project_tts(
+    project_id: int = Path(..., gt=0),
+    current_user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    """提交项目级 TTS 重生成任务，不直接覆盖成片视频。"""
+    try:
+        project = await ProjectService.get_project(db, project_id)
+        if project.get("user_id") != current_user_id:
+            raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+        result = await chat_service.submit_project_tts_regeneration_task(db, project_id)
+        result.update({
+            "project_id": project_id,
+            "message": "项目配音重生成任务已提交",
+        })
+        return Response.success(data=result)
+    except BusinessException:
+        raise
+    except ValueError as e:
+        raise BusinessException(VIDEO_ERROR, str(e))
+    except Exception as e:
+        logger.exception(f"[regenerate_project_tts] project_id={project_id}")
+        raise BusinessException(VIDEO_ERROR, f"TTS 重生成失败: {e}")
 
 
 @router.post("/projects/{project_id}/frames/{frame_id}/retry", response_model=Response)
@@ -1000,47 +1080,54 @@ async def retry_frame(
     db: AsyncSession = Depends(get_db),
 ):
     """重试失败分镜并提交整片重新渲染。"""
-    project = await ProjectService.get_project(db, project_id)
-    if project.get("user_id") != current_user_id:
-        raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+    try:
+        project = await ProjectService.get_project(db, project_id)
+        if project.get("user_id") != current_user_id:
+            raise BusinessException(UNAUTHORIZED, "无权操作该项目")
+        from sqlalchemy import select
+        from backend.v1.app.models.frame import Frame
 
-    from sqlalchemy import select
-    from backend.v1.app.models.frame import Frame
+        result = await db.execute(select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id))
+        frame = result.scalar_one_or_none()
+        if not frame:
+            raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
+        if frame.status != 3:
+            raise BusinessException(VIDEO_ERROR, "只能重试失败的分镜")
 
-    result = await db.execute(select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id))
-    frame = result.scalar_one_or_none()
-    if not frame:
-        raise BusinessException(RESOURCE_NOT_FOUND, f"分镜不存在: {frame_id}")
-    if frame.status != 3:
-        raise BusinessException(VIDEO_ERROR, "只能重试失败的分镜")
+        instruction = (req or {}).get("instruction")
+        if instruction:
+            frame.description = f"{frame.description or ''}\n\n用户重试要求：{instruction}"
+        frame.status = 0
+        frame.error_message = None
+        task_type = "frame_video" if frame.image_url and str(frame.image_url).startswith("http") else "frame_image"
+        task = await generation_task_service.create_task(db, project_id, task_type, status="queued")
+        project_model = await _load_project_for_workflow_update(db, project_id)
+        if not project_model:
+            raise BusinessException(RESOURCE_NOT_FOUND, f"项目不存在: {project_id}")
+        if task_type == "frame_video":
+            generation_workflow_service.invalidate_from(project_model, "video")
+            frame.dirty = 1
+        else:
+            generation_workflow_service.invalidate_from(project_model, "image")
+            frame.image_url = None
+            frame.dirty = 1
+        await db.commit()
 
-    instruction = (req or {}).get("instruction")
-    if instruction:
-        frame.description = f"{frame.description or ''}\n\n用户重试要求：{instruction}"
-    frame.status = 0
-    frame.error_message = None
-    task_type = "frame_video" if frame.image_url and str(frame.image_url).startswith("http") else "frame_image"
-    task = await generation_task_service.create_task(db, project_id, task_type, status="queued")
-    project_model = await _load_project_for_workflow_update(db, project_id)
-    if task_type == "frame_video":
-        generation_workflow_service.invalidate_from(project_model, "video")
-        frame.dirty = 1
-    else:
-        generation_workflow_service.invalidate_from(project_model, "image")
-        frame.image_url = None
-        frame.dirty = 1
-    await db.commit()
-
-    from backend.v1.app.generate.tasks.celery_app import celery_app
-    if task_type == "frame_video":
-        sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
-    else:
-        sent = celery_app.send_task("generate_frame_image_task", args=[project_id, frame_id, task.id])
-    await generation_task_service.set_celery_task_id(db, task.id, sent.id)
-    return Response.success(data={
-        "frame_id": frame_id,
-        "project_id": project_id,
-        "task_id": task.id,
-        "status": "queued",
-        "task_type": task_type,
-    })
+        from backend.v1.app.generate.tasks.celery_app import celery_app
+        if task_type == "frame_video":
+            sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame_id, task.id])
+        else:
+            sent = celery_app.send_task("generate_frame_image_task", args=[project_id, frame_id, task.id])
+        await generation_task_service.set_celery_task_id(db, task.id, sent.id)
+        return Response.success(data={
+            "frame_id": frame_id,
+            "project_id": project_id,
+            "task_id": task.id,
+            "status": "queued",
+            "task_type": task_type,
+        })
+    except BusinessException:
+        raise
+    except Exception as e:
+        logger.exception(f"[retry_frame] project_id={project_id}, frame_id={frame_id}")
+        raise BusinessException(VIDEO_ERROR, f"重试失败: {e}")

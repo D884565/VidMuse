@@ -1,0 +1,227 @@
+[
+  {
+    "case": "蓝牙耳机 - 科技感",
+    "result": {
+      "video_title": "ProMax降噪耳机通勤神器",
+      "total_duration": 15,
+      "target_audience": "年轻上班族、通勤族",
+      "style": "科技感",
+      "scenes": [
+        {
+          "scene_id": 1,
+          "duration": 3,
+          "image_prompt": "冷色调科技感，拥挤地铁车厢内，年轻女生皱眉捂耳朵，周围人群嘈杂，光线偏冷蓝，居中构图",
+          "video_prompt": "特写女生烦躁表情，背景人群模糊晃动，叠加嘈杂的灰色声波可视化动效",
+          "audio": {
+            "narration": "通勤太吵太闹心？",
+            "bgm": "轻节奏科技电子音开头，混入地铁嘈杂音效"
+          },
+          "overlay": {
+            "text": "通勤噪音烦？",
+            "position": "bottom-center",
+            "font_color": "#ffffff",
+            "font_size": 24
+          }
+        },
+        {
+          "scene_id": 2,
+          "duration": 4,
+          "image_prompt": "冷蓝科技感，女生戴上白色ProMax降噪耳机，脸上烦躁消失，周围嘈杂声波特效快速消散",
+          "video_prompt": "镜头切到耳机特写，随后拉远到女生面部，蓝色降噪波纹消散的动态特效铺满画面",
+          "audio": {
+            "narration": "-35dB主动降噪，一秒静下来！",
+            "bgm": "嘈杂音效瞬间消失，电子音变得清晰"
+          },
+          "overlay": {
+            "text": "35dB深度降噪",
+            "position": "bottom-center",
+            "font_color": "#00ffcc",
+            "font_size": 26
+          }
+        },
+        {
+          "scene_id": 3,
+          "duration": 4,
+          "image_prompt": "科技感暖光点缀，女生闭眼睛面带微笑享受，周围浮动彩色HiFi音质声波特效，背景干净",
+          "video_prompt": "特写女生享受表情，彩色音波随节奏跳动，切12mm复合振膜震动的微观动态特效",
+          "audio": {
+            "narration": "Hi-Fi音质，听感超震撼！",
+            "bgm": "电子音带出清晰的鼓点旋律"
+          },
+          "overlay": {
+            "text": "Hi-Fi无损音质",
+            "position": "bottom-center",
+            "font_color": "#00ffcc",
+            "font_size": 26
+          }
+        },
+        {
+          "scene_id": 4,
+          "duration": 4,
+          "image_prompt": "赛博科技感背景，黑白两款ProMax耳机悬浮旋转，下方弹出199元价格标识，光线酷炫",
+          "video_prompt": "耳机360度旋转展示，价格弹窗弹出放大，底部弹出橙色购物车跳动动效",
+          "audio": {
+            "narration": "今天只要199，赶紧抢！",
+            "bgm": "节奏变强，带出清脆的下单提示音"
+          },
+          "overlay": {
+            "text": "到手仅199元",
+            "position": "bottom-center",
+            "font_color": "#ff3333",
+            "font_size": 28
+          }
+        }
+      ]
+    }
+  },
+  {
+    "case": "防晒霜 - 生活方式",
+    "result": {
+      "video_title": "夏日户外运动防晒神器",
+      "total_duration": 12,
+      "target_audience": "18-30岁女性",
+      "style": "生活方式",
+      "scenes": [
+        {
+          "scene_id": 1,
+          "duration": 3,
+          "image_prompt": "夏日户外公园背景，穿运动背心的年轻女生刚跑完步，抬手抹脸一脸嫌弃，手上沾着黏腻汗渍，暖黄色自然光，居中构图，日系清新色调",
+          "video_prompt": "特写女生嫌弃的表情，背景晃动绿树光斑，快速闪1帧手背上粘碎纸巾的画面凸显粘腻",
+          "audio": {
+            "narration": "夏天运动防晒总粘腻？",
+            "bgm": "轻快夏日甜系BGM开头，混轻微汗湿衣物摩擦音效"
+          },
+          "overlay": {
+            "text": "防晒粘腻烦？",
+            "position": "bottom-center",
+            "font_color": "#ffffff",
+            "font_size": 24
+          }
+        },
+        {
+          "scene_id": 2,
+          "duration": 4,
+          "image_prompt": "女生挤黄豆大小米白色防晒霜在手背，手指推开防晒，质地水润清透，推开处皮肤泛自然水光完全不假白，背景是户外格子野餐垫，暖光",
+          "video_prompt": "特写手背涂防晒动作，慢放防晒推开成膜的瞬间，皮肤表面无粉感残留",
+          "audio": {
+            "narration": "这款水光防晒SPF50+，轻薄秒成膜，完全不假白！",
+            "bgm": "保持轻快甜系节奏"
+          },
+          "overlay": {
+            "text": "轻薄不假白",
+            "position": "bottom-center",
+            "font_color": "#4ade80",
+            "font_size": 26
+          }
+        },
+        {
+          "scene_id": 3,
+          "duration": 2.5,
+          "image_prompt": "特写涂了防晒的手臂，喷壶往上面喷水，水珠颗颗滚落，皮肤表面完全不花，背景是透亮的夏日阳光",
+          "video_prompt": "慢放水珠滚落的动态，弹出绿色小对勾动画特效",
+          "audio": {
+            "narration": "防水防汗，运动也不脱",
+            "bgm": "保持轻快节奏"
+          },
+          "overlay": {
+            "text": "防水防汗",
+            "position": "bottom-center",
+            "font_color": "#4ade80",
+            "font_size": 26
+          }
+        },
+        {
+          "scene_id": 4,
+          "duration": 2.5,
+          "image_prompt": "60ml防晒霜瓶身放在野餐垫上，旁边摆着冰饮和遮阳帽，下方弹出橙色「89元」价格弹窗，暖黄色清新色调",
+          "video_prompt": "镜头拉远到产品全景，价格弹窗放大跳动，右下角弹出闪动的购物车特效",
+          "audio": {
+            "narration": "今天89元抢60ml，快冲！",
+            "bgm": "节奏变亮，加清脆下单提示音"
+          },
+          "overlay": {
+            "text": "到手仅89元",
+            "position": "bottom-center",
+            "font_color": "#ef4444",
+            "font_size": 28
+          }
+        }
+      ]
+    }
+  },
+  {
+    "case": "空气炸锅 - 家居美食",
+    "result": {
+      "video_title": "懒人做饭神器可视空气炸锅",
+      "total_duration": 18,
+      "target_audience": "家庭主妇、租房年轻人",
+      "style": "家居美食",
+      "scenes": [
+        {
+          "scene_id": 1,
+          "duration": 4,
+          "image_prompt": "暖黄色温馨客厅，刚下班的年轻女生瘫在沙发上，面前放着刚买的生鸡翅和蔬菜，一脸疲惫皱眉，暖柔自然光，居中构图，治愈系家居色调",
+          "video_prompt": "特写女生疲惫的表情，快速闪1帧厨房油烟呛人的画面强化做饭痛点",
+          "audio": {
+            "narration": "下班累瘫还得做饭？",
+            "bgm": "轻快治愈系居家BGM开头，混入轻微叹气音效"
+          },
+          "overlay": {
+            "text": "做饭嫌麻烦？",
+            "position": "bottom-center",
+            "font_color": "#ffffff",
+            "font_size": 24
+          }
+        },
+        {
+          "scene_id": 2,
+          "duration": 5,
+          "image_prompt": "整洁开放式厨房台面，女生把生鸡翅直接放进奶白色智能空气炸锅，手指轻点触屏按钮，透明可视窗里能看到鸡翅在热风下慢慢上色，暖调美食光",
+          "video_prompt": "特写手指按按钮的动作，镜头拉近到可视窗，动态展示360°热风循环的淡橙色波纹特效",
+          "audio": {
+            "narration": "这款6L可视空气炸锅，30秒就能搞定硬菜！",
+            "bgm": "保持轻快居家节奏"
+          },
+          "overlay": {
+            "text": "30秒搞定菜",
+            "position": "bottom-center",
+            "font_color": "#22c55e",
+            "font_size": 26
+          }
+        },
+        {
+          "scene_id": 3,
+          "duration": 5,
+          "image_prompt": "女生打开空气炸锅，金黄酥脆的鸡翅冒着热气，她拿起一块咬开，外酥里嫩流汁，旁边滤油网盛着逼出来的少量油脂，暖美食打光",
+          "video_prompt": "慢放鸡翅冒热气的画面，特写咬开的横截面酥脆分层，依次弹出「炸/烤/烘/解冻」四个功能小图标",
+          "audio": {
+            "narration": "无油低脂，四个功能全能用，太省心了！",
+            "bgm": "加入轻微咬酥脆的咔哧音效"
+          },
+          "overlay": {
+            "text": "无油更健康",
+            "position": "bottom-center",
+            "font_color": "#22c55e",
+            "font_size": 26
+          }
+        },
+        {
+          "scene_id": 4,
+          "duration": 4,
+          "image_prompt": "奶白色空气炸锅摆在台面上，周围摆着做好的薯条、蛋挞、烤红薯，下方弹出橙色「299元」价格弹窗，暖柔家居色调",
+          "video_prompt": "镜头拉远到产品全景，价格弹窗放大跳动，右下角弹出闪动的橙色购物车特效",
+          "audio": {
+            "narration": "今天到手只要299，赶紧带回家！",
+            "bgm": "节奏变亮，加入清脆下单提示音"
+          },
+          "overlay": {
+            "text": "到手仅299元",
+            "position": "bottom-center",
+            "font_color": "#ef4444",
+            "font_size": 28
+          }
+        }
+      ]
+    }
+  }
+]

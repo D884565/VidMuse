@@ -91,6 +91,49 @@ def test_project_detail_fetches_full_latest_script_for_storyboard_panel():
     assert "frame?.narration" in source
 
 
+def test_project_detail_exposes_storyboard_editor_entry():
+    source = Path("frontend/src/components/Project/ProjectDetail.jsx").read_text(encoding="utf-8")
+
+    assert "编辑分镜" in source
+    assert "handleSaveFrame" in source
+    assert "StoryboardTimeline" in source
+
+
+def test_storyboard_timeline_supports_selected_frame_highlight():
+    source = Path("frontend/src/components/Workflow/StoryboardTimeline.jsx").read_text(encoding="utf-8")
+
+    assert "selectedFrameId" in source
+    assert "is-active" in source
+
+
+def test_project_detail_storyboard_panel_only_keeps_save_and_regenerate_actions():
+    source = Path("frontend/src/components/Project/ProjectDetail.jsx").read_text(encoding="utf-8")
+
+    assert "handleSaveFrame" in source
+    assert "handleRegenerateImage" in source
+    assert "handleRegenerateVideo" not in source
+    assert "handleRegenerateTts" not in source
+    assert "regenerateProjectTts" not in source
+
+
+def test_project_detail_can_refresh_chat_after_side_panel_actions():
+    detail_source = Path("frontend/src/components/Project/ProjectDetail.jsx").read_text(encoding="utf-8")
+    store_source = Path("frontend/src/store/appStore.js").read_text(encoding="utf-8")
+
+    assert "bumpConversationVersion" in detail_source
+    assert "conversationVersion" in store_source
+    assert "bumpConversationVersion" in store_source
+
+
+def test_project_detail_polls_generation_task_until_regenerated_image_finishes():
+    detail_source = Path("frontend/src/components/Project/ProjectDetail.jsx").read_text(encoding="utf-8")
+    project_service = Path("frontend/src/services/project.js").read_text(encoding="utf-8")
+
+    assert "getGenerationTask" in detail_source
+    assert "setTimeout" in detail_source or "setInterval" in detail_source
+    assert "getGenerationTask" in project_service
+
+
 def test_project_download_rejects_blob_error_payloads_instead_of_saving_fake_mp4():
     source = Path("frontend/src/services/project.js").read_text(encoding="utf-8")
 
