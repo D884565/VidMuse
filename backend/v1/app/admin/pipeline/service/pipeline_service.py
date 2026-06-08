@@ -6,7 +6,7 @@ import logging
 
 from backend.v1.app.admin.pipeline.dao.pipeline_dao import PipelineDAO
 from backend.v1.app.models.pipeline_execution import PipelineExecution, PipelineExecutionStatus
-from backend.framework.web.exception import BusinessException
+from backend.framework.exceptions.exceptions import BusinessException
 
 logger = logging.getLogger(__name__)
 
