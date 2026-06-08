@@ -117,12 +117,12 @@ export function promoteDraftMessagesToProject(cache, projectId, streamingMessage
   }
 }
 
-export function mergeFetchedMessages(currentMessages, fetchedMessages, streamingMessageId = null) {
+export function mergeFetchedMessages(currentMessages, fetchedMessages) {
   const normalizedFetched = normalizeFetchedMessages(Array.isArray(fetchedMessages) ? fetchedMessages : [])
   const optimisticMessages = (currentMessages || []).filter((message) => message?.optimistic)
 
   if (optimisticMessages.length === 0) {
-    return normalizedFetched
+    return normalizedFetched.sort((a, b) => (a.id || 0) - (b.id || 0))
   }
 
   const fetchedKeys = new Set(
@@ -130,12 +130,14 @@ export function mergeFetchedMessages(currentMessages, fetchedMessages, streaming
   )
 
   const extraOptimisticMessages = optimisticMessages.filter((message) => {
-    if (message.id === streamingMessageId) return true
     const comparableKey = getComparableMessageKey(message)
+    // 如果服务端已有相同消息（通过 client_id 或 role+content 匹配），过滤掉乐观消息
+    if (comparableKey && fetchedKeys.has(comparableKey)) return false
     return !comparableKey || !fetchedKeys.has(comparableKey)
   })
 
-  return [...normalizedFetched, ...extraOptimisticMessages]
+  const merged = [...normalizedFetched, ...extraOptimisticMessages]
+  return merged.sort((a, b) => (a.id || 0) - (b.id || 0))
 }
 
 function getComparableMessageKey(message) {

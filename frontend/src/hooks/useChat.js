@@ -27,6 +27,7 @@ export function useChat(options = {}) {
   const [historyLoaded, setHistoryLoaded] = useState(false)
   const [reloadToken, setReloadToken] = useState(0)
   const activeProjectId = useAppStore((state) => state.activeProjectId)
+  const conversationVersion = useAppStore((state) => state.conversationVersion)
   const setActiveProjectId = useAppStore((state) => state.setActiveProjectId)
   const draftConversationTitle = useAppStore((state) => state.draftConversationTitle)
   const setDraftConversationTitle = useAppStore((state) => state.setDraftConversationTitle)
@@ -87,14 +88,19 @@ export function useChat(options = {}) {
         const normalized = (conversations || []).map(normalizeConversation)
         setMessagesByProject((current) => {
           const existing = getProjectMessages(current, projectKey)
-          const streamingMessageId =
-            streamingProjectKeyRef.current === projectKey ? streamingIdRef.current : null
           return setProjectMessages(
             current,
             projectKey,
-            mergeFetchedMessages(existing, normalized, streamingMessageId)
+            mergeFetchedMessages(existing, normalized)
           )
         })
+        // 如果最后一条是用户消息且没有 assistant 回复，说明服务端还在处理
+        if (normalized.length > 0) {
+          const last = normalized[normalized.length - 1]
+          if (last.role === 'user') {
+            setIsThinking(true)
+          }
+        }
       })
       .catch((err) => {
         console.warn('加载会话历史失败:', err.message)
@@ -109,7 +115,7 @@ export function useChat(options = {}) {
     return () => {
       cancelled = true
     }
-  }, [activeProjectId, draftConversationMessages, reloadToken])
+  }, [activeProjectId, draftConversationMessages, reloadToken, conversationVersion])
 
   const sendMessage = useCallback(async (payload) => {
     const inputContent = typeof payload === 'string' ? payload : payload?.content || ''
@@ -311,6 +317,7 @@ export function useChat(options = {}) {
           const project = await createProject({
             user_prompt: submission.content,
             selected_assets: submission.selectedAssets,
+            product_id: submission.selectedProduct?.id || null,
             auto_render: false,
           })
           projectId = project.id

@@ -21,14 +21,16 @@ test('mergeFetchedMessages keeps optimistic messages while the assistant is stil
 
   const merged = mergeFetchedMessages(
     getProjectMessages(optimisticCache, projectKey),
-    [{ id: 1, role: 'assistant', content: 'older reply', blocks: [] }],
-    'assistant-local'
+    [{ id: 1, role: 'assistant', content: 'older reply', blocks: [] }]
   )
 
+  // user-local 没有 client_id，服务端也没有相同 role+content，所以保留
+  // assistant-local 没有 client_id，服务端 content 不同，所以保留
   assert.equal(merged.length, 3)
-  assert.equal(merged.at(-2)?.id, 'user-local')
-  assert.equal(merged.at(-1)?.id, 'assistant-local')
-  assert.equal(merged.at(-1)?.streaming, true)
+  assert.equal(merged[0]?.id, 1)
+  assert.equal(merged[1]?.id, 'user-local')
+  assert.equal(merged[2]?.id, 'assistant-local')
+  assert.equal(merged[2]?.streaming, true)
 })
 
 test('draft conversation state can be persisted and restored', () => {
@@ -75,10 +77,11 @@ test('mergeFetchedMessages deduplicates the optimistic user copy once persisted 
     [
       { id: 1, role: 'assistant', content: 'older reply', blocks: [] },
       { id: 2, role: 'user', content: 'make a short ad', blocks: [] },
-    ],
-    'assistant-local'
+    ]
   )
 
+  // user-local 通过 role+content 匹配到服务端 id=2，被去重
+  // assistant-local content='' 不匹配任何服务端消息，保留
   const matchingUsers = merged.filter((message) => message.role === 'user' && message.content === 'make a short ad')
   assert.equal(matchingUsers.length, 1)
   assert.equal(merged.at(-1)?.id, 'assistant-local')
@@ -123,8 +126,7 @@ test('mergeFetchedMessages replaces optimistic messages with persisted server id
         blocks: [],
         metadata: { client_id: 'client-assistant-1' },
       },
-    ],
-    null
+    ]
   )
 
   assert.equal(merged.length, 2)
@@ -189,8 +191,7 @@ test('mergeFetchedMessages prefers metadata display content while deduplicating 
           display_content: '做一条夏日防晒喷雾带货视频',
         },
       },
-    ],
-    'assistant-local'
+    ]
   )
 
   assert.equal(merged.length, 2)
