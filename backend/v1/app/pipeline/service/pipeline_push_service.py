@@ -1,5 +1,6 @@
 """流水线状态推送服务"""
 from typing import Dict, Any
+from sqlalchemy.orm import Session
 from backend.v1.app.push.service.push_service import PushService
 from backend.v1.app.models.pipeline_execution import PipelineExecution
 import logging
@@ -13,7 +14,7 @@ class PipelinePushService:
     def __init__(self):
         self.push_service = PushService()
 
-    async def push_execution_update(self, execution: PipelineExecution) -> None:
+    async def push_execution_update(self, db: Session, execution: PipelineExecution) -> None:
         """
         推送流水线执行状态更新
         :param execution: 流水线执行记录对象
@@ -42,6 +43,7 @@ class PipelinePushService:
 
             # 推送消息给所有管理员
             await self.push_service.push_to_admin(
+                db=db,
                 message_type="pipeline_execution_update",
                 title=f"流水线{execution.status}",
                 content=content,

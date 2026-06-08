@@ -9,6 +9,7 @@ from backend.framework.trace import get_trace_id, trace
 from .connection_manager import connection_manager
 from ..dao.message_dao import message_dao
 from ..dto.message_schema import PushMessageCreate, PushMessageBase
+from backend.v1.app.user.dao.user_dao import UserDAO
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +147,53 @@ class PushService:
 
         await connection_manager.broadcast(message_dict)
         logger.info(f"Broadcast message {message_id}, type: {message_type}")
+
+    @staticmethod
+    async def push_to_admin(
+        db: Session,
+        message_type: str,
+        title: str,
+        content: Any,
+        level: str = "info",
+        trace_id: Optional[str] = None,
+        extra: Optional[dict] = None,
+        persist: bool = True
+    ) -> list[bool]:
+        """
+        向所有管理员推送消息
+        :param db: 数据库会话
+        :param message_type: 消息类型
+        :param title: 消息标题
+        :param content: 消息内容
+        :param level: 消息级别
+        :param trace_id: 关联的trace_id，默认从当前上下文获取
+        :param extra: 扩展字段
+        :param persist: 是否持久化到数据库
+        :return: 推送结果列表
+        """
+        # 获取所有管理员用户（role=0，假设管理员角色值为0）
+        total, admins = await UserDAO.list_users(db, role=0, page_size=1000)  # 假设管理员数量不超过1000
+
+        results = []
+        for admin in admins:
+            try:
+                success = await PushService.push_message(
+                    db=db,
+                    user_id=admin.id,
+                    message_type=message_type,
+                    title=title,
+                    content=content,
+                    level=level,
+                    trace_id=trace_id,
+                    extra=extra,
+                    persist=persist
+                )
+                results.append(success)
+            except Exception as e:
+                logger.error(f"向管理员 {admin.id} 推送消息失败: {str(e)}", exc_info=True)
+                results.append(False)
+
+        return results
 
 
 # 全局服务实例
