@@ -28,7 +28,6 @@ from backend.v1.app.generate.service.generateUtils.task_service import generatio
 from backend.v1.app.push.service.task_event_service import task_event_service
 from backend.v1.app.generate.service.generateUtils.storyboard import storyboard_service
 from backend.v1.app.generate.service.workflow.blocks import build_script_stage_blocks
-from backend.v1.app.product.service.product_crawl_service import product_crawl_service
 from backend.framework.web import Response
 from backend.framework.web.auth import get_current_user_id
 from backend.framework.exceptions import BusinessException
@@ -38,7 +37,7 @@ from backend.v1.app.models.project_asset import ProjectAsset
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/generate/v1", tags=["视频生成"])
+router = APIRouter(prefix="/v1", tags=["视频生成"])
 
 SCRIPT_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering", "processing"}
 SCRIPT_REGENERATE_BLOCKED_STATUSES = {"script_generating", "render_queued", "rendering"}
@@ -81,14 +80,6 @@ async def create_project(
             resolved_materials = MaterialResolver.resolve_selected_assets(selected_assets, assets)
             selected_asset_ids = resolved_materials["selected_asset_ids"]
 
-    if project.product_url:
-        try:
-            product_info = await product_crawl_service.crawl(project.product_url)
-            if not product_info.is_empty:
-                product_info_str = json.dumps(product_info.to_dict(), ensure_ascii=False)
-                logger.info(f"[项目创建] 商品抓取成功: {product_info.title}")
-        except Exception as e:
-            logger.warning(f"[项目创建] 商品抓取失败，继续创建项目: {e}")
 
     # 自动生成标题：项目内使用简洁产品标题，避免侧栏展示整句用户原话。
     title = project.title

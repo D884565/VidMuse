@@ -1,7 +1,7 @@
 """商品数据访问层
 
 职责：封装所有对 products 表的数据库操作，Service 层通过此层访问数据库。
-卖点(selling_points)、规格(specs)、标签(tags) 三个字段在数据库中以 JSON 字符串存储，
+卖点(selling_points) 字段在数据库中以 JSON 字符串存储，
 写入时自动序列化，读取时由 Schema 层的 product_to_dict() 负责反序列化。
 """
 import json
@@ -24,7 +24,7 @@ class ProductDAO:
         :return: 创建后的 Product 对象
         """
         # 将 list/dict 类型的字段序列化为 JSON 字符串后存储
-        for field in ("selling_points", "specs", "tags", "images"):
+        for field in ("selling_points", "images"):
             if isinstance(product_data.get(field), (list, dict)):
                 product_data[field] = json.dumps(product_data[field], ensure_ascii=False)
         product = Product(**product_data)
@@ -62,7 +62,7 @@ class ProductDAO:
         :return: 更新后的 Product 对象
         """
         # 同样处理 list/dict 字段的序列化
-        for field in ("selling_points", "specs", "tags"):
+        for field in ("selling_points",):
             if isinstance(update_data.get(field), (list, dict)):
                 update_data[field] = json.dumps(update_data[field], ensure_ascii=False)
         db.query(Product).filter(Product.id == product_id).update(update_data)

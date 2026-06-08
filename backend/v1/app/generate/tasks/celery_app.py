@@ -6,7 +6,7 @@ from celery.schedules import crontab
 from backend.v1.app.config.config import settings
 from backend.framework.trace.context import trace_id_var, set_user_id, start_span, end_span, get_all_spans, clear_context
 from backend.framework.trace.dao import save_trace_data
-from backend.framework.trace.decorator import PushConfig, trace
+from backend.framework.trace.decorator import PushConfig
 
 celery_app = Celery(
     "vidmuse",
@@ -125,45 +125,3 @@ celery_app.conf.beat_schedule = {
         'options': {'queue': 'scheduled_clustering'}
     },
 }
-
-
-# 视频解析任务（爆款视频分析队列）
-@celery_app.task(base=BaseTask, rate_limit='5/m', name='video_analysis')
-@trace(push_config=TASK_PUSH_CONFIG)
-def video_analysis_task(payload, user_id=None, trace_id=None):
-    """
-    视频解析异步任务
-    payload格式: {
-        "video_id": 123,
-        "force": False,
-        "context": {}
-    }
-    """
-    from backend.v1.app.admin.video_library.service.video_library_service import VideoLibraryService
-    from backend.store.database.sync_database import SessionLocal
-    from sqlalchemy.ext.asyncio import AsyncSession
-    import asyncio
-
-    video_id = payload.get('video_id')
-    force = payload.get('force', False)
-    context = payload.get('context', {})
-
-    if not video_id:
-        raise ValueError("video_id is required in payload")
-
-    # 同步执行解析逻辑
-    service = VideoLibraryService()
-    db = SessionLocal()
-    try:
-        # 这里需要将同步db会话包装一下给异步方法使用
-        # 直接调用trigger_parsing的核心逻辑，跳过重复的检查
-        async def run_parse():
-            from backend.store.database.async_database import get_db
-            # 获取异步会话
-            async for async_db in get_db():
-                return await service.trigger_parsing(async_db, video_id, force, context)
-
-        # 运行异步方法
-        return asyncio.run(run_parse())
-    finally:
-        db.close()

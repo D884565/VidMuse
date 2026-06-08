@@ -1,10 +1,14 @@
 from typing import List, Dict, Optional
+import uuid
 from qdrant_client import QdrantClient as Qdrant
 from qdrant_client.http import models
 from qdrant_client.http.exceptions import UnexpectedResponse
 
 from backend.v1.app.config.config import settings
 from .base import VectorDatabase
+
+# 用于生成确定性UUID的命名空间
+QDRANT_UUID_NAMESPACE = uuid.UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')
 
 
 class QdrantClient(VectorDatabase):
@@ -52,9 +56,28 @@ class QdrantClient(VectorDatabase):
         self.vector_dimension = settings.QDRANT_VECTOR_DIMENSION
 
         # 确保集合存在
-        # self._ensure_collection_exists()
+        self._ensure_collection_exists()
 
         self._initialized = True
+
+    def _to_qdrant_id(self, id_str: str) -> str | int:
+        """
+        将任意字符串ID转换为Qdrant支持的格式
+        Qdrant支持两种ID格式：无符号整数 或 UUID字符串
+        转换规则：
+        1. 如果ID可以转换为非负整数，直接使用整数格式（性能更好）
+        2. 否则使用UUID v5生成确定性UUID，相同输入总会得到相同输出
+        """
+        try:
+            # 尝试转换为整数
+            int_id = int(id_str)
+            if int_id >= 0:
+                return int_id
+        except (ValueError, TypeError):
+            pass
+
+        # 转换失败则生成UUID
+        return str(uuid.uuid5(QDRANT_UUID_NAMESPACE, str(id_str)))
 
     def _ensure_collection_exists(self):
         """确保集合存在，不存在则创建"""
@@ -78,12 +101,8 @@ class QdrantClient(VectorDatabase):
                         on_disk_payload=True
                     )
 
-                    # 创建 payload 索引，加速元数据过滤
-                    self.client.create_payload_index(
-                        collection_name=self.collection_name,
-                        field_name="metadata",
-                        field_schema=models.PayloadSchemaType.OBJECT
-                    )
+                    # metadata是嵌套对象，不需要显式创建顶层索引
+                    # Qdrant会自动为查询中用到的metadata内部字段创建必要的索引
                 except Exception as create_e:
                     raise RuntimeError(f"创建Qdrant集合失败: {str(create_e)}")
             else:
@@ -100,11 +119,12 @@ class QdrantClient(VectorDatabase):
             points = []
             for i in range(len(ids)):
                 point = models.PointStruct(
-                    id=ids[i],
+                    id=self._to_qdrant_id(ids[i]),
                     vector=embeddings[i],
                     payload={
                         "metadata": metadatas[i] if metadatas else {},
-                        "document": documents[i] if documents else ""
+                        "document": documents[i] if documents else "",
+                        "original_id": ids[i]  # 保存原始ID用于返回
                     }
                 )
                 points.append(point)
@@ -239,7 +259,9 @@ class QdrantClient(VectorDatabase):
                 batch_documents = []
 
                 for hit in result:
-                    batch_ids.append(hit.id)
+                    # 返回原始ID而不是转换后的UUID
+                    original_id = hit.payload.get("original_id", hit.id)
+                    batch_ids.append(original_id)
                     batch_distances.append(hit.score)
                     batch_metadatas.append(hit.payload.get("metadata", {}))
                     batch_documents.append(hit.payload.get("document", ""))
@@ -259,10 +281,11 @@ class QdrantClient(VectorDatabase):
         """删除向量"""
         try:
             if ids:
-                # 按ID删除
+                # 按ID删除，需要转换为Qdrant支持的UUID格式
+                qdrant_ids = [self._to_qdrant_id(id) for id in ids]
                 self.client.delete(
                     collection_name=self.collection_name,
-                    points_selector=models.PointIdsList(points=ids)
+                    points_selector=models.PointIdsList(points=qdrant_ids)
                 )
             elif where:
                 # 按过滤条件删除

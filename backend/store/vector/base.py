@@ -55,7 +55,7 @@ class VectorDatabase(ABC):
     @abstractmethod
     def create_index(self, field_name: str, index_type: str, params: Dict) -> None:
         """
-        创建索引（Milvus特有方法）
+        创建索引
         :param field_name: 字段名
         :param index_type: 索引类型
         :param params: 索引参数
@@ -64,11 +64,11 @@ class VectorDatabase(ABC):
 
     @abstractmethod
     def load_collection(self) -> None:
-        """加载集合到内存（Milvus特有方法）"""
+        """加载集合到内存"""
         pass
 
     @abstractmethod
     def release_collection(self) -> None:
-        """释放集合内存（Milvus特有方法）"""
+        """释放集合内存"""
         pass
 

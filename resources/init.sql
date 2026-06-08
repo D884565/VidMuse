@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS projects (
     key_points      JSON COMMENT '强调卖点列表',
     avoid           JSON COMMENT '避免内容列表',
     rag_weight      DECIMAL(3,2) NOT NULL DEFAULT 0.30 COMMENT 'RAG权重',
-    target_duration INT NOT NULL DEFAULT 30 COMMENT '目标视频时长(秒)',
+    target_duration INT NOT NULL DEFAULT 15 COMMENT '目标视频时长(秒)',
     voice_type      VARCHAR(50) NOT NULL DEFAULT 'zh_female_cancan_mars_bigtts' COMMENT '语音类型',
     summary         VARCHAR(200) COMMENT '对话摘要，用于侧边栏展示',
     workflow_stage  VARCHAR(30) NOT NULL DEFAULT 'created' COMMENT '工作流阶段: created/script/images/video/completed',
@@ -94,9 +94,16 @@ CREATE TABLE IF NOT EXISTS assets (
     format          VARCHAR(20) COMMENT '文件格式',
     ai_features     JSON COMMENT 'AI特征因子',
     tags            JSON COMMENT '素材标签',
-    scope           VARCHAR(30) NOT NULL DEFAULT 'library' COMMENT 'library/project/output',
+    scope           JSON COMMENT 'Asset scope',
     metadata        JSON COMMENT '素材扩展元数据',
+    content_text    TEXT COMMENT 'Text material content',
+    storage_key     VARCHAR(500) COMMENT 'Object storage key',
+    file_hash       VARCHAR(128) COMMENT 'File hash',
     source_type     TINYINT DEFAULT 0 COMMENT '来源',
+    upload_status   VARCHAR(20) COMMENT 'Upload status',
+    upload_session_id VARCHAR(64) COMMENT 'Current upload session ID',
+    chunk_size      INT COMMENT 'Chunk size',
+    total_chunks    INT COMMENT 'Total chunks',
     parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
     execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
     parsing_error   TEXT COMMENT '解析错误信息',
@@ -120,6 +127,41 @@ CREATE TABLE IF NOT EXISTS project_assets (
     INDEX idx_project_assets_asset (asset_id),
     UNIQUE KEY uq_project_assets_project_asset_role (project_id, asset_id, role)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目素材绑定表';
+
+CREATE TABLE IF NOT EXISTS product_assets (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT,
+    product_id      BIGINT NOT NULL COMMENT '商品ID',
+    asset_id        BIGINT NOT NULL COMMENT '素材ID',
+    role            VARCHAR(50) NOT NULL DEFAULT 'image' COMMENT '资产角色：main-主素材, image-普通图片, video-视频, audio-音频',
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE CASCADE,
+    INDEX idx_product_assets_product (product_id),
+    INDEX idx_product_assets_asset (asset_id),
+    UNIQUE KEY uq_product_assets_product_asset_role (product_id, asset_id, role)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='商品资产绑定表';
+
+CREATE TABLE IF NOT EXISTS asset_upload_sessions (
+    id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '主键ID',
+    session_id      VARCHAR(64) NOT NULL UNIQUE COMMENT 'Upload session ID',
+    asset_id        BIGINT COMMENT 'Related asset ID',
+    mode            VARCHAR(20) NOT NULL COMMENT 'Mode: create/replace',
+    file_name       VARCHAR(255) NOT NULL COMMENT 'File name',
+    file_hash       VARCHAR(128) NOT NULL COMMENT 'File hash',
+    file_size       BIGINT NOT NULL COMMENT 'File size in bytes',
+    chunk_size      INT NOT NULL COMMENT 'Chunk size',
+    total_chunks    INT NOT NULL COMMENT 'Total chunks',
+    uploaded_chunks INT NOT NULL DEFAULT 0 COMMENT 'Uploaded chunk count',
+    status          VARCHAR(20) NOT NULL DEFAULT 'pending' COMMENT 'Session status',
+    redis_bitmap_key VARCHAR(255) NOT NULL COMMENT 'Redis bitmap key',
+    temp_dir        VARCHAR(500) NOT NULL COMMENT 'Temporary chunk directory',
+    expires_at      DATETIME COMMENT 'Expiry time',
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL,
+    INDEX idx_session_id (session_id),
+    INDEX idx_asset_id (asset_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='断点续传会话表';
 
 
 CREATE TABLE IF NOT EXISTS slices (
@@ -184,16 +226,14 @@ CREATE TABLE IF NOT EXISTS products (
     category_id     BIGINT COMMENT '关联分类ID，对应product_categories.id',
     category_path   VARCHAR(200) COMMENT '分类路径，冗余存储方便检索，如"/1/2/3/"',
     description     TEXT COMMENT '商品描述',
-    selling_points  JSON COMMENT 'ai解析特征',
+    selling_points  TEXT COMMENT '卖点JSON数组',
     price           DECIMAL(12, 2) COMMENT '价格',
     main_image_url  VARCHAR(500) COMMENT '主图URL',
     detail_url      VARCHAR(1000) COMMENT '商品详情页链接',
     platform        VARCHAR(50) COMMENT '来源平台: taobao, jd, pdd, douyin等',
     platform_id     VARCHAR(100) COMMENT '平台商品ID',
-    specs           JSON COMMENT '商品规格参数',
-    tags            JSON COMMENT '标签',
     auto_parse      TINYINT(1) DEFAULT 0 COMMENT '是否创建后自动触发解析',
-    images          JSON COMMENT '商品图片URL列表',
+    images          TEXT COMMENT '商品图片URL列表，JSON数组格式',
     parsing_status  VARCHAR(20) COMMENT '解析状态：pending/running/completed/failed',
     execution_id    VARCHAR(64) COMMENT '流水线执行ID，用于断点续跑',
     parsing_error   TEXT COMMENT '解析错误信息',
@@ -242,7 +282,7 @@ CREATE TABLE IF NOT EXISTS scripts (
     project_id      BIGINT NOT NULL COMMENT '所属项目ID',
     version         INT NOT NULL DEFAULT 1 COMMENT '版本号',
     status          VARCHAR(20) NOT NULL DEFAULT 'active' COMMENT '状态: active/archived',
-    generation_mode VARCHAR(20) COMMENT '生成模式: rag/manual/hybrid/template',
+    generation_mode VARCHAR(20) NOT NULL DEFAULT 'llm' COMMENT '生成模式: llm/rag/manual/hybrid/template',
     template_id     VARCHAR(32) COMMENT '关联的灵感模板ID',
     strategy_id     VARCHAR(32) COMMENT '关联的创作策略ID',
     used_factors    JSON COMMENT '使用的因子列表，包含因子ID和参数值',
@@ -587,43 +627,25 @@ CREATE TABLE IF NOT EXISTS video_library (
     source_type INT NOT NULL DEFAULT 0 COMMENT '来源：0-内部上传, 1-爆款抓取, 2-人工录入, 3-其他',
     hot_score INT NULL COMMENT '爆款分数(0-100)',
     category VARCHAR(100) NULL COMMENT '视频分类/商品品类',
+    category_id BIGINT NULL COMMENT '关联分类ID，对应product_categories.id',
+    category_path VARCHAR(200) NULL COMMENT '分类路径，冗余存储方便检索，如"/1/2/3/"',
     tags JSON NULL COMMENT '视频标签数组',
     parsed_data JSON NULL COMMENT '结构化解析数据',
     parsing_status VARCHAR(20) NULL DEFAULT 'pending' COMMENT '解析状态：pending/running/completed/failed',
     execution_id VARCHAR(64) NULL COMMENT '流水线执行ID，用于断点续跑',
     parsing_error TEXT NULL COMMENT '解析错误信息',
+    asset_id BIGINT NULL COMMENT '关联的内部资产ID',
     created_by BIGINT NOT NULL COMMENT '创建人ID(管理员ID)',
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     INDEX idx_category (category),
+    INDEX idx_category_id (category_id),
     INDEX idx_hot_score (hot_score),
     INDEX idx_source_type (source_type),
     INDEX idx_created_at (created_at),
-    UNIQUE KEY uk_url (url)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='内部视频素材库表';
+    INDEX idx_asset_id (asset_id),
+    UNIQUE KEY uk_url (url),
+    CONSTRAINT fk_video_library_category_id FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL,
+    CONSTRAINT fk_video_library_asset_id FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='内部视频素材'
 
-
-
--- 为video_library表添加与product_categories的关联字段
-ALTER TABLE video_library
-ADD COLUMN category_id BIGINT NULL COMMENT '关联分类ID，对应product_categories.id' AFTER category,
-ADD COLUMN category_path VARCHAR(200) NULL COMMENT '分类路径，冗余存储方便检索，如"/1/2/3/"' AFTER category_id,
-ADD INDEX idx_category_id (category_id),
-ADD CONSTRAINT fk_video_library_category_id FOREIGN KEY (category_id) REFERENCES product_categories(id) ON DELETE SET NULL;
-
-
--- 为video_library表增加asset_id字段，关联到assets表
-ALTER TABLE video_library
-ADD COLUMN asset_id BIGINT NULL COMMENT '关联的内部资产ID' AFTER parsing_error,
-ADD CONSTRAINT fk_video_library_asset_id FOREIGN KEY (asset_id) REFERENCES assets(id) ON DELETE SET NULL,
-ADD INDEX idx_asset_id (asset_id);
-
--- 为scripts表添加灵感模板关联字段
-ALTER TABLE scripts
-ADD COLUMN template_id VARCHAR(32) NULL COMMENT '关联的灵感模板ID' AFTER generation_mode,
-ADD COLUMN strategy_id VARCHAR(32) NULL COMMENT '关联的创作策略ID' AFTER template_id,
-ADD COLUMN used_factors JSON NULL COMMENT '使用的因子列表，包含因子ID和参数值' AFTER strategy_id,
-ADD COLUMN template_params JSON NULL COMMENT '用户对模板的自定义参数' AFTER used_factors,
-ADD INDEX idx_template_id (template_id),
-ADD INDEX idx_strategy_id (strategy_id),
-ADD UNIQUE KEY uq_scripts_project_version (project_id, version);

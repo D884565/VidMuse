@@ -2,24 +2,25 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 from urllib.parse import urlparse
 
 from fastapi import BackgroundTasks, UploadFile
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
 from backend.framework.exceptions.error_codes import PARAM_ERROR
 from backend.framework.exceptions.exceptions import BusinessException
 from backend.store import get_storage_client
 from backend.store.obj.local_client import get_local_storage_client
-from backend.v1.app.assets.service.asset_analysis_orchestrator import AssetAnalysisOrchestrator
-from backend.v1.app.assets.core.upload_bitmap import UploadBitmapStore
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
-from backend.v1.app.assets.dao.asset_upload_session_dao import AssetUploadSessionDAO
+from backend.v1.app.common.parsing.base_parsing_service import BaseParsingService
+from backend.v1.app.pipeline.factory.pipeline_factory import PipelineFactory
+# BasePipeline 导入移到函数内部，避免循环导入
 from backend.v1.app.config.config import settings
 
 
-class AssetService:
+class AssetService(BaseParsingService):
     TYPE_NAME = {
         1: "image",
         2: "video",
@@ -27,12 +28,29 @@ class AssetService:
         4: "text",
     }
 
-    _bitmap_store = UploadBitmapStore()
-    _analysis_orchestrator = AssetAnalysisOrchestrator()
+    # 实现BaseParsingService的抽象方法
+    def get_pipeline(self, context: Dict[str, Any]) -> 'BasePipeline':
+        """获取商品解析流水线，Assets模块统一使用ProductParsingPipeline"""
+        # 延迟导入避免循环依赖
+        from backend.v1.app.pipeline.base import BasePipeline
+        asset_type = context.get("asset_type")
+        return PipelineFactory.get_pipeline_for_asset_type(
+            asset_type=asset_type,
+            enable_persistence=True,
+            persist_to_asset=True
+        )
+
+    def get_asset_id(self, db: Session, business_id: int, context: Optional[Dict[str, Any]] = None) -> Optional[int]:
+        """Assets模块的业务ID就是资产ID"""
+        return business_id
+
+    def sync_status(self, db: Session, business_id: int, asset: Any) -> None:
+        """Assets模块不需要同步到其他表，空实现"""
+        pass
 
     @staticmethod
-    def _library_owner_id() -> Optional[int]:
-        return None
+    def _library_owner_id(user_id: Optional[int]) -> Optional[int]:
+        return user_id
 
     @staticmethod
     def detect_asset_type(file: UploadFile) -> int:
@@ -89,32 +107,17 @@ class AssetService:
         return final_title or fallback
 
     @staticmethod
-    def _chunk_path(temp_dir: str, chunk_index: int) -> str:
-        return os.path.join(temp_dir, f"chunk_{chunk_index:06d}.part")
+    def _upload_file(file_path: str, object_name: str, content_type: Optional[str] = None) -> str:
+        """直接上传文件到存储，不降级"""
+        return get_storage_client().upload_file(file_path, object_name, content_type)
 
     @staticmethod
-    def _merged_file_path(temp_dir: str, file_name: str) -> str:
-        return os.path.join(temp_dir, f"merged_{file_name}")
-
-    @staticmethod
-    def _upload_file_with_fallback(file_path: str, object_name: str, content_type: Optional[str] = None) -> str:
-        try:
-            return get_storage_client().upload_file(file_path, object_name, content_type)
-        except Exception:
-            return get_local_storage_client().upload_file(file_path, object_name, content_type)
-
-    @staticmethod
-    def _upload_fileobj_with_fallback(file_obj, object_name: str, content_type: Optional[str] = None) -> str:
-        try:
-            stream = getattr(file_obj, "file", file_obj)
-            if hasattr(stream, "seek"):
-                stream.seek(0)
-            return get_storage_client().upload_fileobj(stream, object_name, content_type)
-        except Exception:
-            stream = getattr(file_obj, "file", file_obj)
-            if hasattr(stream, "seek"):
-                stream.seek(0)
-            return get_local_storage_client().upload_fileobj(stream, object_name, content_type)
+    def _upload_fileobj(file_obj, object_name: str, content_type: Optional[str] = None) -> str:
+        """直接上传文件对象到存储，不降级"""
+        stream = getattr(file_obj, "file", file_obj)
+        if hasattr(stream, "seek"):
+            stream.seek(0)
+        return get_storage_client().upload_fileobj(stream, object_name, content_type)
 
     @staticmethod
     def _storage_for_asset_url(url: Optional[str]):
@@ -122,24 +125,9 @@ class AssetService:
             return get_local_storage_client()
         return get_storage_client()
 
-    @staticmethod
-    def _build_session_response(session) -> dict:
-        uploaded_indexes = AssetService._bitmap_store.get_uploaded_indexes(
-            session.redis_bitmap_key,
-            session.total_chunks,
-        )
-        return {
-            "session_id": session.session_id,
-            "asset_id": session.asset_id,
-            "chunk_size": session.chunk_size,
-            "total_chunks": session.total_chunks,
-            "upload_status": session.status,
-            "uploaded_chunks": len(uploaded_indexes),
-            "uploaded_indexes": uploaded_indexes,
-        }
 
     @staticmethod
-    def create_text_asset(db: Session, title: Optional[str], content_text: str) -> dict:
+    def create_text_asset(db: Session, user_id: int, title: Optional[str], content_text: str) -> dict:
         content = (content_text or "").strip()
         if not content:
             raise BusinessException(PARAM_ERROR, "text content cannot be empty")
@@ -148,7 +136,7 @@ class AssetService:
         asset = AssetDAO.create_asset(
             db,
             {
-                "user_id": AssetService._library_owner_id(),
+                "user_id": AssetService._library_owner_id(user_id),
                 "type": 4,
                 "title": final_title,
                 "url": "",
@@ -158,19 +146,23 @@ class AssetService:
                 "ai_features": None,
                 "content_text": content,
                 "source_type": 0,
-                "scope": "library",
+                "scope": {"type": "library"},
             },
         )
         AssetService._parse_asset_sync(db, asset.id, force=True)
         return AssetDAO.get_asset_by_id(db, asset.id).to_dict()
 
     @staticmethod
-    def update_text_asset(db: Session, asset_id: int, title: Optional[str], content_text: str) -> dict:
+    def update_text_asset(db: Session, user_id: int, asset_id: int, title: Optional[str], content_text: str) -> dict:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
         if asset.type != 4:
             raise BusinessException(PARAM_ERROR, "only text assets can be edited here")
+        # 权限校验：只有所有者可以操作
+        if asset.user_id != user_id:
+            from backend.framework.exceptions.error_codes import FORBIDDEN
+            raise BusinessException(FORBIDDEN, "无权限操作此资产")
 
         content = (content_text or "").strip()
         if not content:
@@ -187,258 +179,11 @@ class AssetService:
         AssetService._parse_asset_sync(db, asset_id, force=True)
         return AssetDAO.get_asset_by_id(db, asset_id).to_dict()
 
-    @staticmethod
-    def init_resumable_upload(
-        db: Session,
-        file_name: str,
-        file_size: int,
-        chunk_size: int,
-        file_hash: str,
-    ) -> dict:
-        if file_size <= 0 or chunk_size <= 0:
-            raise BusinessException(PARAM_ERROR, "file_size and chunk_size must be positive")
-
-        existing = AssetUploadSessionDAO.find_active_session(
-            db,
-            asset_id=None,
-            mode="create",
-            file_hash=file_hash,
-            chunk_size=chunk_size,
-        )
-        if existing:
-            return AssetService._build_session_response(existing)
-
-        session_id = uuid.uuid4().hex
-        total_chunks = (file_size + chunk_size - 1) // chunk_size
-        redis_bitmap_key = f"asset:upload:bitmap:{session_id}"
-        temp_dir = os.path.join(AssetService._default_upload_root(), session_id)
-        os.makedirs(temp_dir, exist_ok=True)
-
-        session = AssetUploadSessionDAO.create_session(
-            db,
-            {
-                "session_id": session_id,
-                "asset_id": None,
-                "mode": "create",
-                "file_name": file_name,
-                "file_hash": file_hash,
-                "file_size": file_size,
-                "chunk_size": chunk_size,
-                "total_chunks": total_chunks,
-                "uploaded_chunks": 0,
-                "status": "pending",
-                "redis_bitmap_key": redis_bitmap_key,
-                "temp_dir": temp_dir,
-                "expires_at": None,
-            },
-        )
-        return AssetService._build_session_response(session)
-
-    @staticmethod
-    async def upload_image_chunk(
-        db: Session,
-        session_id: str,
-        chunk_index: int,
-        chunk: UploadFile,
-    ) -> dict:
-        session = AssetUploadSessionDAO.get_by_session_id(db, session_id)
-        if not session:
-            raise BusinessException(PARAM_ERROR, "upload session not found")
-        if chunk_index < 0 or chunk_index >= session.total_chunks:
-            raise BusinessException(PARAM_ERROR, "chunk index out of range")
-
-        os.makedirs(session.temp_dir, exist_ok=True)
-        chunk_path = AssetService._chunk_path(session.temp_dir, chunk_index)
-        with open(chunk_path, "wb") as fh:
-            fh.write(await chunk.read())
-
-        AssetService._bitmap_store.set_bit(session.redis_bitmap_key, chunk_index)
-        uploaded_indexes = AssetService._bitmap_store.get_uploaded_indexes(session.redis_bitmap_key, session.total_chunks)
-        status = "completed" if len(uploaded_indexes) == session.total_chunks else "uploading"
-        updated_session = AssetUploadSessionDAO.update_session(
-            db,
-            session_id,
-            {
-                "uploaded_chunks": len(uploaded_indexes),
-                "status": status,
-            },
-        )
-        return {
-            "session_id": session_id,
-            "chunk_index": chunk_index,
-            "uploaded": True,
-            "uploaded_chunks": updated_session.uploaded_chunks if updated_session else len(uploaded_indexes),
-            "total_chunks": session.total_chunks,
-        }
-
-    @staticmethod
-    def get_upload_status(db: Session, session_id: str) -> dict:
-        session = AssetUploadSessionDAO.get_by_session_id(db, session_id)
-        if not session:
-            raise BusinessException(PARAM_ERROR, "upload session not found")
-        return AssetService._build_session_response(session)
-
-    @staticmethod
-    def _merge_chunks(session) -> str:
-        uploaded_indexes = AssetService._bitmap_store.get_uploaded_indexes(session.redis_bitmap_key, session.total_chunks)
-        if len(uploaded_indexes) != session.total_chunks:
-            raise BusinessException(PARAM_ERROR, "upload is incomplete")
-
-        merged_path = AssetService._merged_file_path(session.temp_dir, session.file_name)
-        with open(merged_path, "wb") as merged:
-            for chunk_index in range(session.total_chunks):
-                chunk_path = AssetService._chunk_path(session.temp_dir, chunk_index)
-                if not os.path.exists(chunk_path):
-                    raise BusinessException(PARAM_ERROR, "chunk file missing")
-                with open(chunk_path, "rb") as chunk_file:
-                    shutil.copyfileobj(chunk_file, merged)
-        return merged_path
-
-    @staticmethod
-    def _cleanup_session_files(session) -> None:
-        AssetService._bitmap_store.clear(session.redis_bitmap_key)
-        shutil.rmtree(session.temp_dir, ignore_errors=True)
-
-    @staticmethod
-    def complete_resumable_upload(db: Session, session_id: str, title: Optional[str] = None) -> dict:
-        session = AssetUploadSessionDAO.get_by_session_id(db, session_id)
-        if not session:
-            raise BusinessException(PARAM_ERROR, "upload session not found")
-
-        merged_path = AssetService._merge_chunks(session)
-        ext = Path(session.file_name).suffix.lstrip(".").lower() or "bin"
-        object_name = AssetService.generate_object_name(asset_type=1, ext=ext)
-        file_url = AssetService._upload_file_with_fallback(merged_path, object_name)
-        final_title = AssetService._normalize_title(title, session.file_name)
-
-        asset = AssetDAO.create_asset(
-            db,
-            {
-                "user_id": AssetService._library_owner_id(),
-                "type": 1,
-                "title": final_title,
-                "url": file_url,
-                "file_size": session.file_size,
-                "duration": None,
-                "format": ext,
-                "ai_features": None,
-                "source_type": 0,
-                "storage_key": object_name,
-                "file_hash": session.file_hash,
-                "upload_status": "completed",
-                "upload_session_id": session.session_id,
-                "chunk_size": session.chunk_size,
-                "total_chunks": session.total_chunks,
-                "scope": "library",
-            },
-        )
-        AssetUploadSessionDAO.update_session(db, session_id, {"status": "completed", "asset_id": asset.id})
-        AssetService._cleanup_session_files(session)
-        AssetService._parse_asset_sync(db, asset.id, force=True)
-        return AssetDAO.get_asset_by_id(db, asset.id).to_dict()
-
-    @staticmethod
-    def init_image_reupload(
-        db: Session,
-        asset_id: int,
-        file_name: str,
-        file_size: int,
-        chunk_size: int,
-        file_hash: str,
-    ) -> dict:
-        asset = AssetDAO.get_asset_by_id(db, asset_id)
-        if not asset:
-            raise BusinessException(PARAM_ERROR, "asset not found")
-        if asset.type != 1:
-            raise BusinessException(PARAM_ERROR, "only image assets support reupload")
-        if file_size <= 0 or chunk_size <= 0:
-            raise BusinessException(PARAM_ERROR, "file_size and chunk_size must be positive")
-
-        existing = AssetUploadSessionDAO.find_active_session(
-            db,
-            asset_id=asset_id,
-            mode="replace",
-            file_hash=file_hash,
-            chunk_size=chunk_size,
-        )
-        if existing:
-            return AssetService._build_session_response(existing)
-
-        session_id = uuid.uuid4().hex
-        total_chunks = (file_size + chunk_size - 1) // chunk_size
-        temp_dir = os.path.join(AssetService._default_upload_root(), session_id)
-        os.makedirs(temp_dir, exist_ok=True)
-
-        session = AssetUploadSessionDAO.create_session(
-            db,
-            {
-                "session_id": session_id,
-                "asset_id": asset_id,
-                "mode": "replace",
-                "file_name": file_name,
-                "file_hash": file_hash,
-                "file_size": file_size,
-                "chunk_size": chunk_size,
-                "total_chunks": total_chunks,
-                "uploaded_chunks": 0,
-                "status": "pending",
-                "redis_bitmap_key": f"asset:upload:bitmap:{session_id}",
-                "temp_dir": temp_dir,
-                "expires_at": None,
-            },
-        )
-        return AssetService._build_session_response(session)
-
-    @staticmethod
-    def complete_image_reupload(
-        db: Session,
-        asset_id: int,
-        session_id: str,
-        title: Optional[str] = None,
-    ) -> dict:
-        asset = AssetDAO.get_asset_by_id(db, asset_id)
-        if not asset:
-            raise BusinessException(PARAM_ERROR, "asset not found")
-
-        session = AssetUploadSessionDAO.get_by_session_id(db, session_id)
-        if not session:
-            raise BusinessException(PARAM_ERROR, "upload session not found")
-
-        old_storage_key = asset.storage_key
-        merged_path = AssetService._merge_chunks(session)
-        ext = Path(session.file_name).suffix.lstrip(".").lower() or "bin"
-        object_name = AssetService.generate_object_name(asset_type=1, ext=ext)
-        file_url = AssetService._upload_file_with_fallback(merged_path, object_name)
-
-        update_data = {
-            "title": AssetService._normalize_title(title, asset.title or session.file_name),
-            "url": file_url,
-            "storage_key": object_name,
-            "file_hash": session.file_hash,
-            "file_size": session.file_size,
-            "format": ext,
-            "upload_status": "completed",
-            "upload_session_id": session.session_id,
-            "chunk_size": session.chunk_size,
-            "total_chunks": session.total_chunks,
-        }
-        updated_asset = AssetDAO.update_asset(db, asset_id, update_data)
-        AssetUploadSessionDAO.update_session(db, session_id, {"status": "completed"})
-
-        if old_storage_key and old_storage_key != object_name:
-            storage = AssetService._storage_for_asset_url(asset.url)
-            try:
-                storage.delete_object(old_storage_key)
-            except Exception:
-                pass
-
-        AssetService._cleanup_session_files(session)
-        AssetService._parse_asset_sync(db, asset_id, force=True)
-        return AssetDAO.get_asset_by_id(db, asset_id).to_dict()
 
     @staticmethod
     async def reupload_image_asset(
         db: Session,
+        user_id: int,
         asset_id: int,
         file: UploadFile,
         title: Optional[str] = None,
@@ -448,10 +193,14 @@ class AssetService:
             raise BusinessException(PARAM_ERROR, "asset not found")
         if asset.type != 1:
             raise BusinessException(PARAM_ERROR, "only image assets support reupload")
+        # 权限校验：只有所有者可以操作
+        if asset.user_id != user_id:
+            from backend.framework.exceptions.error_codes import FORBIDDEN
+            raise BusinessException(FORBIDDEN, "无权限操作此资产")
 
         ext = AssetService._validate_file(file, 1)
         object_name = AssetService.generate_object_name(asset_type=1, ext=ext)
-        file_url = AssetService._upload_fileobj_with_fallback(file.file, object_name, file.content_type)
+        file_url = AssetService._upload_fileobj(file.file, object_name, file.content_type)
 
         old_storage_key = asset.storage_key
         old_storage = AssetService._storage_for_asset_url(asset.url)
@@ -466,9 +215,6 @@ class AssetService:
                 "storage_key": object_name,
                 "file_hash": None,
                 "upload_status": "completed",
-                "upload_session_id": None,
-                "chunk_size": None,
-                "total_chunks": None,
             },
         )
 
@@ -490,10 +236,11 @@ class AssetService:
         source_type: int = 0,
         is_internal: bool = False,
         user_id: int | None = None,
+        is_skip_analysis: bool = False,
     ) -> dict:
         ext = AssetService._validate_file(file, type)
         object_name = AssetService.generate_object_name(asset_type=type, ext=ext, is_internal=is_internal)
-        file_url = AssetService._upload_fileobj_with_fallback(file.file, object_name, file.content_type)
+        file_url = AssetService._upload_fileobj(file.file, object_name, file.content_type)
 
         final_title = AssetService._normalize_title(
             title,
@@ -510,12 +257,14 @@ class AssetService:
                 "format": ext,
                 "ai_features": None,
                 "source_type": source_type,
-                "user_id": user_id,
+                "user_id": AssetService._library_owner_id(user_id),
                 "storage_key": object_name,
                 "upload_status": "completed",
-                "scope": "library",
+                "scope": {"type": "library"},
             },
         )
+        if is_skip_analysis:
+            return asset.to_dict()
         if type in [1, 2]:
             AssetService._parse_asset_sync(db, asset.id, force=True)
             refreshed = AssetDAO.get_asset_by_id(db, asset.id)
@@ -531,6 +280,7 @@ class AssetService:
         title: Optional[str] = None,
         source_type: int = 0,
         skip_analysis: bool = False,
+        user_id: int = 0,
     ) -> dict:
         asset_dict = AssetService._upload_asset_common(
             db=db,
@@ -539,7 +289,8 @@ class AssetService:
             title=title,
             source_type=source_type,
             is_internal=False,
-            user_id=AssetService._library_owner_id(),
+            user_id=user_id,
+            is_skip_analysis=skip_analysis,
         )
         return {
             "id": asset_dict["id"],
@@ -564,6 +315,7 @@ class AssetService:
         title: Optional[str] = None,
         source_type: int = 1,
         skip_ai_analysis: bool = True,
+        user_id: int = 0,
     ) -> dict:
         asset_dict = AssetService._upload_asset_common(
             db=db,
@@ -572,7 +324,8 @@ class AssetService:
             title=title,
             source_type=source_type,
             is_internal=True,
-            user_id=None,
+            user_id=user_id,
+            is_skip_analysis=skip_ai_analysis,
         )
         return {
             "id": asset_dict["id"],
@@ -591,6 +344,7 @@ class AssetService:
     @staticmethod
     def list_assets(
         db: Session,
+        user_id: int,
         type: Optional[int] = None,
         source_type: Optional[int] = None,
         keyword: Optional[str] = None,
@@ -603,7 +357,7 @@ class AssetService:
 
         total, assets = AssetDAO.list_assets(
             db=db,
-            user_id=AssetService._library_owner_id(),
+            user_id=AssetService._library_owner_id(user_id),
             type=type,
             source_type=source_type,
             keyword=keyword,
@@ -642,17 +396,25 @@ class AssetService:
         }
 
     @staticmethod
-    def get_asset_detail(db: Session, asset_id: int) -> dict:
+    def get_asset_detail(db: Session, user_id: int, asset_id: int) -> dict:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
+        # 权限校验：只有所有者可以操作
+        if asset.user_id != user_id:
+            from backend.framework.exceptions.error_codes import FORBIDDEN
+            raise BusinessException(FORBIDDEN, "无权限操作此资产")
         return asset.to_dict()
 
     @staticmethod
-    def update_asset(db: Session, asset_id: int, title: Optional[str] = None, ai_features: Optional[dict] = None) -> dict:
+    def update_asset(db: Session, user_id: int, asset_id: int, title: Optional[str] = None, ai_features: Optional[dict] = None) -> dict:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
+        # 权限校验：只有所有者可以操作
+        if asset.user_id != user_id:
+            from backend.framework.exceptions.error_codes import FORBIDDEN
+            raise BusinessException(FORBIDDEN, "无权限操作此资产")
 
         update_data = {}
         if title is not None:
@@ -670,11 +432,57 @@ class AssetService:
         return updated_asset.to_dict()
 
     @staticmethod
-    async def parse_asset(db: Session, asset_id: int, force: bool = False) -> dict:
+    async def parse_asset(db: Session, user_id: int, asset_id: int, force: bool = False, product_id: Optional[int] = None) -> dict:
+        """触发资产解析，使用BaseParsingService的通用逻辑"""
+        from backend.v1.app.product.dao.product_dao import ProductDAO
+
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
-        updated_asset = AssetService._parse_asset_sync(db, asset_id, force=force)
+        # 权限校验：只有所有者可以操作
+        if asset.user_id != user_id:
+            from backend.framework.exceptions.error_codes import FORBIDDEN
+            raise BusinessException(FORBIDDEN, "无权限操作此资产")
+
+        # 如果提供了product_id，验证产品是否存在
+        if product_id:
+            product = ProductDAO.get_product_by_id(db, product_id)
+            if not product:
+                raise BusinessException(PARAM_ERROR, "product not found")
+
+        # 调用基类的触发解析方法
+        service = AssetService()
+        context = {"asset_type": asset.type}
+        if product_id:
+            context["product_id"] = product_id  # 将product_id传入上下文，供流水线使用
+        success = service.trigger_parsing(db, asset_id, force=force, context=context)
+
+        if not success:
+            # 获取最新的资产状态
+            updated_asset = AssetDAO.get_asset_by_id(db, asset_id)
+            if updated_asset.parsing_status == "failed":
+                raise BusinessException(PARAM_ERROR, f"解析失败: {updated_asset.parsing_error}")
+
+        # 获取最新的资产信息
+        updated_asset = AssetDAO.get_asset_by_id(db, asset_id)
+
+        # 如果提供了product_id，建立资产和产品的关联
+        if product_id:
+            from backend.v1.app.product.dao.product_dao import ProductDAO
+            # 检查是否已经关联
+            existing_association = db.execute(
+                text("SELECT 1 FROM product_assets WHERE product_id = :product_id AND asset_id = :asset_id AND role = :role"),
+                {"product_id": product_id, "asset_id": asset_id, "role": "image" if updated_asset.type == 1 else "video" if updated_asset.type == 2 else "audio"}
+            ).first()
+
+            if not existing_association:
+                # 创建新的关联
+                db.execute(
+                    text("INSERT INTO product_assets (product_id, asset_id, role) VALUES (:product_id, :asset_id, :role)"),
+                    {"product_id": product_id, "asset_id": asset_id, "role": "image" if updated_asset.type == 1 else "video" if updated_asset.type == 2 else "audio"}
+                )
+                db.commit()
+
         return {
             "id": updated_asset.id,
             "type": updated_asset.type,
@@ -687,13 +495,18 @@ class AssetService:
             "execution_id": updated_asset.execution_id,
             "parsing_error": updated_asset.parsing_error,
             "analysis_completed": updated_asset.parsing_status == "completed",
+            "product_id": product_id if product_id else None
         }
 
     @staticmethod
-    def get_parsing_progress(db: Session, asset_id: int) -> dict:
+    def get_parsing_progress(db: Session, user_id: int, asset_id: int) -> dict:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
+        # 权限校验：只有所有者可以操作
+        if asset.user_id != user_id:
+            from backend.framework.exceptions.error_codes import FORBIDDEN
+            raise BusinessException(FORBIDDEN, "无权限操作此资产")
         return {
             "asset_id": asset.id,
             "parsing_status": asset.parsing_status,
@@ -703,11 +516,17 @@ class AssetService:
         }
 
     @staticmethod
-    async def retry_parsing(db: Session, asset_id: int) -> dict:
-        return await AssetService.parse_asset(db=db, asset_id=asset_id, force=True)
+    async def retry_parsing(db: Session, user_id: int, asset_id: int, product_id: Optional[int] = None) -> dict:
+        return await AssetService.parse_asset(db=db, user_id=user_id, asset_id=asset_id, force=True, product_id=product_id)
 
     @staticmethod
-    def _parse_asset_sync(db: Session, asset_id: int, force: bool = False):
+    def _parse_asset_sync(db: Session, asset_id: int, force: bool = False, product_id: Optional[int] = None, user_id: Optional[int] = None):
+        """
+        同步解析资产，保持原有接口兼容
+        内部使用新的ProductParsingPipeline实现
+        """
+        from backend.v1.app.product.dao.product_dao import ProductDAO
+
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
@@ -715,36 +534,103 @@ class AssetService:
             raise BusinessException(PARAM_ERROR, "asset type does not support parsing")
         if asset.parsing_status == "completed" and not force and asset.ai_features:
             return asset
+        # 权限校验：如果提供了user_id则校验所有者
+        if user_id is not None and asset.user_id != user_id:
+            from backend.framework.exceptions.error_codes import FORBIDDEN
+            raise BusinessException(FORBIDDEN, "无权限操作此资产")
 
-        AssetDAO.update_asset(db, asset_id, {"parsing_status": "running", "parsing_error": None})
+        # 如果提供了product_id，验证产品是否存在
+        if product_id:
+            product = ProductDAO.get_product_by_id(db, product_id)
+            if not product:
+                raise BusinessException(PARAM_ERROR, "product not found")
+
+        # 更新状态为pending
+        AssetDAO.update_asset(db, asset_id, {"parsing_status": "pending", "parsing_error": None})
         asset = AssetDAO.get_asset_by_id(db, asset_id)
+
         try:
-            ai_features = AssetService._analysis_orchestrator.analyze_asset(asset)
-            return AssetDAO.update_asset(
-                db,
-                asset_id,
-                {
-                    "ai_features": ai_features,
-                    "parsing_status": "completed",
-                    "parsing_error": None,
-                },
+            # 创建商品解析流水线
+            pipeline = PipelineFactory.get_product_pipeline(
+                enable_persistence=True,
+                persist_to_asset=True
             )
-        except Exception as exc:
-            AssetDAO.update_asset(
-                db,
-                asset_id,
-                {
+
+            # 构建流水线参数
+            object_name = AssetService.get_path_after_baseurl(asset.url)
+            pipeline_params = {
+                "asset_id": asset_id,
+                "asset_url": asset.url,
+                "object_name": object_name,
+                "asset_type": asset.type
+            }
+
+            # 如果有product_id，添加到参数中
+            if product_id:
+                pipeline_params["product_id"] = product_id
+
+            # 根据资产类型自动添加对应字段
+            if asset.type == 1:  # 图片
+                pipeline_params["images"] = [asset.url]
+            elif asset.type == 2:  # 视频
+                pipeline_params["video_url"] = asset.url
+                pipeline_params["video_object_name"] = object_name  # 传入视频对象存储路径
+                pipeline_params["video_duration"] = asset.duration  # 传入视频时长
+
+            # 执行流水线（同步调用）
+            pipeline_result = pipeline.run_with_persistence(pipeline_params)
+
+            if not pipeline_result.get("success", False):
+                error_msg = f"解析失败: {pipeline_result.get('errors', [])}"
+                AssetDAO.update_asset(db, asset_id, {
                     "parsing_status": "failed",
-                    "parsing_error": str(exc),
-                },
-            )
-            raise
+                    "parsing_error": error_msg
+                })
+                raise BusinessException(PARAM_ERROR, error_msg)
+
+            # 流水线执行成功，更新状态为running（异步执行）
+            update_data = {"parsing_status": "running"}
+            if "execution_id" in pipeline_result:
+                update_data["execution_id"] = pipeline_result["execution_id"]
+
+            AssetDAO.update_asset(db, asset_id, update_data)
+
+            # 如果提供了product_id，建立资产和产品的关联
+            if product_id:
+                # 检查是否已经关联
+                existing_association = db.execute(
+                    text("SELECT 1 FROM product_assets WHERE product_id = :product_id AND asset_id = :asset_id AND role = :role"),
+                    {"product_id": product_id, "asset_id": asset_id, "role": "image" if asset.type == 1 else "video" if asset.type == 2 else "audio"}
+                ).first()
+
+                if not existing_association:
+                    # 创建新的关联
+                    db.execute(
+                        text("INSERT INTO product_assets (product_id, asset_id, role) VALUES (:product_id, :asset_id, :role)"),
+                        {"product_id": product_id, "asset_id": asset_id, "role": "image" if asset.type == 1 else "video" if asset.type == 2 else "audio"}
+                    )
+                    db.commit()
+
+            # 返回最新的资产信息
+            return AssetDAO.get_asset_by_id(db, asset_id)
+
+        except Exception as exc:
+            error_msg = str(exc)
+            AssetDAO.update_asset(db, asset_id, {
+                "parsing_status": "failed",
+                "parsing_error": error_msg
+            })
+            raise BusinessException(PARAM_ERROR, f"解析失败: {error_msg}")
 
     @staticmethod
-    def delete_asset(db: Session, asset_id: int) -> None:
+    def delete_asset(db: Session, user_id: int, asset_id: int) -> None:
         asset = AssetDAO.get_asset_by_id(db, asset_id)
         if not asset:
             raise BusinessException(PARAM_ERROR, "asset not found")
+        # 权限校验：只有所有者可以操作
+        if asset.user_id != user_id:
+            from backend.framework.exceptions.error_codes import FORBIDDEN
+            raise BusinessException(FORBIDDEN, "无权限操作此资产")
         if asset.storage_key:
             storage = AssetService._storage_for_asset_url(asset.url)
             try:

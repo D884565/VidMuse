@@ -5,28 +5,96 @@
 不直接操作数据库，通过 ProductDAO 访问数据层。
 """
 import json
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from fastapi import UploadFile, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import ValidationError
 
 from backend.v1.app.product.dao.product_dao import ProductDAO
 from backend.v1.app.product.dao.product_asset_dao import ProductAssetDAO
-from backend.v1.app.product.dao.schema import product_to_dict, ProductCreateRequest, ProductUpdateRequest
+from backend.v1.app.product.dao.schema import product_to_dict, ProductCreateRequest, ProductUpdateRequest, _parse_json_field
 from backend.v1.app.product.dao.product_category_dao import ProductCategoryDAO
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
-from backend.v1.app.assets.service.asset_service import AssetService
 from backend.framework.exceptions.exceptions import BusinessException
 from backend.framework.exceptions.error_codes import (
     RESOURCE_NOT_FOUND,
     FORBIDDEN,
     PARAM_ERROR,
 )
-# ProductParsingPipeline 导入移到函数内部，避免循环导入
+from backend.v1.app.common.parsing.base_parsing_service import BaseParsingService
+from backend.v1.app.pipeline.base import BasePipeline
+
+# 导入移到函数内部，避免循环导入
+# from backend.v1.app.pipeline.factory.pipeline_factory import PipelineFactory
+# AssetService 导入移到函数内部，避免循环导入
 
 
-class ProductService:
-    """商品业务逻辑层"""
+class ProductService(BaseParsingService):
+    """商品业务逻辑层
+    继承BaseParsingService，复用统一解析框架能力
+    """
+
+    # 实现BaseParsingService的抽象方法
+    def get_pipeline(self, context: Dict[str, Any]) -> BasePipeline:
+        """根据资产类型动态选择对应的解析流水线
+        优先级：视频 > 图片 > 音频 > 文本
+        """
+        from backend.v1.app.pipeline.factory.pipeline_factory import PipelineFactory
+
+        asset_type = context.get("asset_type")
+        if asset_type:
+            return PipelineFactory.get_pipeline_for_asset_type(
+                asset_type=asset_type,
+                persist_to_asset=True,
+                enable_persistence=True
+            )
+        # 没有指定资产类型，默认使用商品解析流水线
+        from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
+        return ProductParsingPipeline(
+            persist_to_asset=True,
+            enable_persistence=True
+        )
+
+    def get_asset_id(self, db: Session, business_id: int, context: Optional[Dict[str, Any]] = None) -> Optional[int]:
+        """根据商品ID获取要解析的资产ID
+        规则：
+        1. 如果context中指定了selected_asset_id，优先使用
+        2. 否则优先找角色为main的资产
+        3. 没有main资产则取第一个关联资产
+        4. 没有关联资产返回None
+        """
+        context = context or {}
+        # 检查是否在context中指定了资产ID
+        selected_asset_id = context.get('selected_asset_id')
+        if selected_asset_id:
+            return selected_asset_id
+
+        # 没有指定，按默认规则查找
+        product = ProductDAO.get_product_by_id(db, business_id, include_assets=True)
+        if not product or not product.assets:
+            return None
+
+        # 先找main角色的资产
+        main_assets = ProductAssetDAO.get_assets_by_product_id_and_role(db, business_id, "main")
+        if main_assets:
+            return main_assets[0].id
+
+        # 没有main资产，取第一个
+        return product.assets[0].id
+
+    def sync_status(self, db: Session, business_id: int, asset: Any) -> None:
+        """同步资产状态到商品表"""
+        update_fields = {
+            "execution_id": asset.execution_id,
+            "parsing_status": asset.parsing_status,
+            "parsing_error": asset.parsing_error,
+        }
+
+        # 如果有AI特征，同步到商品表
+        if asset.ai_features:
+            update_fields["ai_features"] = asset.ai_features
+
+        ProductDAO.update_product(db, business_id, update_fields)
 
     @staticmethod
     def create_product(db: Session, user_id: int, data: ProductCreateRequest) -> dict:
@@ -52,25 +120,35 @@ class ProductService:
             product_data["category"] = category.name
             product_data["category_path"] = category.path
 
-        product = ProductDAO.create_product(db, product_data)
+        try:
+            # 开启事务，确保商品创建和资产关联的原子性
+            with db.begin_nested():
+                product = ProductDAO.create_product(db, product_data)
 
-        # 处理资产关联
-        asset_ids = data.asset_ids
-        if asset_ids:
-            # 验证所有资产是否存在
-            for asset_id in asset_ids:
-                asset = AssetDAO.get_asset_by_id(db, asset_id)
-                if not asset:
-                    raise BusinessException(PARAM_ERROR, f"资产ID {asset_id} 不存在")
-                # 校验资产所属权（暂时跳过，待用户系统完善后添加）
+                # 处理资产关联
+                asset_ids = data.asset_ids
+                if asset_ids:
+                    # 验证所有资产是否存在且属于当前用户
+                    for asset_id in asset_ids:
+                        asset = AssetDAO.get_asset_by_id(db, asset_id)
+                        if not asset:
+                            raise BusinessException(PARAM_ERROR, f"资产ID {asset_id} 不存在")
+                        # 校验资产所属权
+                        if asset.user_id != user_id:
+                            raise BusinessException(FORBIDDEN, f"无权限操作资产ID {asset_id}")
 
-            # 批量创建关联
-            ProductAssetDAO.create_product_assets_batch(
-                db,
-                product_id=product.id,
-                asset_ids=asset_ids,
-                roles=data.asset_roles
-            )
+                    # 批量创建关联
+                    ProductAssetDAO.create_product_assets_batch(
+                        db,
+                        product_id=product.id,
+                        asset_ids=asset_ids,
+                        roles=data.asset_roles
+                    )
+            # 事务提交成功
+        except Exception as e:
+            # 事务回滚，重新抛出异常
+            db.rollback()
+            raise e
 
         result = {
             "id": product.id,
@@ -91,11 +169,12 @@ class ProductService:
         return result
 
     @staticmethod
-    def get_product(db: Session, product_id: int, include_category_info: bool = True, include_assets: bool = True) -> dict:
+    def get_product(db: Session, product_id: int, current_user_id: int, include_category_info: bool = True, include_assets: bool = True) -> dict:
         """获取商品详情
 
         :param db: 数据库会话
         :param product_id: 商品ID
+        :param current_user_id: 当前用户ID
         :param include_category_info: 是否包含完整分类信息
         :param include_assets: 是否包含关联的资产信息
         :return: 商品详细信息字典
@@ -128,22 +207,31 @@ class ProductService:
         if not update_data:
             return {"id": product.id, "updated_at": product.updated_at.isoformat() if product.updated_at else ""}
 
-        # 处理分类关联
-        if "category_id" in update_data and update_data["category_id"] is not None:
-            category = ProductCategoryDAO.get_category_by_id(db, update_data["category_id"])
-            if not category:
-                raise BusinessException(PARAM_ERROR, f"分类ID {update_data['category_id']} 不存在")
-            if category.level != 3:
-                raise BusinessException(PARAM_ERROR, "只能选择三级分类关联商品")
+        try:
+            # 开启事务，确保分类更新等操作的原子性
+            with db.begin_nested():
+                # 处理分类关联
+                if "category_id" in update_data and update_data["category_id"] is not None:
+                    category = ProductCategoryDAO.get_category_by_id(db, update_data["category_id"])
+                    if not category:
+                        raise BusinessException(PARAM_ERROR, f"分类ID {update_data['category_id']} 不存在")
+                    if category.level != 3:
+                        raise BusinessException(PARAM_ERROR, "只能选择三级分类关联商品")
 
-            # 自动填充分类名称和路径
-            update_data["category"] = category.name
-            update_data["category_path"] = category.path
-        elif "category_id" in update_data and update_data["category_id"] is None:
-            # 清空分类关联
-            update_data["category_path"] = None
+                    # 自动填充分类名称和路径
+                    update_data["category"] = category.name
+                    update_data["category_path"] = category.path
+                elif "category_id" in update_data and update_data["category_id"] is None:
+                    # 清空分类关联
+                    update_data["category_path"] = None
 
-        product = ProductDAO.update_product(db, product_id, update_data)
+                product = ProductDAO.update_product(db, product_id, update_data)
+            # 事务提交成功
+        except Exception as e:
+            # 事务回滚，重新抛出异常
+            db.rollback()
+            raise e
+
         return {
             "id": product.id,
             "updated_at": product.updated_at.isoformat() if product.updated_at else "",
@@ -163,7 +251,20 @@ class ProductService:
             raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
         if product.user_id is not None and product.user_id != user_id:
             raise BusinessException(FORBIDDEN, "无权限操作此商品")
-        ProductDAO.delete_product(db, product_id)
+
+        try:
+            # 开启事务，确保删除商品和关联资产的原子性
+            with db.begin_nested():
+                # 先删除商品资产关联
+                from backend.v1.app.product.dao.product_asset_dao import ProductAssetDAO
+                ProductAssetDAO.delete_all_by_product_id(db, product_id)
+                # 再删除商品
+                ProductDAO.delete_product(db, product_id)
+            # 事务提交成功
+        except Exception as e:
+            # 事务回滚，重新抛出异常
+            db.rollback()
+            raise e
 
     @staticmethod
     def parse_product(db: Session, product_id: int, user_id: int, force: bool = False, asset_id: Optional[int] = None) -> str:
@@ -177,104 +278,90 @@ class ProductService:
         :return: 解析执行ID
         :raises BusinessException: 商品不存在或无权限时抛出异常
         """
+        # 1. 权限校验和参数验证
         product = ProductDAO.get_product_by_id(db, product_id, include_assets=True)
         if not product:
             raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
         if product.user_id is not None and product.user_id != user_id:
             raise BusinessException(FORBIDDEN, "无权限操作此商品")
 
-        # 检查是否正在运行
-        if product.parsing_status == "running" and not force:
-            return product.execution_id
-
-        # 获取要解析的资产
+        # 2. 验证指定的asset_id是否关联到此商品且属于当前用户
         target_asset = None
         if asset_id:
-            # 指定了asset_id，查找对应的关联资产
-            for asset in product.assets:
-                if asset.id == asset_id:
-                    target_asset = asset
-                    break
+            target_asset = next((a for a in product.assets if a.id == asset_id), None)
             if not target_asset:
                 raise BusinessException(PARAM_ERROR, f"资产ID {asset_id} 未关联到此商品")
-        else:
-            # 未指定asset_id，优先找角色为main的资产，否则取第一个
-            main_assets = ProductAssetDAO.get_assets_by_product_id_and_role(db, product_id, "main")
-            if main_assets:
-                target_asset = main_assets[0]
-            elif product.assets:
-                target_asset = product.assets[0]
+            # 校验资产所属权
+            if target_asset.user_id != user_id:
+                raise BusinessException(FORBIDDEN, f"无权限操作资产ID {asset_id}")
 
-        # 获取商品图片和描述（兼容旧版数据）
-        from backend.v1.app.product.dao.schema import _parse_json_field
+        # 3. 构建上下文参数
         images = _parse_json_field(product.images, [])
         description = product.description or ""
-
-        # 如果有目标资产，使用资产的内容进行解析
-        if target_asset:
-            # 如果是图片类型，添加到images列表
-            if target_asset.type == 1:  # 图片
-                images = [target_asset.url] + images
-            # 如果是视频或音频，优先使用资产内容
-            elif target_asset.type in [2, 3]:  # 视频/音频
-                input_data = {
-                    "asset_id": target_asset.id,
-                    "asset_type": target_asset.type,
-                    "asset_url": target_asset.url,
-                    "product_id": product_id,
-                    "user_id": user_id,
-                    "description": description
-                }
-        else:
-            # 没有关联资产，使用旧版的images和description字段
-            if not images and not description:
-                raise BusinessException(PARAM_ERROR, "商品没有关联资产和描述信息，无法解析")
-
-            input_data = {
-                "images": images,
-                "description": description,
-                "product_id": product_id,
-                "user_id": user_id
-            }
-
-        # 更新状态为运行中
-        ProductDAO.update_product(db, product_id, {
-            "parsing_status": "running",
-            "parsing_error": None
-        })
-
-        # 执行解析流水线
-        from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
-        pipeline = ProductParsingPipeline(
-            persist_to_asset=True,  # 自动落库到asset表
-            enable_persistence=True
-        )
-        result = pipeline.run_with_persistence(input_data)
-
-        if not result["success"]:
-            error_msg = f"解析任务启动失败: {result['errors'][0] if result['errors'] else '未知错误'}"
-            ProductDAO.update_product(db, product_id, {
-                "parsing_status": "failed",
-                "parsing_error": error_msg
-            })
-            raise BusinessException(PARAM_ERROR, error_msg)
-
-        execution_id = result["execution_id"]
-
-        # 从解析结果中提取描述，回写到商品表（仅当商品描述为空时）
-        update_fields = {
-            "execution_id": execution_id,
-            "parsing_status": "completed",
+        context = {
+            "user_id": user_id,
+            "product_id": product_id,
+            "description": description,
+            "images": images,
+            "selected_asset_id": asset_id  # 传递指定的资产ID给get_asset_id方法
         }
-        if not product.description:
-            product_data = (result.get("data") or {}).get("product_data", {})
-            generated_desc = (product_data.get("basic_info") or {}).get("description", "")
-            if generated_desc and isinstance(generated_desc, str) and generated_desc.strip():
-                update_fields["description"] = generated_desc.strip()
+        if target_asset:
+            context["asset_type"] = target_asset.type
 
-        ProductDAO.update_product(db, product_id, update_fields)
+        # 4. 调用基类统一解析流程
+        service = ProductService()
+        success = service.trigger_parsing(db, product_id, force=force, context=context)
 
-        return execution_id
+        if not success:
+            updated_product = ProductDAO.get_product_by_id(db, product_id)
+            if updated_product.parsing_status == "failed":
+                raise BusinessException(PARAM_ERROR, f"解析失败: {updated_product.parsing_error}")
+
+        # 5. 提取解析结果中的描述和AI特征回写到商品表
+        # TODO: 后续可以优化为通过流水线后置处理器处理
+        updated_product = ProductDAO.get_product_by_id(db, product_id)
+        execution_id = updated_product.execution_id
+
+        if execution_id:
+            try:
+                # 获取流水线执行结果
+                from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
+                status = ProductParsingPipeline.get_execution_status(execution_id)
+                if status and status.get("status") == "completed" and status.get("result"):
+                    result_data = status["result"].get("data") or {}
+                    update_fields = {}
+
+                    # 优先提取商品描述（仅当原有描述为空时）
+                    if not product.description:
+                        # 尝试从商品解析结果中获取
+                        product_data = result_data.get("product_data", {})
+                        generated_desc = (product_data.get("basic_info") or {}).get("description", "")
+                        if not generated_desc:
+                            # 尝试从音频解析结果中获取语音识别文本
+                            generated_desc = result_data.get("transcript", "") or (result_data.get("ai_features") or {}).get("transcript", "")
+                        if generated_desc and isinstance(generated_desc, str) and generated_desc.strip():
+                            update_fields["description"] = generated_desc.strip()
+
+                    # 更新AI特征字段（如果有）
+                    if "ai_features" in result_data:
+                        update_fields["ai_features"] = json.dumps(result_data["ai_features"], ensure_ascii=False)
+                    # 兼容商品解析结果中的AI特征
+                    elif "product_data" in result_data:
+                        product_ai_features = result_data["product_data"].get("ai_features")
+                        if product_ai_features:
+                            update_fields["ai_features"] = json.dumps(product_ai_features, ensure_ascii=False)
+
+                    # 有需要更新的字段则执行更新
+                    if update_fields:
+                        ProductDAO.update_product(db, product_id, update_fields)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"获取解析结果回写商品表失败: {str(e)}")
+
+        # 返回最新的execution_id
+        updated_product = ProductDAO.get_product_by_id(db, product_id)
+        return updated_product.execution_id
 
     @staticmethod
     def get_parsing_progress(db: Session, product_id: int, user_id: int) -> dict:
@@ -285,36 +372,52 @@ class ProductService:
         :param user_id: 当前用户ID
         :return: 进度信息
         """
+        # 权限校验保留
         product = ProductDAO.get_product_by_id(db, product_id)
         if not product:
             raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
         if product.user_id is not None and product.user_id != user_id:
             raise BusinessException(FORBIDDEN, "无权限操作此商品")
 
-        # 基础信息
-        progress = {
-            "product_id": product.id,
-            "parsing_status": product.parsing_status,
-            "execution_id": product.execution_id,
-            "parsing_error": product.parsing_error,
-            "ai_features": product.ai_features,
-            "description": product.description,
-            "updated_at": product.updated_at.isoformat() + "Z" if product.updated_at else None
-        }
+        # 调用基类的进度查询逻辑
+        service = ProductService()
+        progress = service.get_parsing_progress(db, product_id)
 
-        # 如果有execution_id，查询详细进度
-        if product.execution_id:
-            from backend.v1.app.pipeline import ProductParsingPipeline
-            execution_status = ProductParsingPipeline.get_execution_status(product.execution_id)
-            if execution_status:
-                progress["progress_detail"] = {
-                    "current_processor": execution_status["current_processor_index"] + 1,
-                    "total_processors": execution_status["total_processors"],
-                    "progress_percent": round((execution_status["current_processor_index"] + 1) / execution_status["total_processors"] * 100, 2) if execution_status["total_processors"] > 0 else 0,
-                    "status": execution_status["status"],
-                    "created_at": execution_status["created_at"],
-                    "updated_at": execution_status["updated_at"]
-                }
+        if not progress:
+            # 基础信息兜底
+            return {
+                "product_id": product.id,
+                "parsing_status": product.parsing_status,
+                "execution_id": product.execution_id,
+                "parsing_error": product.parsing_error,
+                "ai_features": product.ai_features,
+                "description": product.description,
+                "updated_at": product.updated_at.isoformat() + "Z" if product.updated_at else None
+            }
+
+        # 转换返回格式，保持接口兼容
+        progress["product_id"] = progress.pop("business_id")
+        progress["ai_features"] = product.ai_features
+        progress["description"] = product.description
+
+        # 补充详细进度信息（基类返回的已经包含了，这里确保格式一致）
+        if product.execution_id and "progress_detail" not in progress:
+            try:
+                from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
+                execution_status = ProductParsingPipeline.get_execution_status(product.execution_id)
+                if execution_status:
+                    progress["progress_detail"] = {
+                        "current_processor": execution_status["current_processor_index"] + 1,
+                        "total_processors": execution_status["total_processors"],
+                        "progress_percent": round((execution_status["current_processor_index"] + 1) / execution_status["total_processors"] * 100, 2) if execution_status["total_processors"] > 0 else 0,
+                        "status": execution_status["status"],
+                        "created_at": execution_status["created_at"],
+                        "updated_at": execution_status["updated_at"]
+                    }
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(f"查询详细进度失败: {str(e)}")
 
         return progress
 
@@ -327,6 +430,7 @@ class ProductService:
         :param user_id: 当前用户ID
         :return: 执行ID
         """
+        # 权限校验保留
         product = ProductDAO.get_product_by_id(db, product_id)
         if not product:
             raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
@@ -337,44 +441,17 @@ class ProductService:
         if product.parsing_status not in ["failed", None]:
             raise BusinessException(PARAM_ERROR, "只有失败的解析任务可以重试")
 
-        # 如果有execution_id，尝试断点恢复
-        if product.execution_id:
-            try:
-                from backend.v1.app.pipeline import ProductParsingPipeline
-                pipeline = ProductParsingPipeline()
+        # 调用基类的重试逻辑
+        service = ProductService()
+        success = service.retry_parsing(db, product_id)
 
-                # 更新状态为运行中
-                ProductDAO.update_product(db, product_id, {
-                    "parsing_status": "running",
-                    "parsing_error": None
-                })
+        if not success:
+            updated_product = ProductDAO.get_product_by_id(db, product_id)
+            raise BusinessException(PARAM_ERROR, f"重试失败: {updated_product.parsing_error}")
 
-                # 恢复执行
-                result = pipeline.resume_execution(product.execution_id)
-
-                if result["success"]:
-                    # 新流水线自动落库到asset表，直接更新状态为完成
-                    ProductDAO.update_product(db, product_id, {
-                        "parsing_status": "completed"
-                    })
-                    return product.execution_id  # type: ignore
-                else:
-                    # 重试失败
-                    error_msg = f"重试解析失败: {result['errors'][0] if result['errors'] else '未知错误'}"
-                    ProductDAO.update_product(db, product_id, {
-                        "parsing_status": "failed",
-                        "parsing_error": error_msg
-                    })
-                    raise BusinessException(PARAM_ERROR, error_msg)
-
-            except Exception as e:
-                # 恢复失败，降级为重新执行
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"断点恢复失败，将重新执行完整解析: {str(e)}")
-
-        # 没有execution_id或恢复失败，重新执行完整解析
-        return ProductService.parse_product(db, product_id, user_id, force=True)
+        # 返回最新的execution_id
+        updated_product = ProductDAO.get_product_by_id(db, product_id)
+        return updated_product.execution_id
 
     @staticmethod
     async def upload_and_create_product(
@@ -395,6 +472,9 @@ class ProductService:
         :param asset_roles: 资产角色映射，key为文件索引（从0开始），value为角色
         :return: 创建结果
         """
+        # 导入移到这里避免循环依赖
+        from backend.v1.app.assets.service.asset_service import AssetService
+
         try:
             req = ProductCreateRequest(**product_info)
         except ValidationError as e:
@@ -422,10 +502,19 @@ class ProductService:
             role = asset_roles.get(index, "main" if index == 0 else "image") if asset_roles else ("main" if index == 0 else "image")
             asset_role_map[asset_result["id"]] = role
 
-        # 2. 创建商品并关联资产
-        req.asset_ids = asset_ids
-        req.asset_roles = asset_role_map
-        product_result = ProductService.create_product(db, user_id, req)
+        try:
+            # 开启事务，确保资产创建和商品创建的原子性
+            with db.begin_nested():
+                # 2. 创建商品并关联资产（create_product方法中已经包含资产所属权校验和嵌套事务）
+                req.asset_ids = asset_ids
+                req.asset_roles = asset_role_map
+                product_result = ProductService.create_product(db, user_id, req)
+            # 事务提交成功
+        except Exception as e:
+            # 事务回滚，重新抛出异常
+            db.rollback()
+            # 注意：已经上传到对象存储的文件需要异步清理，这里不处理
+            raise e
 
         # 3. 如果需要自动解析，添加后台任务
         if req.auto_parse and asset_ids:
@@ -514,6 +603,209 @@ class ProductService:
                 "total_pages": (total + page_size - 1) // page_size,
             }
         }
+
+    @staticmethod
+    def add_product_assets(
+        db: Session,
+        product_id: int,
+        user_id: int,
+        asset_ids: List[int],
+        asset_roles: Optional[Dict[int, str]] = None
+    ) -> dict:
+        """批量添加商品关联资产
+
+        :param db: 数据库会话
+        :param product_id: 商品ID
+        :param user_id: 当前用户ID
+        :param asset_ids: 资产ID列表
+        :param asset_roles: 资产角色映射，key为asset_id，value为角色
+        :return: 关联结果
+        :raises BusinessException: 商品不存在、无权限、资产不存在或无权限操作资产时抛出
+        """
+        # 校验商品存在且用户有权限
+        product = ProductDAO.get_product_by_id(db, product_id)
+        if not product:
+            raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
+        if product.user_id is not None and product.user_id != user_id:
+            raise BusinessException(FORBIDDEN, "无权限操作此商品")
+
+        # 校验资产ID列表不为空
+        if not asset_ids:
+            raise BusinessException(PARAM_ERROR, "资产ID列表不能为空")
+
+        # 去重资产ID
+        asset_ids = list(set(asset_ids))
+        asset_roles = asset_roles or {}
+
+        try:
+            # 开启事务
+            with db.begin_nested():
+                # 验证所有资产是否存在且属于当前用户
+                for asset_id in asset_ids:
+                    asset = AssetDAO.get_asset_by_id(db, asset_id)
+                    if not asset:
+                        raise BusinessException(PARAM_ERROR, f"资产ID {asset_id} 不存在")
+                    if asset.user_id != user_id:
+                        raise BusinessException(FORBIDDEN, f"无权限操作资产ID {asset_id}")
+
+                # 批量创建关联
+                ProductAssetDAO.create_product_assets_batch(
+                    db,
+                    product_id=product_id,
+                    asset_ids=asset_ids,
+                    roles=asset_roles
+                )
+            # 事务提交成功
+        except Exception as e:
+            # 事务回滚，重新抛出异常
+            db.rollback()
+            raise e
+
+        return {
+            "product_id": product_id,
+            "added_asset_ids": asset_ids,
+            "message": "资产关联成功"
+        }
+
+    @staticmethod
+    def remove_product_asset(
+        db: Session,
+        product_id: int,
+        asset_id: int,
+        user_id: int,
+        role: Optional[str] = None
+    ) -> dict:
+        """删除商品关联资产
+
+        :param db: 数据库会话
+        :param product_id: 商品ID
+        :param asset_id: 资产ID
+        :param user_id: 当前用户ID
+        :param role: 可选，指定要删除的角色，若不传则删除该资产的所有关联
+        :return: 删除结果
+        :raises BusinessException: 商品不存在、无权限、关联不存在时抛出
+        """
+        # 校验商品存在且用户有权限
+        product = ProductDAO.get_product_by_id(db, product_id)
+        if not product:
+            raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
+        if product.user_id is not None and product.user_id != user_id:
+            raise BusinessException(FORBIDDEN, "无权限操作此商品")
+
+        # 校验资产存在且属于当前用户
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        if not asset:
+            raise BusinessException(PARAM_ERROR, f"资产ID {asset_id} 不存在")
+        if asset.user_id != user_id:
+            raise BusinessException(FORBIDDEN, f"无权限操作资产ID {asset_id}")
+
+        try:
+            # 开启事务
+            with db.begin_nested():
+                # 删除关联
+                success = ProductAssetDAO.delete_product_asset(db, product_id, asset_id, role)
+                if not success:
+                    raise BusinessException(PARAM_ERROR, "资产关联不存在")
+            # 事务提交成功
+        except Exception as e:
+            # 事务回滚，重新抛出异常
+            db.rollback()
+            raise e
+
+        return {
+            "product_id": product_id,
+            "removed_asset_id": asset_id,
+            "message": "资产关联删除成功"
+        }
+
+    @staticmethod
+    def update_asset_role(
+        db: Session,
+        product_id: int,
+        asset_id: int,
+        user_id: int,
+        new_role: str
+    ) -> dict:
+        """修改商品关联资产的角色
+
+        :param db: 数据库会话
+        :param product_id: 商品ID
+        :param asset_id: 资产ID
+        :param user_id: 当前用户ID
+        :param new_role: 新的角色（main/image/video/audio）
+        :return: 修改结果
+        :raises BusinessException: 商品不存在、无权限、关联不存在时抛出
+        """
+        # 校验商品存在且用户有权限
+        product = ProductDAO.get_product_by_id(db, product_id)
+        if not product:
+            raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
+        if product.user_id is not None and product.user_id != user_id:
+            raise BusinessException(FORBIDDEN, "无权限操作此商品")
+
+        # 校验资产存在且属于当前用户
+        asset = AssetDAO.get_asset_by_id(db, asset_id)
+        if not asset:
+            raise BusinessException(PARAM_ERROR, f"资产ID {asset_id} 不存在")
+        if asset.user_id != user_id:
+            raise BusinessException(FORBIDDEN, f"无权限操作资产ID {asset_id}")
+
+        # 校验角色合法性
+        allowed_roles = {"main", "image", "video", "audio"}
+        if new_role not in allowed_roles:
+            raise BusinessException(PARAM_ERROR, f"角色不合法，允许的角色：{', '.join(allowed_roles)}")
+
+        try:
+            # 开启事务
+            with db.begin_nested():
+                # 先删除旧关联
+                ProductAssetDAO.delete_product_asset(db, product_id, asset_id)
+                # 再创建新关联
+                ProductAssetDAO.create_product_asset(db, product_id, asset_id, new_role)
+            # 事务提交成功
+        except Exception as e:
+            # 事务回滚，重新抛出异常
+            db.rollback()
+            raise e
+
+        return {
+            "product_id": product_id,
+            "asset_id": asset_id,
+            "new_role": new_role,
+            "message": "资产角色更新成功"
+        }
+
+    @staticmethod
+    def list_product_assets(
+        db: Session,
+        product_id: int,
+        user_id: int,
+        role: Optional[str] = None
+    ) -> List[dict]:
+        """获取商品关联的资产列表
+
+        :param db: 数据库会话
+        :param product_id: 商品ID
+        :param user_id: 当前用户ID
+        :param role: 可选，按角色筛选
+        :return: 资产列表
+        :raises BusinessException: 商品不存在、无权限时抛出
+        """
+        # 校验商品存在且用户有权限
+        product = ProductDAO.get_product_by_id(db, product_id, include_assets=True)
+        if not product:
+            raise BusinessException(RESOURCE_NOT_FOUND, "商品不存在")
+        if product.user_id is not None and product.user_id != user_id:
+            raise BusinessException(FORBIDDEN, "无权限操作此商品")
+
+        # 查询关联的资产
+        if role:
+            assets = ProductAssetDAO.get_assets_by_product_id_and_role(db, product_id, role)
+        else:
+            assets = ProductAssetDAO.get_assets_by_product_id(db, product_id)
+
+        # 转换为字典格式
+        return [asset.to_dict() for asset in assets]
 
 
 # 模块级单例，Controller 层直接引用

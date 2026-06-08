@@ -5,10 +5,10 @@
 所有接口都需要登录（通过 Bearer token 认证）。
 """
 import json
-from typing import Optional, List
-from fastapi import APIRouter, Depends, Header, BackgroundTasks, File, UploadFile, Form
+from typing import Optional, List, Dict
+from fastapi import APIRouter, Depends, Header, BackgroundTasks, File, UploadFile, Form, Body
 from sqlalchemy.orm import Session
-from pydantic import ValidationError
+from pydantic import ValidationError, BaseModel, Field
 
 from backend.framework.web.response import Response
 from backend.framework.exceptions.exceptions import BusinessException
@@ -19,25 +19,11 @@ from backend.v1.app.product.dao.schema import ProductCreateRequest, ProductUpdat
 from backend.v1.app.user.service.user_service import user_service
 from backend.v1.app.assets.service.asset_service import AssetService
 from backend.v1.app.pipeline.pipelines.product_parsing_pipeline import ProductParsingPipeline
+from backend.framework.web.auth import get_current_user_id
 
 router = APIRouter(prefix="/products", tags=["商品模块"])
 
 
-# ==================== 认证依赖 ====================
-
-def _get_current_user_id(authorization: Optional[str] = Header(None)) -> int:
-    """从 Authorization 请求头解析当前登录用户的ID
-
-    与用户模块共用同一个认证逻辑（从 JWT token 解析 user_id）。
-
-    :param authorization: Authorization 请求头的值
-    :return: 当前用户ID
-    :raises BusinessException: 未携带 token 或 token 无效时抛出 UNAUTHORIZED
-    """
-    if not authorization or not authorization.startswith("Bearer "):
-        raise BusinessException(UNAUTHORIZED)
-    token = authorization[7:]
-    return user_service.get_user_id_from_token(token)
 
 
 # ==================== 商品接口 ====================
@@ -46,7 +32,7 @@ def _get_current_user_id(authorization: Optional[str] = Header(None)) -> int:
 def create_product(
     req: ProductCreateRequest,
     background_tasks: BackgroundTasks,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """添加商品信息到系统"""
@@ -86,7 +72,7 @@ def list_products(
     only_public: Optional[bool] = None,
     page: int = 1,
     page_size: int = 20,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """获取商品列表，返回自己的商品 + 平台公共商品
@@ -107,11 +93,11 @@ def list_products(
 @router.get("/{product_id}", response_model=Response, summary="获取商品详情")
 def get_product(
     product_id: int,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """获取商品详细信息，包括卖点、规格、标签等"""
-    result = product_service.get_product(db, product_id)
+    result = product_service.get_product(db, product_id, current_user_id)
     return Response.success(data=result)
 
 
@@ -119,7 +105,7 @@ def get_product(
 def update_product(
     product_id: int,
     req: ProductUpdateRequest,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """更新商品信息（仅商品所有者可操作）"""
@@ -130,7 +116,7 @@ def update_product(
 @router.delete("/{product_id}", response_model=Response, summary="删除商品")
 def delete_product(
     product_id: int,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """删除商品（仅商品所有者可操作）"""
@@ -141,7 +127,7 @@ def delete_product(
 @router.post("/{product_id}/parse", response_model=Response, summary="手动触发商品解析")
 def parse_product(
     product_id: int,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """手动触发商品解析，返回执行ID用于查询状态"""
@@ -158,7 +144,7 @@ def parse_product(
 @router.get("/parse/{execution_id}", response_model=Response, summary="查询商品解析状态（通过execution_id）")
 def get_parse_status(
     execution_id: str,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
 ):
     """查询商品解析任务的执行状态和结果（通过execution_id）"""
     status = ProductParsingPipeline.get_execution_status(execution_id)
@@ -171,7 +157,7 @@ def get_parse_status(
 @router.get("/{product_id}/parsing-progress", response_model=Response, summary="查询商品解析进度（通过product_id）")
 def get_product_parsing_progress(
     product_id: int,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """查询商品解析的进度和状态（通过商品ID）"""
@@ -182,7 +168,7 @@ def get_product_parsing_progress(
 @router.post("/{product_id}/retry-parsing", response_model=Response, summary="重试失败的商品解析")
 def retry_product_parsing(
     product_id: int,
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """重试失败的商品解析，支持从断点处恢复执行"""
@@ -202,7 +188,7 @@ async def upload_product_files(
     files: List[UploadFile] = File(..., description="上传的商品相关文件（图片/视频/音频）"),
     product_info: str = Form(..., description="商品信息JSON字符串，对应ProductCreateRequest结构"),
     asset_roles: Optional[str] = Form(None, description="资产角色映射JSON字符串，key为文件索引（从0开始），value为角色（main/image/video/audio）"),
-    current_user_id: int = Depends(_get_current_user_id),
+    current_user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db),
 ):
     """上传文件并创建商品，支持同时上传多个文件并关联到商品
@@ -237,3 +223,89 @@ async def upload_product_files(
     )
 
     return Response.success(data=product_result, message="商品创建成功，文件已上传")
+
+
+# ==================== 商品资产关联接口 ====================
+
+class AddProductAssetsRequest(BaseModel):
+    """添加商品关联资产请求体"""
+    asset_ids: List[int] = Field(..., description="资产ID列表")
+    asset_roles: Optional[Dict[int, str]] = Field(None, description="资产角色映射，key为asset_id，value为角色（main/image/video/audio）")
+
+
+class UpdateAssetRoleRequest(BaseModel):
+    """更新资产角色请求体"""
+    role: str = Field(..., description="新的角色（main/image/video/audio）")
+
+
+@router.post("/{product_id}/assets", response_model=Response, summary="批量添加商品关联资产")
+def add_product_assets(
+    product_id: int,
+    req: AddProductAssetsRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """为商品批量添加关联资产，只能添加自己拥有的资产"""
+    result = product_service.add_product_assets(
+        db=db,
+        product_id=product_id,
+        user_id=current_user_id,
+        asset_ids=req.asset_ids,
+        asset_roles=req.asset_roles
+    )
+    return Response.success(data=result, message="资产关联成功")
+
+
+@router.delete("/{product_id}/assets/{asset_id}", response_model=Response, summary="删除商品关联资产")
+def remove_product_asset(
+    product_id: int,
+    asset_id: int,
+    role: Optional[str] = None,
+    current_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """删除商品与资产的关联关系，不会删除资产本身"""
+    result = product_service.remove_product_asset(
+        db=db,
+        product_id=product_id,
+        asset_id=asset_id,
+        user_id=current_user_id,
+        role=role
+    )
+    return Response.success(data=result, message="资产关联删除成功")
+
+
+@router.put("/{product_id}/assets/{asset_id}/role", response_model=Response, summary="修改商品关联资产的角色")
+def update_asset_role(
+    product_id: int,
+    asset_id: int,
+    req: UpdateAssetRoleRequest,
+    current_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """修改商品关联资产的角色，如将普通图片设置为主图"""
+    result = product_service.update_asset_role(
+        db=db,
+        product_id=product_id,
+        asset_id=asset_id,
+        user_id=current_user_id,
+        new_role=req.role
+    )
+    return Response.success(data=result, message="资产角色更新成功")
+
+
+@router.get("/{product_id}/assets", response_model=Response, summary="获取商品关联的资产列表")
+def get_product_assets(
+    product_id: int,
+    role: Optional[str] = None,
+    current_user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """获取商品关联的所有资产，支持按角色筛选"""
+    assets = product_service.list_product_assets(
+        db=db,
+        product_id=product_id,
+        user_id=current_user_id,
+        role=role
+    )
+    return Response.success(data=assets, message="查询成功")

@@ -3,8 +3,8 @@
 职责：封装所有对 traces 和 spans 表的数据库查询操作，Service 层通过此层访问数据库。
 """
 from typing import Optional, Tuple, List, Dict, Any
-from sqlalchemy import func, and_, or_, text
-from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, or_, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime, timedelta
 
 from backend.framework.trace.models import Trace, Span
@@ -14,8 +14,8 @@ class TraceManagementDAO:
     """链路追踪管理数据访问层"""
 
     @staticmethod
-    def list_traces(
-        db: Session,
+    async def list_traces(
+        db: AsyncSession,
         trace_id: Optional[str] = None,
         method: Optional[str] = None,
         path: Optional[str] = None,
@@ -48,7 +48,7 @@ class TraceManagementDAO:
         :param page_size: 每页数量
         :return: (总数量, Trace列表)
         """
-        query = db.query(Trace)
+        query = select(Trace)
 
         # 条件筛选
         filters = []
@@ -69,57 +69,57 @@ class TraceManagementDAO:
         if user_id is not None:
             filters.append(Trace.user_id == user_id)
         if has_exception is not None:
+            # 子查询查询包含异常的trace_id
+            subquery = select(Span.trace_id).filter(Span.exception.isnot(None)).distinct()
             if has_exception:
-                filters.append(Trace.id.in_(
-                    db.query(Span.trace_id).filter(Span.exception.isnot(None)).distinct()
-                ))
+                filters.append(Trace.trace_id.in_(subquery))
             else:
-                filters.append(~Trace.id.in_(
-                    db.query(Span.trace_id).filter(Span.exception.isnot(None)).distinct()
-                ))
+                filters.append(~Trace.trace_id.in_(subquery))
         if start_time:
             filters.append(Trace.created_at >= start_time)
         if end_time:
             filters.append(Trace.created_at <= end_time)
 
         if filters:
-            query = query.filter(and_(*filters))
+            query = query.where(and_(*filters))
 
         # 统计总数
-        total = query.count()
+        count_query = select(func.count()).select_from(query.subquery())
+        total = await db.scalar(count_query) or 0
 
         # 分页查询
         offset = (page - 1) * page_size
-        traces = query.order_by(Trace.created_at.desc()) \
-            .offset(offset) \
-            .limit(page_size) \
-            .all()
+        query = query.order_by(Trace.created_at.desc()).offset(offset).limit(page_size)
+        result = await db.execute(query)
+        traces = result.scalars().all()
 
         return total, traces
 
     @staticmethod
-    def get_trace_by_id(db: Session, trace_id: int) -> Optional[Trace]:
+    async def get_trace_by_id(db: AsyncSession, trace_id: int) -> Optional[Trace]:
         """根据Trace ID查询详情
 
         :param db: 数据库会话
         :param trace_id: Trace ID
         :return: Trace 对象，不存在返回 None
         """
-        return db.query(Trace).filter(Trace.id == trace_id).first()
+        result = await db.execute(select(Trace).where(Trace.id == trace_id))
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_trace_by_trace_id(db: Session, trace_id_str: str) -> Optional[Trace]:
+    async def get_trace_by_trace_id(db: AsyncSession, trace_id_str: str) -> Optional[Trace]:
         """根据trace_id字符串查询详情
 
         :param db: 数据库会话
         :param trace_id_str: 链路唯一标识
         :return: Trace 对象，不存在返回 None
         """
-        return db.query(Trace).filter(Trace.trace_id == trace_id_str).first()
+        result = await db.execute(select(Trace).where(Trace.trace_id == trace_id_str))
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_spans_by_trace_id(
-        db: Session,
+    async def get_spans_by_trace_id(
+        db: AsyncSession,
         trace_id: str,
         include_details: bool = False
     ) -> List[Span]:
@@ -130,40 +130,27 @@ class TraceManagementDAO:
         :param include_details: 是否包含详细信息（参数、返回值、异常等）
         :return: Span列表
         """
-        query = db.query(Span).filter(Span.trace_id == trace_id)
-
-        if not include_details:
-            # 只查询基础字段，提高性能
-            query = query.with_entities(
-                Span.id,
-                Span.trace_id,
-                Span.span_id,
-                Span.parent_span_id,
-                Span.name,
-                Span.class_name,
-                Span.module_name,
-                Span.start_time,
-                Span.end_time,
-                Span.duration_ms,
-                Span.exception,
-                Span.created_at
-            )
-
-        spans = query.order_by(Span.start_time.asc()).all()
+        # 暂时查询完整字段，避免SQLAlchemy 2.0兼容性问题
+        # 后续可以考虑使用ORM语句选项实现字段延迟加载
+        query = select(Span).filter(Span.trace_id == trace_id)
+        query = query.order_by(Span.start_time.asc())
+        result = await db.execute(query)
+        spans = result.scalars().all()
         return spans
 
     @staticmethod
-    def get_span_by_id(db: Session, span_id: int) -> Optional[Span]:
+    async def get_span_by_id(db: AsyncSession, span_id: int) -> Optional[Span]:
         """根据Span ID查询详情
 
         :param db: 数据库会话
         :param span_id: Span ID
         :return: Span 对象，不存在返回 None
         """
-        return db.query(Span).filter(Span.id == span_id).first()
+        result = await db.execute(select(Span).where(Span.id == span_id))
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_child_spans(db: Session, trace_id: str, parent_span_id: str) -> List[Span]:
+    async def get_child_spans(db: AsyncSession, trace_id: str, parent_span_id: str) -> List[Span]:
         """查询父Span的所有子Span
 
         :param db: 数据库会话
@@ -171,34 +158,38 @@ class TraceManagementDAO:
         :param parent_span_id: 父Span ID
         :return: 子Span列表
         """
-        return db.query(Span).filter(
+        query = select(Span).filter(
             Span.trace_id == trace_id,
             Span.parent_span_id == parent_span_id
-        ).order_by(Span.start_time.asc()).all()
+        ).order_by(Span.start_time.asc())
+        result = await db.execute(query)
+        return result.scalars().all()
 
     @staticmethod
-    def get_span_count_by_trace_id(db: Session, trace_id: str) -> int:
+    async def get_span_count_by_trace_id(db: AsyncSession, trace_id: str) -> int:
         """查询Trace关联的Span数量
 
         :param db: 数据库会话
         :param trace_id: 链路唯一标识
         :return: Span数量
         """
-        return db.query(func.count(Span.id)).filter(Span.trace_id == trace_id).scalar() or 0
+        query = select(func.count(Span.id)).filter(Span.trace_id == trace_id)
+        return await db.scalar(query) or 0
 
     @staticmethod
-    def get_total_span_duration_by_trace_id(db: Session, trace_id: str) -> float:
+    async def get_total_span_duration_by_trace_id(db: AsyncSession, trace_id: str) -> float:
         """查询Trace所有Span的总耗时
 
         :param db: 数据库会话
         :param trace_id: 链路唯一标识
         :return: 总耗时(毫秒)
         """
-        return db.query(func.sum(Span.duration_ms)).filter(Span.trace_id == trace_id).scalar() or 0.0
+        query = select(func.sum(Span.duration_ms)).filter(Span.trace_id == trace_id)
+        return await db.scalar(query) or 0.0
 
     @staticmethod
-    def get_statistics(
-        db: Session,
+    async def get_statistics(
+        db: AsyncSession,
         period: str = "7d",
         user_id: Optional[int] = None,
         start_time: Optional[datetime] = None,
@@ -238,7 +229,7 @@ class TraceManagementDAO:
             period_desc = f"{start_time.strftime('%Y-%m-%d')} 至 {end_time.strftime('%Y-%m-%d')}"
 
         # 基础查询
-        query = db.query(Trace)
+        query = select(Trace)
 
         # 条件筛选
         filters = []
@@ -250,10 +241,11 @@ class TraceManagementDAO:
             filters.append(Trace.user_id == user_id)
 
         if filters:
-            query = query.filter(and_(*filters))
+            query = query.where(and_(*filters))
 
         # 基础统计
-        total_count = query.count()
+        count_query = select(func.count()).select_from(query.subquery())
+        total_count = await db.scalar(count_query) or 0
         if total_count == 0:
             return {
                 "total_count": 0,
@@ -270,17 +262,20 @@ class TraceManagementDAO:
             }
 
         # 成功/失败统计
-        success_count = query.filter(Trace.status_code < 400).count()
+        success_query = select(func.count()).select_from(query.where(Trace.status_code < 400).subquery())
+        success_count = await db.scalar(success_query) or 0
         error_count = total_count - success_count
         success_rate = success_count / total_count if total_count > 0 else 0.0
 
         # 耗时统计
-        avg_duration = db.query(func.avg(Trace.duration_ms)).filter(*filters).scalar() or 0.0
+        avg_query = select(func.avg(Trace.duration_ms)).where(and_(*filters))
+        avg_duration = await db.scalar(avg_query) or 0.0
 
         # 百分位统计（MySQL不支持percentile_cont，在应用层计算）
-        durations = db.query(Trace.duration_ms).filter(*filters).order_by(Trace.duration_ms).all()
-        duration_list = [float(d[0]) for d in durations if d[0] is not None]
-
+        duration_query = select(Trace.duration_ms).where(and_(*filters)).order_by(Trace.duration_ms)
+        duration_result = await db.execute(duration_query)
+        durations = duration_result.scalars().all()
+        duration_list = [float(d) for d in durations if d is not None]
 
         if duration_list:
             n = len(duration_list)
@@ -303,9 +298,16 @@ class TraceManagementDAO:
             p99_duration = 0.0
 
         # Span统计
-        total_span_count = db.query(func.count(Span.id)).filter(
-            Span.trace_id.in_(query.with_entities(Trace.trace_id))
-        ).scalar() or 0
+        # 先获取所有符合条件的trace_id
+        trace_id_query = select(Trace.trace_id).where(and_(*filters))
+        trace_id_result = await db.execute(trace_id_query)
+        trace_ids = trace_id_result.scalars().all()
+
+        total_span_count = 0
+        if trace_ids:
+            span_count_query = select(func.count(Span.id)).filter(Span.trace_id.in_(trace_ids))
+            total_span_count = await db.scalar(span_count_query) or 0
+
         avg_span_per_trace = total_span_count / total_count if total_count > 0 else 0.0
 
         return {

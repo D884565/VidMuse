@@ -165,7 +165,7 @@ export default function Sidebar() {
 
         {isAdmin && (
           <Link
-            to="/admin/dashboard"
+            to="/admin"
             target="_blank"
             className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-[var(--text-muted)] hover:bg-[var(--brand-soft)] hover:text-white"
           >

@@ -519,41 +519,101 @@ class VideoLibraryService:
                 logger.info(f"资产 {asset_id} 解析任务正在进行中，跳过重复触发")
                 return True
 
-            # ========== 改为异步任务调度 ==========
-            # 提交到Celery队列异步执行
-            from backend.v1.app.generate.tasks.celery_app import celery_app
-
-            # 构建任务参数
-            task_payload = {
-                "video_id": video_id,
-                "force": force,
-                "context": context
-            }
-
-            # 提交到视频分析队列
-            task = celery_app.send_task(
-                "video_analysis",
-                args=[task_payload],
-                kwargs={
-                    "user_id": None,  # 视频库解析任务不需要关联特定用户
-                    "trace_id": None
-                },
-                queue="video_analysis",
-                priority=3
-            )
-
-            # 更新状态为排队中
-            update_data = {
+            # 5. 更新状态为待执行
+            self._update_asset_sync(sync_db, asset_id, {
                 "parsing_status": "pending",
-                "execution_id": task.id,  # 使用Celery的task_id作为执行ID
                 "parsing_error": None
-            }
+            })
+
+            # 同步状态到视频库表
+            updated_asset = self._get_asset_sync(sync_db, asset_id)
+            self.sync_status(sync_db, video_id, updated_asset)
+
+            # 6. 尝试断点恢复（如果有execution_id且不强制重新执行）
+            execution_id = asset.execution_id
+            pipeline_result = None
+            context = context or {}
+
+            if execution_id and not force:
+                try:
+                    pipeline = self.get_pipeline()
+                    logger.info(f"断点恢复-流水线对象类型: {type(pipeline)}")
+
+                    # 确保pipeline是实例而不是类
+                    if callable(pipeline) and not hasattr(pipeline, 'resume_execution'):
+                        logger.info("断点恢复-流水线返回的是类，正在实例化...")
+                        pipeline = pipeline()
+
+                    pipeline_result = pipeline.resume_execution(execution_id)
+                    logger.info(f"资产 {asset_id} 断点恢复执行，execution_id={execution_id}")
+                except Exception as e:
+                    logger.warning(f"资产 {asset_id} 断点恢复失败，将重新执行: {str(e)}")
+                    execution_id = None
+
+            # 7. 重新执行完整解析
+            if not execution_id or force or not pipeline_result:
+                try:
+                    pipeline = self.get_pipeline()
+                    logger.info(f"流水线对象类型: {type(pipeline)}, 是否是实例: {isinstance(pipeline, object)}")
+
+                    # 构建流水线参数
+                    pipeline_params = {
+                        "asset_id": asset_id,
+                        "asset_url": asset.url,
+                        "object_name": self.get_path_after_baseurl(asset.url),
+                        "asset_type": asset.type,
+                        "video_url": asset.url,  # 视频类型添加video_url字段
+                        "video_id": video_id,
+                        **context
+                    }
+                    logger.info(f"流水线参数: {pipeline_params}")
+
+                    # 确保pipeline是实例而不是类
+                    if callable(pipeline) and not hasattr(pipeline, 'run_with_persistence'):
+                        logger.info("流水线返回的是类，正在实例化...")
+                        pipeline = pipeline()
+
+                    pipeline_result = pipeline.run_with_persistence(pipeline_params)
+                    logger.info(f"资产 {asset_id} 开始执行新的解析任务，执行ID: {pipeline_result.get('execution_id')}, 成功: {pipeline_result.get('success')}")
+                except Exception as e:
+                    error_msg = f"解析流水线执行失败: {str(e)}"
+                    logger.error(error_msg, exc_info=True)
+                    # 更新状态为失败
+                    self._update_asset_sync(sync_db, asset_id, {
+                        "parsing_status": "failed",
+                        "parsing_error": error_msg
+                    })
+                    updated_asset = self._get_asset_sync(sync_db, asset_id)
+                    self.sync_status(sync_db, video_id, updated_asset)
+                    return False
+
+            # 8. 处理执行结果
+            if not pipeline_result.get("success", False):
+                error_msg = f"解析失败: {pipeline_result.get('errors', [])}"
+                logger.error(f"视频 {video_id} {error_msg}")
+                # 更新状态为失败
+                update_data = {
+                    "parsing_status": "failed",
+                    "parsing_error": error_msg
+                }
+                if "execution_id" in pipeline_result:
+                    update_data["execution_id"] = pipeline_result["execution_id"]
+
+                self._update_asset_sync(sync_db, asset_id, update_data)
+                updated_asset = self._get_asset_sync(sync_db, asset_id)
+                self.sync_status(sync_db, video_id, updated_asset)
+                return False
+
+            # 9. 解析成功，更新状态为运行中（异步执行）
+            update_data = {"parsing_status": "running"}
+            if "execution_id" in pipeline_result:
+                update_data["execution_id"] = pipeline_result["execution_id"]
 
             self._update_asset_sync(sync_db, asset_id, update_data)
             updated_asset = self._get_asset_sync(sync_db, asset_id)
             self.sync_status(sync_db, video_id, updated_asset)
 
-            logger.info(f"视频 {video_id} 解析任务已提交到队列，task_id={task.id}, asset_id={asset_id}")
+            logger.info(f"视频 {video_id} 解析任务已成功触发，asset_id={asset_id}")
             return True
 
         except Exception as e:
@@ -592,45 +652,17 @@ class VideoLibraryService:
             # 4. 如果有execution_id，查询详细进度
             if asset.execution_id:
                 try:
-                    # 先尝试查询Celery任务状态
-                    from celery.result import AsyncResult
-                    from backend.v1.app.generate.tasks.celery_app import celery_app
-
-                    celery_result = AsyncResult(asset.execution_id, app=celery_app)
-
-                    # 映射Celery状态
-                    status_mapping = {
-                        "PENDING": "pending",
-                        "STARTED": "running",
-                        "SUCCESS": "completed",
-                        "FAILURE": "failed",
-                        "REVOKED": "cancelled",
-                        "RETRY": "running"
-                    }
-
-                    celery_status = status_mapping.get(celery_result.status, "pending")
-
-                    # 如果Celery任务已经完成，尝试查询流水线的详细进度
-                    if celery_status == "completed" or celery_status == "failed":
-                        pipeline = self.get_pipeline()
-                        execution_status = pipeline.get_execution_status(asset.execution_id)
-                        if execution_status:
-                            progress["progress_detail"] = {
-                                "current_processor": execution_status["current_processor_index"] + 1,
-                                "total_processors": execution_status["total_processors"],
-                                "progress_percent": round((execution_status["current_processor_index"] + 1) / execution_status["total_processors"] * 100, 2) if execution_status["total_processors"] > 0 else 0,
-                                "status": execution_status["status"],
-                                "created_at": execution_status["created_at"],
-                                "updated_at": execution_status["updated_at"]
-                            }
-                    else:
-                        # Celery任务还在队列中或执行中
+                    pipeline = self.get_pipeline()
+                    execution_status = pipeline.get_execution_status(asset.execution_id)
+                    if execution_status:
                         progress["progress_detail"] = {
-                            "status": celery_status,
-                            "progress_percent": 0 if celery_status == "pending" else 50,
-                            "message": "任务排队中" if celery_status == "pending" else "任务执行中"
+                            "current_processor": execution_status["current_processor_index"] + 1,
+                            "total_processors": execution_status["total_processors"],
+                            "progress_percent": round((execution_status["current_processor_index"] + 1) / execution_status["total_processors"] * 100, 2) if execution_status["total_processors"] > 0 else 0,
+                            "status": execution_status["status"],
+                            "created_at": execution_status["created_at"],
+                            "updated_at": execution_status["updated_at"]
                         }
-
                 except Exception as e:
                     import logging
                     logger = logging.getLogger(__name__)

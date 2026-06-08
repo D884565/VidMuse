@@ -137,25 +137,25 @@ class VectorizationProcessor(BaseProcessor):
         # 根据存储类型获取必要的来源ID，确保转换为字符串
         source_id = None
         if self.store_type == "slice":
-            source_id = context.get(constants.VIDEO_ID) or context.get(constants.SOURCE_ID)
+            source_id = context.get(constants.VIDEO_ID) or context.get(constants.SOURCE_ID) or context.get("asset_id")
             if not source_id:
-                raise ValueError("存储类型为slice时，上下文必须包含video_id或source_id")
+                raise ValueError("存储类型为slice时，上下文必须包含video_id、source_id或asset_id")
         elif self.store_type == "video":
-            source_id = context.get(constants.VIDEO_ID)
+            source_id = context.get(constants.VIDEO_ID) or context.get("asset_id")
             if not source_id:
-                raise ValueError("存储类型为video时，上下文必须包含video_id")
+                raise ValueError("存储类型为video时，上下文必须包含video_id或asset_id")
         elif self.store_type == "image":
-            source_id = context.get(constants.IMAGE_SET_ID) or context.get(constants.VIDEO_ID)
+            source_id = context.get(constants.IMAGE_SET_ID) or context.get(constants.VIDEO_ID) or context.get("asset_id")
             if not source_id:
-                raise ValueError("存储类型为image时，上下文必须包含image_set_id或video_id")
+                raise ValueError("存储类型为image时，上下文必须包含image_set_id、video_id或asset_id")
         elif self.store_type == "product":
             source_id = context.get(constants.PRODUCT_ID)
             if not source_id:
                 raise ValueError("存储类型为product时，上下文必须包含product_id")
         elif self.store_type == "audio":
-            source_id = context.get(constants.SOURCE_ID) or context.get(constants.VIDEO_ID)
+            source_id = context.get(constants.SOURCE_ID) or context.get(constants.VIDEO_ID) or context.get("asset_id")
             if not source_id:
-                raise ValueError("存储类型为audio时，上下文必须包含source_id或video_id")
+                raise ValueError("存储类型为audio时，上下文必须包含source_id、video_id或asset_id")
 
         # 确保source_id是字符串类型，兼容整数ID
         if source_id is not None:

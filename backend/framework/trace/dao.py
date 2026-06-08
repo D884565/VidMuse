@@ -112,8 +112,8 @@ async def save_trace_data(
     if not trace_config.TRACE_ENABLED:
         return
 
-    try:
-        async with SessionLocal() as session:
+    async with SessionLocal() as session:
+        try:
             # 创建Trace记录
             trace = Trace(
                 trace_id=trace_id,
@@ -137,12 +137,12 @@ async def save_trace_data(
             await session.commit()
             logger.debug(f"Successfully saved trace {trace_id} with {len(spans or [])} spans")
 
-    except Exception as e:
-        logger.error(f"Failed to save trace {trace_id}: {str(e)}", exc_info=True)
-        try:
-            await session.rollback()
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to save trace {trace_id}: {str(e)}", exc_info=True)
+            try:
+                await session.rollback()
+            except:
+                pass
 
 
 async def batch_save_spans(spans: List[Span], trace_id: Optional[str] = None) -> None:
@@ -153,24 +153,27 @@ async def batch_save_spans(spans: List[Span], trace_id: Optional[str] = None) ->
     if not trace_config.TRACE_ENABLED or not spans:
         return
 
-    try:
-        current_trace_id = trace_id or get_trace_id()
-        if not current_trace_id:
-            logger.warning("No trace_id provided and no trace context found, skipping span save")
-            return
+    current_trace_id = trace_id or get_trace_id()
+    # 如果没有全局trace_id，尝试从第一个span获取（适用于独立运行的span）
+    if not current_trace_id and spans:
+        current_trace_id = spans[0].trace_id
+    if not current_trace_id:
+        logger.warning("No trace_id provided and no trace context found, skipping span save")
+        return
 
-        async with SessionLocal() as session:
+    async with SessionLocal() as session:
+        try:
             span_models = [_convert_span_to_model(span, current_trace_id) for span in spans]
             session.add_all(span_models)
             await session.commit()
             logger.debug(f"Successfully batch saved {len(span_models)} spans for trace {current_trace_id}")
 
-    except Exception as e:
-        logger.error(f"Failed to batch save spans: {str(e)}", exc_info=True)
-        try:
-            await session.rollback()
-        except:
-            pass
+        except Exception as e:
+            logger.error(f"Failed to batch save spans: {str(e)}", exc_info=True)
+            try:
+                await session.rollback()
+            except:
+                pass
 
 
 async def add_to_batch(span: Span, trace_id: Optional[str] = None) -> None:
@@ -184,16 +187,19 @@ async def add_to_batch(span: Span, trace_id: Optional[str] = None) -> None:
     if trace_id:
         span.trace_id = trace_id
 
+    flush_queue = None
     with _batch_lock:
         _batch_queue.append(span)
 
         # 达到批量大小则触发写入
         if len(_batch_queue) >= trace_config.TRACE_BATCH_SIZE:
             # 拷贝队列数据，避免长时间持有锁
-            queue_copy = _batch_queue.copy()
+            flush_queue = _batch_queue.copy()
             _batch_queue.clear()
-            # 释放锁后再执行IO操作
-            await _flush_spans(queue_copy)
+
+    # 释放锁后再执行IO操作
+    if flush_queue is not None:
+        await _flush_spans(flush_queue)
 
 
 async def flush_batch() -> None:
@@ -224,12 +230,16 @@ async def _flush_spans(spans: List[Span]) -> None:
     try:
         # 按trace_id分组spans
         spans_by_trace = {}
+        import uuid
         for span in spans:
             current_trace_id = span.trace_id
-            if current_trace_id:
-                if current_trace_id not in spans_by_trace:
-                    spans_by_trace[current_trace_id] = []
-                spans_by_trace[current_trace_id].append(span)
+            # 没有trace_id的span自动生成一个（保持和中间件一致的8位长度）
+            if not current_trace_id:
+                current_trace_id = uuid.uuid4().hex[:8]
+                span.trace_id = current_trace_id
+            if current_trace_id not in spans_by_trace:
+                spans_by_trace[current_trace_id] = []
+            spans_by_trace[current_trace_id].append(span)
 
         # 批量保存每个trace的spans
         for trace_id, trace_spans in spans_by_trace.items():
@@ -251,23 +261,28 @@ async def _flush_batch_internal() -> None:
         return
 
     try:
+        # 拷贝队列数据，避免长时间占用
+        spans_to_flush = _batch_queue.copy()
+        _batch_queue.clear()
+
         # 按trace_id分组spans
         spans_by_trace = {}
-        for span in _batch_queue:
+        import uuid
+        for span in spans_to_flush:
             current_trace_id = span.trace_id
-            if current_trace_id:
-                if current_trace_id not in spans_by_trace:
-                    spans_by_trace[current_trace_id] = []
-                spans_by_trace[current_trace_id].append(span)
+            # 没有trace_id的span自动生成一个（保持和中间件一致的8位长度）
+            if not current_trace_id:
+                current_trace_id = uuid.uuid4().hex[:8]
+                span.trace_id = current_trace_id
+            if current_trace_id not in spans_by_trace:
+                spans_by_trace[current_trace_id] = []
+            spans_by_trace[current_trace_id].append(span)
 
         # 批量保存每个trace的spans
         for trace_id, spans in spans_by_trace.items():
             await batch_save_spans(spans, trace_id)
 
-        logger.debug(f"Flushed batch of {len(_batch_queue)} spans")
+        logger.debug(f"Flushed batch of {len(spans_to_flush)} spans")
 
     except Exception as e:
         logger.error(f"Failed to flush span batch: {str(e)}", exc_info=True)
-    finally:
-        # 清空队列
-        _batch_queue = []

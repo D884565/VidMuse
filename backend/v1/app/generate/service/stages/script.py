@@ -353,11 +353,11 @@ class ScriptGenerationService:
                 parts.append(f"- 原价：{info['original_price']}")
             if info.get("description"):
                 parts.append(f"- 商品描述：{info['description']}")
-            if info.get("specs"):
-                specs = info["specs"]
-                if isinstance(specs, dict):
-                    specs_text = "、".join(f"{k}:{v}" for k, v in specs.items())
-                    parts.append(f"- 规格参数：{specs_text}")
+            # 从ai_features中获取规格参数，兼容旧格式
+            specs = info.get("specs") or info.get("ai_features", {}).get("parameters", {})
+            if specs and isinstance(specs, dict):
+                specs_text = "、".join(f"{k}:{v}" for k, v in specs.items())
+                parts.append(f"- 规格参数：{specs_text}")
             return "\n".join(parts) if parts else "- 商品详情：无"
         except (json.JSONDecodeError, TypeError):
             return f"- 商品详情：{product_info_json}"

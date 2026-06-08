@@ -5,7 +5,7 @@
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.framework.exceptions.exceptions import NotFoundException
 from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND
@@ -56,8 +56,8 @@ class TraceManagementService:
         return tree
 
     @staticmethod
-    def list_traces(
-        db: Session,
+    async def list_traces(
+        db: AsyncSession,
         trace_id: Optional[str] = None,
         method: Optional[str] = None,
         path: Optional[str] = None,
@@ -90,7 +90,7 @@ class TraceManagementService:
         :param page_size: 每页数量
         :return: Trace列表响应DTO
         """
-        total, traces = trace_management_dao.list_traces(
+        total, traces = await trace_management_dao.list_traces(
             db=db,
             trace_id=trace_id,
             method=method,
@@ -121,20 +121,20 @@ class TraceManagementService:
         )
 
     @staticmethod
-    def get_trace_detail(db: Session, trace_id: int) -> TraceDetail:
+    async def get_trace_detail(db: AsyncSession, trace_id: int) -> TraceDetail:
         """获取Trace详情
 
         :param db: 数据库会话
         :param trace_id: Trace ID
         :return: Trace详情DTO
         """
-        trace = trace_management_dao.get_trace_by_id(db, trace_id)
+        trace = await trace_management_dao.get_trace_by_id(db, trace_id)
         if not trace:
             raise NotFoundException(RESOURCE_NOT_FOUND, f"Trace ID {trace_id} 不存在")
 
         # 获取关联的Span统计（确保始终返回有效值，避免None）
-        span_count = trace_management_dao.get_span_count_by_trace_id(db, trace.trace_id) or 0
-        total_span_duration = trace_management_dao.get_total_span_duration_by_trace_id(db, trace.trace_id) or 0.0
+        span_count = await trace_management_dao.get_span_count_by_trace_id(db, trace.trace_id) or 0
+        total_span_duration = await trace_management_dao.get_total_span_duration_by_trace_id(db, trace.trace_id) or 0.0
 
         # 转换为详情DTO - 先验证基础字段，再添加统计字段，避免必填字段校验失败
         trace_base = TraceBase.model_validate(trace)
@@ -147,8 +147,8 @@ class TraceManagementService:
         return trace_detail
 
     @staticmethod
-    def get_trace_spans(
-        db: Session,
+    async def get_trace_spans(
+        db: AsyncSession,
         trace_id: int,
         include_tree: bool = True,
         include_details: bool = False
@@ -161,11 +161,11 @@ class TraceManagementService:
         :param include_details: 是否包含详细信息
         :return: Span列表响应DTO
         """
-        trace = trace_management_dao.get_trace_by_id(db, trace_id)
+        trace = await trace_management_dao.get_trace_by_id(db, trace_id)
         if not trace:
             raise NotFoundException(RESOURCE_NOT_FOUND, f"Trace ID {trace_id} 不存在")
 
-        spans = trace_management_dao.get_spans_by_trace_id(
+        spans = await trace_management_dao.get_spans_by_trace_id(
             db=db,
             trace_id=trace.trace_id,
             include_details=include_details
@@ -186,7 +186,7 @@ class TraceManagementService:
 
         # 构建树形结构
         span_tree = None
-        if include_tree and include_details:
+        if include_tree:
             span_tree = TraceManagementService._build_span_tree(spans)
 
         return SpanListResponse(
@@ -197,14 +197,14 @@ class TraceManagementService:
         )
 
     @staticmethod
-    def get_span_detail(db: Session, span_id: int) -> SpanDetail:
+    async def get_span_detail(db: AsyncSession, span_id: int) -> SpanDetail:
         """获取Span详情
 
         :param db: 数据库会话
         :param span_id: Span ID
         :return: Span详情DTO
         """
-        span = trace_management_dao.get_span_by_id(db, span_id)
+        span = await trace_management_dao.get_span_by_id(db, span_id)
         if not span:
             raise NotFoundException(RESOURCE_NOT_FOUND, f"Span ID {span_id} 不存在")
 
@@ -216,7 +216,7 @@ class TraceManagementService:
         span_detail = SpanDetail.model_validate(span_data)
 
         # 查询子Span - 转换时添加必填字段
-        child_spans = trace_management_dao.get_child_spans(db, span.trace_id, span.span_id)
+        child_spans = await trace_management_dao.get_child_spans(db, span.trace_id, span.span_id)
         span_detail.child_spans = []
         for child in child_spans:
             child_data = {
@@ -230,8 +230,8 @@ class TraceManagementService:
         return span_detail
 
     @staticmethod
-    def get_statistics(
-        db: Session,
+    async def get_statistics(
+        db: AsyncSession,
         period: str = "7d",
         user_id: Optional[int] = None,
         start_time: Optional[datetime] = None,
@@ -246,7 +246,7 @@ class TraceManagementService:
         :param end_time: 自定义结束时间（可选）
         :return: 统计响应DTO
         """
-        stat = trace_management_dao.get_statistics(
+        stat = await trace_management_dao.get_statistics(
             db=db,
             period=period,
             user_id=user_id,

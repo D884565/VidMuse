@@ -312,6 +312,111 @@ class UserService:
         except jwt.InvalidTokenError:
             raise BusinessException(UNAUTHORIZED)
 
+    # ==================== 管理员专用方法 ====================
+
+    @staticmethod
+    def admin_create_user(db: Session, username: str, password: str, avatar_url: Optional[str] = None, role: int = 1) -> dict:
+        """管理员创建用户
+
+        :param db: 数据库会话
+        :param username: 用户名
+        :param password: 明文密码
+        :param avatar_url: 头像URL（可选）
+        :param role: 用户角色（默认1普通用户）
+        :return: 创建后的用户信息
+        :raises BusinessException: 用户名已存在时抛出异常
+        """
+        # 检查用户名是否已存在
+        existing = UserDAO.get_user_by_username(db, username)
+        if existing:
+            raise BusinessException(USER_ALREADY_EXISTS)
+
+        # 创建用户
+        user = UserDAO.create_user(db, {
+            "username": username,
+            "password_hash": UserService._hash_password(password),
+            "avatar_url": avatar_url,
+            "role": role
+        })
+
+        return {
+            "id": user.id,
+            "username": user.username,
+            "avatar_url": user.avatar_url,
+            "role": user.role,
+            "role_name": ROLE_NAME_MAP.get(user.role, "未知"),
+            "created_at": user.created_at.isoformat() if user.created_at else "",
+        }
+
+    @staticmethod
+    def admin_update_user(db: Session, user_id: int, username: Optional[str] = None, avatar_url: Optional[str] = None,
+                         role: Optional[int] = None, password: Optional[str] = None) -> dict:
+        """管理员更新用户信息
+
+        :param db: 数据库会话
+        :param user_id: 要更新的用户ID
+        :param username: 新用户名（可选）
+        :param avatar_url: 新头像URL（可选）
+        :param role: 新角色（可选）
+        :param password: 新密码（可选）
+        :return: 更新后的用户信息
+        :raises BusinessException: 用户不存在或用户名已存在时抛出异常
+        """
+        user = UserDAO.get_user_by_id(db, user_id)
+        if not user:
+            raise BusinessException(USER_NOT_FOUND)
+
+        update_data = {}
+
+        # 如果要修改用户名，先检查是否已被占用
+        if username is not None:
+            existing = UserDAO.get_user_by_username(db, username)
+            if existing and existing.id != user_id:
+                raise BusinessException(USER_ALREADY_EXISTS)
+            update_data["username"] = username
+
+        if avatar_url is not None:
+            update_data["avatar_url"] = avatar_url
+
+        if role is not None:
+            update_data["role"] = role
+
+        if password is not None:
+            update_data["password_hash"] = UserService._hash_password(password)
+
+        # 执行更新
+        if update_data:
+            user = UserDAO.update_user(db, user_id, update_data)
+
+        return {
+            "id": user.id,
+            "username": user.username,
+            "avatar_url": user.avatar_url,
+            "role": user.role,
+            "role_name": ROLE_NAME_MAP.get(user.role, "未知"),
+            "updated_at": user.updated_at.isoformat() if user.updated_at else "",
+        }
+
+    @staticmethod
+    def admin_delete_user(db: Session, user_id: int) -> bool:
+        """管理员删除用户（软删除）
+
+        :param db: 数据库会话
+        :param user_id: 要删除的用户ID
+        :return: 删除成功返回True，用户不存在返回False
+        :raises BusinessException: 尝试删除超级管理员时抛出异常
+        """
+        user = UserDAO.get_user_by_id(db, user_id)
+        if not user:
+            return False
+
+        # 禁止删除超级管理员
+        if user.role == 0:
+            raise BusinessException(message="禁止删除超级管理员账号")
+
+        # 执行硬删除
+        return UserDAO.delete_user(db, user_id)
+
 
 # 模块级单例，Controller 层直接引用
 user_service = UserService()

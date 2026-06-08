@@ -2,7 +2,6 @@
 
 职责：定义商品分类模块的 HTTP 接口，处理请求参数解析和响应包装。
 所有业务逻辑委托给 ProductCategoryService，自身不包含业务代码。
-分类接口为公共接口，不需要登录认证。
 """
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session

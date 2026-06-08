@@ -68,24 +68,13 @@ class Settings(BaseSettings):
     MINIO_SECURE: bool = False
 
     # 向量数据库配置
-    VECTOR_DB_TYPE: str = "qdrant"  # 可选值: chromadb, milvus , qdrant
+    VECTOR_DB_TYPE: str = "qdrant"  # 可选值: qdrant
 
     # ChromaDB
     CHROMADB_HOST: str = "localhost"
     CHROMADB_PORT: int = 8001
     CHROMADB_SLICE_COLLECTION: str = "slice_knowledge"
     CHROMADB_VIDEO_COLLECTION: str = "video_knowledge"
-
-
-
-    # Milvus配置
-    MILVUS_HOST: str = "localhost"
-    MILVUS_PORT: int = 19530
-    MILVUS_USERNAME: str = ""
-    MILVUS_PASSWORD: str = ""
-    MILVUS_SLICE_COLLECTION: str = "slice_knowledge"
-    MILVUS_VIDEO_COLLECTION: str = "video_knowledge"
-    MILVUS_VECTOR_DIMENSION: int = 1536  # 默认OpenAI embedding维度
 
     # Qdrant配置
     QDRANT_HOST: str = "localhost"
@@ -103,7 +92,7 @@ class Settings(BaseSettings):
 
 
 
-    QDRANT_VECTOR_DIMENSION: int = 1536  # 默认OpenAI embedding维度
+    QDRANT_VECTOR_DIMENSION: int = 2048  # 使用与嵌入模型一致的维度
 
     # OpenAI
     OPENAI_API_KEY: str = ""

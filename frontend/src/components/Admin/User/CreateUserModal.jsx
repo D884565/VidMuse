@@ -5,9 +5,9 @@ import { createUser } from '../../../services/admin.js'
 export default function CreateUserModal({ isOpen, onClose, onSuccess }) {
   const [formData, setFormData] = useState({
     username: '',
-    email: '',
     password: '',
-    role: 'user',
+    role: 1,
+    avatar_url: '',
   })
   const [loading, setLoading] = useState(false)
 
@@ -18,7 +18,7 @@ export default function CreateUserModal({ isOpen, onClose, onSuccess }) {
       await createUser(formData)
       onSuccess()
       onClose()
-      setFormData({ username: '', email: '', password: '', role: 'user' })
+      setFormData({ username: '', password: '', role: 1, avatar_url: '' })
     } catch (error) {
       console.error('创建用户失败:', error)
       alert('创建用户失败，请重试')
@@ -50,34 +50,36 @@ export default function CreateUserModal({ isOpen, onClose, onSuccess }) {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
-            <input
-              type="email"
-              required
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">密码</label>
             <input
               type="password"
               required
+              minLength={8}
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">头像URL（可选）</label>
+            <input
+              type="url"
+              value={formData.avatar_url}
+              onChange={(e) => setFormData({ ...formData, avatar_url: e.target.value })}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              placeholder="https://example.com/avatar.jpg"
+            />
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">角色</label>
             <select
               value={formData.role}
-              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+              onChange={(e) => setFormData({ ...formData, role: parseInt(e.target.value) })}
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
-              <option value="user">普通用户</option>
-              <option value="admin">管理员</option>
+              <option value="1">普通用户</option>
+              <option value="2">VIP用户</option>
+              <option value="0">超级管理员</option>
             </select>
           </div>
           <div className="flex justify-end space-x-3 pt-4">

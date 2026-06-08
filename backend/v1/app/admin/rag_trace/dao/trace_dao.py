@@ -3,8 +3,8 @@
 职责：封装所有对 agent_traces 表的数据库操作，Service 层通过此层访问数据库。
 """
 from typing import Optional, Tuple, List
-from sqlalchemy import func, and_, or_
-from sqlalchemy.orm import Session
+from sqlalchemy import func, and_, or_, select, Integer
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
 
 from backend.v1.app.models.agent_trace import AgentTrace
@@ -14,18 +14,19 @@ class AgentTraceDAO:
     """Agent轨迹数据访问层"""
 
     @staticmethod
-    def get_trace_by_id(db: Session, trace_id: int) -> Optional[AgentTrace]:
+    async def get_trace_by_id(db: AsyncSession, trace_id: int) -> Optional[AgentTrace]:
         """根据轨迹ID查询详情
 
         :param db: 数据库会话
         :param trace_id: 轨迹ID
         :return: AgentTrace 对象，不存在返回 None
         """
-        return db.query(AgentTrace).filter(AgentTrace.id == trace_id).first()
+        result = await db.execute(select(AgentTrace).where(AgentTrace.id == trace_id))
+        return result.scalar_one_or_none()
 
     @staticmethod
-    def get_traces_by_session_id(
-        db: Session,
+    async def get_traces_by_session_id(
+        db: AsyncSession,
         session_id: str,
         page: int = 1,
         page_size: int = 20
@@ -38,23 +39,23 @@ class AgentTraceDAO:
         :param page_size: 每页数量
         :return: (总数量, 轨迹列表)
         """
-        query = db.query(AgentTrace).filter(AgentTrace.session_id == session_id)
+        query = select(AgentTrace).where(AgentTrace.session_id == session_id)
 
         # 统计总数
-        total = query.count()
+        count_query = select(func.count()).select_from(query.subquery())
+        total = await db.scalar(count_query) or 0
 
         # 分页查询
         offset = (page - 1) * page_size
-        traces = query.order_by(AgentTrace.created_at.desc()) \
-            .offset(offset) \
-            .limit(page_size) \
-            .all()
+        query = query.order_by(AgentTrace.created_at.desc()).offset(offset).limit(page_size)
+        result = await db.execute(query)
+        traces = result.scalars().all()
 
         return total, traces
 
     @staticmethod
-    def get_traces_by_user_id(
-        db: Session,
+    async def get_traces_by_user_id(
+        db: AsyncSession,
         user_id: int,
         page: int = 1,
         page_size: int = 20
@@ -67,23 +68,23 @@ class AgentTraceDAO:
         :param page_size: 每页数量
         :return: (总数量, 轨迹列表)
         """
-        query = db.query(AgentTrace).filter(AgentTrace.user_id == user_id)
+        query = select(AgentTrace).where(AgentTrace.user_id == user_id)
 
         # 统计总数
-        total = query.count()
+        count_query = select(func.count()).select_from(query.subquery())
+        total = await db.scalar(count_query) or 0
 
         # 分页查询
         offset = (page - 1) * page_size
-        traces = query.order_by(AgentTrace.created_at.desc()) \
-            .offset(offset) \
-            .limit(page_size) \
-            .all()
+        query = query.order_by(AgentTrace.created_at.desc()).offset(offset).limit(page_size)
+        result = await db.execute(query)
+        traces = result.scalars().all()
 
         return total, traces
 
     @staticmethod
-    def list_traces(
-        db: Session,
+    async def list_traces(
+        db: AsyncSession,
         session_id: Optional[str] = None,
         user_id: Optional[int] = None,
         project_id: Optional[int] = None,
@@ -110,7 +111,7 @@ class AgentTraceDAO:
         :param page_size: 每页数量
         :return: (总数量, 轨迹列表)
         """
-        query = db.query(AgentTrace)
+        query = select(AgentTrace)
 
         # 条件筛选
         filters = []
@@ -135,23 +136,23 @@ class AgentTraceDAO:
             ))
 
         if filters:
-            query = query.filter(and_(*filters))
+            query = query.where(and_(*filters))
 
         # 统计总数
-        total = query.count()
+        count_query = select(func.count()).select_from(query.subquery())
+        total = await db.scalar(count_query) or 0
 
         # 分页查询
         offset = (page - 1) * page_size
-        traces = query.order_by(AgentTrace.created_at.desc()) \
-            .offset(offset) \
-            .limit(page_size) \
-            .all()
+        query = query.order_by(AgentTrace.created_at.desc()).offset(offset).limit(page_size)
+        result = await db.execute(query)
+        traces = result.scalars().all()
 
         return total, traces
 
     @staticmethod
-    def get_statistics(
-        db: Session,
+    async def get_statistics(
+        db: AsyncSession,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
         user_id: Optional[int] = None,
@@ -166,9 +167,9 @@ class AgentTraceDAO:
         :param project_id: 按项目ID筛选（可选）
         :return: 统计数据字典
         """
-        query = db.query(
+        query = select(
             func.count(AgentTrace.id).label("total_count"),
-            func.sum(AgentTrace.success.cast(int)).label("success_count"),
+            func.sum(AgentTrace.success.cast(Integer)).label("success_count"),
             func.avg(AgentTrace.cost_time).label("avg_cost_time"),
             func.sum(func.json_length(AgentTrace.tool_calls)).label("total_tool_calls")
         )
@@ -185,9 +186,10 @@ class AgentTraceDAO:
             filters.append(AgentTrace.project_id == project_id)
 
         if filters:
-            query = query.filter(and_(*filters))
+            query = query.where(and_(*filters))
 
-        stat = query.first()
+        result = await db.execute(query)
+        stat = result.first()
 
         total_count = stat.total_count or 0
         success_count = stat.success_count or 0

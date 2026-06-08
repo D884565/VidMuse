@@ -18,11 +18,9 @@ _get_db = None
 _push_service = None
 
 def _get_db_session():
-    global _get_db
-    if _get_db is None:
-        from backend.framework.db.session import get_db
-        _get_db = get_db
-    return next(_get_db())
+    """获取数据库会话实例"""
+    from backend.store.database.async_database import SessionLocal
+    return SessionLocal()
 
 def _get_push_service():
     global _push_service
@@ -113,8 +111,7 @@ async def _do_push(
             message_type, title, content, level = msg_data
 
         # 获取数据库会话（延迟导入）
-        db = _get_db_session()
-        try:
+        async with _get_db_session() as db:
             # 获取推送服务（延迟导入）
             push_service = _get_push_service()
 
@@ -128,8 +125,6 @@ async def _do_push(
                 level=level,
                 persist=push_config.persist_messages
             )
-        finally:
-            db.close()
 
     except Exception as e:
         # 推送过程中的异常不影响主业务流程，只记录日志
@@ -207,13 +202,16 @@ def trace(
 
         @functools.wraps(func)
         def sync_wrapper(*args: Any, **kwargs: Any) -> Any:
-            # 确定类名
+            # 确定类名和绑定方法
             class_name = None
+            bound_func = func  # 默认使用原始函数
             if is_class_method and args:
                 if params[0] == "self":
                     class_name = args[0].__class__.__name__
+                    bound_func = func.__get__(args[0], args[0].__class__)
                 else:  # cls
                     class_name = args[0].__name__
+                    bound_func = func.__get__(args[0], args[0])
 
             # 启动span
             span = start_span(
@@ -237,7 +235,7 @@ def trace(
                             _sync_push(
                                 push_config, user_id,
                                 push_config.start_message_generator,
-                                func, args, kwargs
+                                bound_func, args, kwargs
                             )
                 except Exception as e:
                     import logging
@@ -256,7 +254,7 @@ def trace(
                             _sync_push(
                                 push_config, user_id,
                                 push_config.end_message_generator,
-                                func, result
+                                bound_func, result
                             )
                     except Exception as e:
                         import logging
@@ -275,7 +273,7 @@ def trace(
                             _sync_push(
                                 push_config, user_id,
                                 push_config.error_message_generator,
-                                func, e
+                                bound_func, e
                             )
                     except Exception as push_e:
                         import logging
@@ -290,18 +288,25 @@ def trace(
                 # 只有当没有trace上下文时（说明在独立线程中运行），才添加到批量队列
                 # 有上下文的span会在中间件中统一保存
                 if not get_trace_id():
+                    # 如果span没有trace_id，自动生成一个（保持和中间件一致的8位长度）
+                    if not span.trace_id:
+                        import uuid
+                        span.trace_id = uuid.uuid4().hex[:8]
                     # 在后台事件循环中异步添加到批量队列
                     _run_async(add_to_batch(span))
 
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
-            # 确定类名
+            # 确定类名和绑定方法
             class_name = None
+            bound_func = func  # 默认使用原始函数
             if is_class_method and args:
                 if params[0] == "self":
                     class_name = args[0].__class__.__name__
+                    bound_func = func.__get__(args[0], args[0].__class__)
                 else:  # cls
                     class_name = args[0].__name__
+                    bound_func = func.__get__(args[0], args[0])
 
             # 启动span
             span = start_span(
@@ -326,7 +331,7 @@ def trace(
                             asyncio.create_task(_do_push(
                                 push_config, user_id,
                                 push_config.start_message_generator,
-                                func, args, kwargs
+                                bound_func, args, kwargs
                             ))
                 except Exception as e:
                     import logging
@@ -345,7 +350,7 @@ def trace(
                             asyncio.create_task(_do_push(
                                 push_config, user_id,
                                 push_config.end_message_generator,
-                                func, result
+                                bound_func, result
                             ))
                     except Exception as e:
                         import logging
@@ -364,7 +369,7 @@ def trace(
                             asyncio.create_task(_do_push(
                                 push_config, user_id,
                                 push_config.error_message_generator,
-                                func, e
+                                bound_func, e
                             ))
                     except Exception as push_e:
                         import logging

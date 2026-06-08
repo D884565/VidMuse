@@ -24,10 +24,8 @@ class Product(Base):
     category_path: Mapped[str | None] = mapped_column(String(200), nullable=True, comment="分类路径，冗余存储方便检索，如\"/1/2/3/\"")
     description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="商品描述")
 
-    # 卖点、规格、标签：以 JSON 字符串存储
+    # 卖点：以 JSON 字符串存储
     selling_points: Mapped[str | None] = mapped_column(Text, nullable=True, comment="卖点JSON数组")
-    specs: Mapped[str | None] = mapped_column(Text, nullable=True, comment="规格JSON对象")
-    tags: Mapped[str | None] = mapped_column(Text, nullable=True, comment="标签JSON数组")
 
     # 价格与图片
     price: Mapped[float | None] = mapped_column(Numeric(12, 2), nullable=True, comment="价格（元，保留2位小数）")
@@ -71,8 +69,6 @@ class Product(Base):
             "category_path": self.category_path,
             "description": self.description,
             "selling_points": self.selling_points,
-            "specs": self.specs,
-            "tags": self.tags,
             "price": float(self.price) if self.price is not None else None,
             "main_image_url": self.main_image_url,
             "images": self.images,

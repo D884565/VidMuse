@@ -138,11 +138,17 @@ class PromptManager:
             video_url: 视频URL
             video_duration: 视频时长（毫秒），会自动转换为秒
         """
-        return self.get_prompt(
-            self.DIRECT_VIDEO_UNDERSTANDING,
-            video_url=video_url,
-            video_duration=video_duration // 1000 if video_duration else 0
-        )
+        # 直接加载提示词文本，不使用通用format方法，避免JSON大括号被解析为占位符
+        if self.DIRECT_VIDEO_UNDERSTANDING not in self._prompt_cache:
+            self._prompt_cache[self.DIRECT_VIDEO_UNDERSTANDING] = load_prompt(self.DIRECT_VIDEO_UNDERSTANDING)
+
+        template = self._prompt_cache[self.DIRECT_VIDEO_UNDERSTANDING]
+
+        # 使用replace安全替换变量，不影响JSON中的大括号
+        template = template.replace("{video_url}", video_url)
+        template = template.replace("{video_duration}", str(video_duration // 1000 if video_duration else 0))
+
+        return template
 
     def get_slice_template(self) -> Dict[str, Any]:
         """获取分片校验模板（快捷方法）"""

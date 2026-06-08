@@ -17,7 +17,6 @@ class PushService:
     """推送服务"""
 
     @staticmethod
-    @trace
     async def push_message(
         db: Session,
         user_id: int,

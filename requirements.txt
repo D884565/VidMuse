@@ -12,21 +12,13 @@ pydantic-settings==2.9.1       # 配置管理
 email-validator==2.2.0
 httpx==0.28.1                  # 异步 HTTP 客户端
 
-# ==================== AI 层 ====================
-# LangChain 核心生态 (v1.x 系列，2026年稳定版)
-langchain==0.3.24
-langchain-core==0.3.58
-langchain-community==0.3.22    # 第三方集成
-langchain-openai==0.3.14       # OpenAI 适配
 
 
-# LangGraph - 工作流编排
-langgraph==0.3.32
-langgraph-checkpoint==2.0.24   # 状态持久化
 
 # LLM 相关
 openai==1.76.0
 volcengine-python-sdk==5.0.27  # 火山引擎 SDK
+tos>=2.0.0
 
 tiktoken==0.9.0                # Token 计算
 
@@ -40,18 +32,21 @@ PyMySQL==1.1.1                 # 同步 MySQL
 # MinIO (对象存储)
 minio==7.2.15
 
-# ChromaDB (向量数据库)
-chromadb==1.0.5
-chromadb-client==1.0.5         # 轻量级客户端
+
+# Redis
+redis==7.4.1                   # Redis 客户端，用于ID生成器和缓存
 
 # ==================== 爬虫层 ====================
 playwright==1.49.1             # 浏览器自动化（商品页面渲染）
 beautifulsoup4==4.13.4         # HTML 解析
 opencv-python
 websockets==12.0          # WebSocket客户端，用于豆包语音合成
-<<<<<<< HEAD
 numpy
 ffmpeg-python
 jsonschema==4.23.0        # JSON Schema校验
-=======
->>>>>>> 60880ce05f86a3a27bec06f386de151851e5d810
+
+celery==5.3.0            # 分布式任务队列
+
+
+
+PyJWT>=2.8.0

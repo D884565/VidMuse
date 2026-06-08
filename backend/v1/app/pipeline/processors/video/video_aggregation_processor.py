@@ -27,7 +27,8 @@ class VideoAggregationProcessor(BaseProcessor):
 
         输出（写入上下文）：
         - aggregated_video_data: Dict 聚合后的视频完整数据，包含所有分片信息
-        - segment_list: List[Dict] 分片索引列表，供整体理解使用
+        - segment_list: List[Dict] 分片索引列表（内容仅保留前100字符摘要，适合展示和索引）
+        - all_script_lines: List[str] 所有分片的台词列表
         """
         # 优先使用校验通过的分片，如果没有则使用所有理解后的分片
         valid_slices = context.get(constants.VALID_SLICES, [])

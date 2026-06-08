@@ -25,8 +25,6 @@ class ProductCreateRequest(BaseModel):
     detail_url: Optional[str] = Field(None, max_length=1000, description="商品详情页链接")
     platform: Optional[str] = Field(None, max_length=20, description="来源平台 taobao/jd/pdd/douyin")
     platform_id: Optional[str] = Field(None, max_length=100, description="平台商品ID")
-    specs: Optional[Dict[str, Any]] = Field(None, description="规格参数，如{'容量': '60ml', '产地': '日本'}")
-    tags: Optional[List[str]] = Field(None, description="标签列表，如['防晒', '夏季必备']")
     images: Optional[List[str]] = Field(None, description="商品图片URL列表（兼容旧版，推荐使用asset_ids关联已上传资产）")
     auto_parse: bool = Field(False, description="是否创建后自动触发解析")
     asset_ids: Optional[List[int]] = Field(None, description="关联的资产ID列表，可关联已上传的图片/视频/音频等")
@@ -46,8 +44,6 @@ class ProductUpdateRequest(BaseModel):
     detail_url: Optional[str] = Field(None, max_length=1000, description="详情页链接")
     platform: Optional[str] = Field(None, max_length=20, description="来源平台")
     platform_id: Optional[str] = Field(None, max_length=100, description="平台商品ID")
-    specs: Optional[Dict[str, Any]] = Field(None, description="规格参数")
-    tags: Optional[List[str]] = Field(None, description="标签列表")
     images: Optional[List[str]] = Field(None, description="商品图片URL列表")
     auto_parse: Optional[bool] = Field(None, description="是否自动触发解析")
 
@@ -57,7 +53,7 @@ class ProductUpdateRequest(BaseModel):
 def _parse_json_field(value, default=None):
     """将 JSON 字符串解析为 Python 对象
 
-    数据库中 selling_points/specs/tags 存储为 JSON 字符串，
+    数据库中 selling_points 存储为 JSON 字符串，
     读取后需要反序列化为 list/dict 供前端使用。
 
     :param value: JSON 字符串或已解析的对象
@@ -102,8 +98,6 @@ def product_to_dict(product, include_category_info: bool = False, include_assets
         "detail_url": product.detail_url,
         "platform": product.platform,
         "platform_id": product.platform_id,
-        "specs": _parse_json_field(product.specs, {}),
-        "tags": _parse_json_field(product.tags, []),
         "is_public": product.user_id is None,  # user_id 为空表示平台公共商品
         "parsing_status": getattr(product, "parsing_status", None),
         "execution_id": getattr(product, "execution_id", None),

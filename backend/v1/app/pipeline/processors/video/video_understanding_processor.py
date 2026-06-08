@@ -82,6 +82,7 @@ class VideoUnderstandingProcessor(BaseProcessor):
 
         understood_slices = []
         embed_slices = []
+        failed_slices = []  # 记录失败的分片索引
 
         for i in range(slice_count):
             # 构建大模型请求
@@ -95,7 +96,10 @@ class VideoUnderstandingProcessor(BaseProcessor):
                     top_p=0.9
                 )))
             except Exception as e:
-                context.add_error(ValueError(f"Slice {i} understanding failed: {str(e)}"))
+                error_msg = f"Slice {i} understanding failed: {str(e)}"
+                context.add_error(ValueError(error_msg))
+                failed_slices.append(i)
+                logger.error(error_msg)
                 continue
 
             # 解析大模型返回的JSON结果
@@ -116,8 +120,10 @@ class VideoUnderstandingProcessor(BaseProcessor):
                 understanding_result = json.loads(content)
             except json.JSONDecodeError as e:
                 # 记录原始响应内容方便调试
-                logger.error(f"Slice {i} JSON parse failed. Raw content: {response.content[:1000]}...")
+                error_msg = f"Slice {i} JSON parse failed. Raw content: {response.content[:1000]}..."
+                logger.error(error_msg)
                 context.add_error(ValueError(f"Slice {i} understanding result parse failed: {str(e)}"))
+                failed_slices.append(i)
                 continue
 
             # 构建完整的分片数据，合并基础信息和理解结果
@@ -159,5 +165,28 @@ class VideoUnderstandingProcessor(BaseProcessor):
         context.set(constants.EMBED_SLICES, embed_slices)
         # 首帧提取已禁用，图像向量化已关闭，此字段保留为空以保持兼容性
         context.set(constants.SLICE_COVER_URLS, images_url)
+
+        # 汇总分片处理结果
+        total_slices = slice_count
+        success_count = len(understood_slices)
+        failed_count = len(failed_slices)
+
+        # 记录分片处理统计信息
+        context.metadata["slice_processing_stats"] = {
+            "total_slices": total_slices,
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "failed_slices": failed_slices
+        }
+
+        # 如果有失败的分片，添加汇总错误信息
+        if failed_count > 0:
+            summary_error = f"分片处理完成，共{total_slices}个分片，成功{success_count}个，失败{failed_count}个，失败分片索引: {failed_slices}"
+            logger.warning(summary_error)
+            # 仅在完全没有成功分片时才添加致命错误，否则仅记录警告
+            if success_count == 0:
+                context.add_error(ValueError(f"所有分片处理失败: {summary_error}"))
+            else:
+                logger.info(f"部分分片处理失败，但仍有{success_count}个分片成功，继续后续处理")
 
         return context

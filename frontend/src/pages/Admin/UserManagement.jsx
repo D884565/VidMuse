@@ -10,19 +10,18 @@ import { useAppStore } from '../../store/appStore'
 const columns = [
   { key: 'id', title: 'ID' },
   { key: 'username', title: '用户名' },
-  { key: 'email', title: '邮箱' },
   {
-    key: 'role',
+    key: 'role_name',
     title: '角色',
-    render: (role) => (
+    render: (role_name, row) => (
       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-        role === 'admin' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+        row.role === 0 ? 'bg-purple-100 text-purple-800' : row.role === 2 ? 'bg-yellow-100 text-yellow-800' : 'bg-blue-100 text-blue-800'
       }`}>
-        {role === 'admin' ? '管理员' : '普通用户'}
+        {role_name || '普通用户'}
       </span>
     )
   },
-  { key: 'createdAt', title: '注册时间' },
+  { key: 'created_at', title: '注册时间' },
 ]
 
 // 模拟数据
@@ -46,8 +45,8 @@ export default function UserManagement() {
     try {
       setLoading(true)
       const data = await getUserList()
-      // 假设API返回的是列表或者包含list字段的对象
-      setUserList(Array.isArray(data) ? data : data?.list || [])
+      // 后端返回结构：{ list: [], pagination: {} }
+      setUserList(data?.list || [])
     } catch (error) {
       console.error('获取用户列表失败:', error)
       setUserList([])

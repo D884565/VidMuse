@@ -5,7 +5,7 @@
 """
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.framework.exceptions.exceptions import NotFoundException
 from backend.framework.exceptions.error_codes import RESOURCE_NOT_FOUND
@@ -17,22 +17,22 @@ class AgentTraceService:
     """Agent轨迹业务逻辑层"""
 
     @staticmethod
-    def get_trace_detail(db: Session, trace_id: int) -> AgentTraceDetail:
+    async def get_trace_detail(db: AsyncSession, trace_id: int) -> AgentTraceDetail:
         """获取轨迹详情
 
         :param db: 数据库会话
         :param trace_id: 轨迹ID
         :return: 轨迹详情DTO
         """
-        trace = agent_trace_dao.get_trace_by_id(db, trace_id)
+        trace = await agent_trace_dao.get_trace_by_id(db, trace_id)
         if not trace:
             raise NotFoundException(RESOURCE_NOT_FOUND, f"轨迹ID {trace_id} 不存在")
 
         return AgentTraceDetail.model_validate(trace)
 
     @staticmethod
-    def list_traces(
-        db: Session,
+    async def list_traces(
+        db: AsyncSession,
         session_id: Optional[str] = None,
         user_id: Optional[int] = None,
         project_id: Optional[int] = None,
@@ -59,7 +59,7 @@ class AgentTraceService:
         :param page_size: 每页数量
         :return: 轨迹列表响应DTO
         """
-        total, traces = agent_trace_dao.list_traces(
+        total, traces = await agent_trace_dao.list_traces(
             db=db,
             session_id=session_id,
             user_id=user_id,
@@ -84,8 +84,8 @@ class AgentTraceService:
         )
 
     @staticmethod
-    def get_traces_by_session(
-        db: Session,
+    async def get_traces_by_session(
+        db: AsyncSession,
         session_id: str,
         page: int = 1,
         page_size: int = 20
@@ -98,7 +98,7 @@ class AgentTraceService:
         :param page_size: 每页数量
         :return: 轨迹列表响应DTO
         """
-        total, traces = agent_trace_dao.get_traces_by_session_id(
+        total, traces = await agent_trace_dao.get_traces_by_session_id(
             db=db,
             session_id=session_id,
             page=page,
@@ -115,8 +115,8 @@ class AgentTraceService:
         )
 
     @staticmethod
-    def get_traces_by_user(
-        db: Session,
+    async def get_traces_by_user(
+        db: AsyncSession,
         user_id: int,
         page: int = 1,
         page_size: int = 20
@@ -129,7 +129,7 @@ class AgentTraceService:
         :param page_size: 每页数量
         :return: 轨迹列表响应DTO
         """
-        total, traces = agent_trace_dao.get_traces_by_user_id(
+        total, traces = await agent_trace_dao.get_traces_by_user_id(
             db=db,
             user_id=user_id,
             page=page,
@@ -146,8 +146,8 @@ class AgentTraceService:
         )
 
     @staticmethod
-    def get_statistics(
-        db: Session,
+    async def get_statistics(
+        db: AsyncSession,
         period: str = "7d",
         user_id: Optional[int] = None,
         project_id: Optional[int] = None
@@ -180,7 +180,7 @@ class AgentTraceService:
             period_desc = "最近7天"
 
         # 查询统计数据
-        stat = agent_trace_dao.get_statistics(
+        stat = await agent_trace_dao.get_statistics(
             db=db,
             start_time=start_time,
             end_time=end_time,
@@ -194,8 +194,8 @@ class AgentTraceService:
         )
 
     @staticmethod
-    def export_traces(
-        db: Session,
+    async def export_traces(
+        db: AsyncSession,
         session_id: Optional[str] = None,
         user_id: Optional[int] = None,
         project_id: Optional[int] = None,
@@ -207,7 +207,7 @@ class AgentTraceService:
 
         :return: 轨迹数据列表，包含所有字段
         """
-        total, traces = agent_trace_dao.list_traces(
+        total, traces = await agent_trace_dao.list_traces(
             db=db,
             session_id=session_id,
             user_id=user_id,

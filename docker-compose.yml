@@ -1,4 +1,3 @@
-version: "3.9"
 
 services:
   # ==================== 后端 API 服务 ====================
@@ -30,23 +29,8 @@ services:
       - MINIO_BUCKET_NAME=aigc-videos
       - MINIO_SECURE=false
 
-      # ChromaDB 配置
-      - CHROMADB_HOST=chromadb
-      - CHROMADB_PORT=8000
-      - CHROMADB_COLLECTION=video_knowledge
 
-      # Milvus 配置
-      - VECTOR_DB_TYPE=chromadb  # 默认使用ChromaDB，如需切换到Milvus改为milvus或qdrant
-      - MILVUS_HOST=milvus
-      - MILVUS_PORT=19530
-      - MILVUS_USERNAME=
-      - MILVUS_PASSWORD=
-      - MILVUS_PRODUCT_COLLECTION=product_knowledge
-      - MILVUS_SLICE_COLLECTION=slice_knowledge
-      - MILVUS_VIDEO_COLLECTION=video_knowledge
-      - MILVUS_IMG_COLLECTION=img_knowledge
-      - MILVUS_AUDIO_COLLECTION=audio_knowledge
-      - MILVUS_VECTOR_DIMENSION=1536
+
 
       # Qdrant 配置
       - QDRANT_HOST=qdrant
@@ -61,20 +45,17 @@ services:
       - QDRANT_AUDIO_COLLECTION=audio_knowledge
       - QDRANT_VECTOR_DIMENSION=1536
 
-      # LLM API Keys (从 .env 文件加载或手动设置)
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
 
 
-    env_file:
+    # env_file:
       - .env
     depends_on:
       mysql:
         condition: service_healthy
       minio:
         condition: service_healthy
-      chromadb:
-        condition: service_started
+      qdrant:
+        condition: service_healthy
     volumes:
       - ./app:/app/app:ro
       - ./logs:/app/logs
@@ -139,47 +120,6 @@ services:
       timeout: 20s
       retries: 3
 
-  # ==================== ChromaDB (向量数据库) ====================
-  chromadb:
-    image: chromadb/chroma:1.0.5
-    container_name: aigc_chromadb
-    ports:
-      - "8001:8000"   # 映射到宿主机 8001，避免与 API 冲突
-    environment:
-      - IS_PERSISTENT=TRUE
-      - PERSIST_DIRECTORY=/chroma/chroma
-      - ANONYMIZED_TELEMETRY=FALSE
-    volumes:
-      - chroma_data:/chroma/chroma
-    networks:
-      - aigc_network
-    restart: unless-stopped
-
-  # ==================== Milvus (向量数据库) ====================
-  milvus:
-    image: milvusdb/milvus:v2.4.13
-    container_name: aigc_milvus
-    ports:
-      - "19530:19530"  # gRPC 端口
-      - "9091:9091"    # HTTP 端口
-    environment:
-      - ETCD_USE_EMBED=true
-      - ETCD_DATA_DIR=/var/lib/milvus/etcd
-      - ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml
-      - COMMON_STORAGETYPE=local
-      - COMMON_SECURITY_AUTHORIZATIONENABLED=false  # 默认关闭认证，如需开启可设置为true
-      - COMMON_LOG_LEVEL=info
-    volumes:
-      - milvus_data:/var/lib/milvus
-    networks:
-      - aigc_network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
-      start_period: 90s  # Milvus 启动较慢，给予足够的启动时间
 
   # ==================== Qdrant (向量数据库) ====================
   qdrant:
@@ -232,12 +172,11 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - MYSQL_HOST=mysql
       - MINIO_ENDPOINT=minio:9000
-      - CHROMADB_HOST=chromadb
       - REDIS_HOST=redis
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - QDRANT_HOST=qdrant
       - FRAME_VIDEO_WAIT_TIMEOUT_SECONDS=${FRAME_VIDEO_WAIT_TIMEOUT_SECONDS:-1800}
       - FRAME_VIDEO_POLL_INTERVAL_SECONDS=${FRAME_VIDEO_POLL_INTERVAL_SECONDS:-5}
-    env_file:
+    # env_file:
       - .env
     depends_on:
       - redis
@@ -292,10 +231,8 @@ services:
 volumes:
   mysql_data:
   minio_data:
-  chroma_data:
   redis_data:
   video_temp:
-  milvus_data:
   qdrant_data:
 
 networks:

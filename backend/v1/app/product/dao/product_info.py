@@ -24,8 +24,8 @@ class ProductInfo:
     description: str = ""
     """商品描述/卖点"""
 
-    specs: dict = field(default_factory=dict)
-    """规格参数（如颜色、尺码等）"""
+    ai_features: dict = field(default_factory=dict)
+    """AI解析结果特征，包含规格、标签等所有结构化信息"""
 
     platform: str = ""
     """来源平台：taobao/jd/pdd/douyin"""
@@ -49,8 +49,10 @@ class ProductInfo:
             parts.append(f"原价：{self.original_price}")
         if self.description:
             parts.append(f"商品描述：{self.description}")
-        if self.specs:
-            specs_text = "、".join(f"{k}:{v}" for k, v in self.specs.items())
+        # 从ai_features中提取规格参数
+        parameters = self.ai_features.get("parameters", {})
+        if parameters:
+            specs_text = "、".join(f"{k}:{v}" for k, v in parameters.items())
             parts.append(f"规格参数：{specs_text}")
         return "\n".join(parts)
 
@@ -63,7 +65,7 @@ class ProductInfo:
             "main_images": self.main_images,
             "detail_images": self.detail_images,
             "description": self.description,
-            "specs": self.specs,
+            "ai_features": self.ai_features,
             "platform": self.platform,
             "url": self.url,
         }

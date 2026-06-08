@@ -23,7 +23,7 @@ class Span:
     name: str
     module_name: str
     span_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
-    trace_id: str = field(default_factory=lambda: trace_id_var.get())
+    trace_id: str = field(default_factory=lambda: trace_id_var.get() or uuid.uuid4().hex[:8])
     parent_span_id: Optional[str] = None
     class_name: Optional[str] = None
     start_time: float = field(default_factory=time.time)
@@ -97,9 +97,9 @@ def start_span(
     span_stack = span_stack_var.get([])
     parent_span_id = span_stack[-1].span_id if span_stack else None
 
-    # 如果没有trace_id，自动生成一个
+    # 如果没有trace_id，自动生成一个（保持和中间件一致的8位长度）
     if not trace_id_var.get():
-        trace_id_var.set(uuid.uuid4().hex)
+        trace_id_var.set(uuid.uuid4().hex[:8])
 
     span = Span(
         name=name,

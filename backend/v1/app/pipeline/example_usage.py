@@ -6,7 +6,8 @@ from unittest.mock import Mock
 from backend.v1.app.pipeline import (
     VideoParsingPipeline,
     ProductParsingPipeline,
-    VideoOverallParsingPipeline
+    VideoOverallParsingPipeline,
+    DirectVideoParsingPipeline
 )
 from backend.v1.app.pipeline.processors import (
     VideoUnderstandingProcessor,
@@ -31,7 +32,8 @@ def example_video_parsing():
         VideoSplitProcessor,
         SchemaValidationProcessor,
         VideoAggregationProcessor,
-        VideoGenerateProcessor
+        VideoGenerateProcessor,
+        SliceGenerateProcessor
     )
 
     # 手动获取schema路径
@@ -280,19 +282,17 @@ def example_persistence_and_resume():
     print(f"   执行结果: {'成功' if result['success'] else '失败'}")
 
 
-def direct_video_parsing_example():
+def example_direct_video_parsing():
     """极简视频解析流水线使用示例"""
-    from backend.v1.app.pipeline.pipelines import DirectVideoParsingPipeline
-
     # 创建流水线实例
     pipeline = DirectVideoParsingPipeline(
         enable_vectorization=True,  # 启用向量化
         enable_persistence=True     # 启用持久化和断点续跑
     )
 
-    # 输入参数（与现有VideoParsingPipeline完全兼容）
+    # 输入参数（注意：与旧版VideoParsingPipeline不同，这里使用video_url而非video_path）
     input_data = {
-        "video_url": "https://example.com/your_video.mp4",
+        "video_url": "https://example.com/your_video.mp4",  # 视频公网可访问URL
         "video_id": "vid_123456789",
         "asset_id": 1001,
         "video_duration": 120000,  # 2分钟，单位毫秒
@@ -306,9 +306,14 @@ def direct_video_parsing_example():
     print(f"Execution ID: {result.get('execution_id')}")
 
     if result["success"]:
-        ai_features = result["data"]["ai_features"]
-        print(f"AI features generated, video info: {ai_features['video_info'].keys()}")
-        print(f"Slice count: {len(ai_features['slices'])}")
+        # AI特征已落库到asset表，可从asset_info中获取
+        if "asset_info" in result["data"] and "ai_features" in result["data"]["asset_info"]:
+            ai_features = result["data"]["asset_info"]["ai_features"]
+            print(f"AI features generated, video info keys: {list(ai_features['video_info'].keys())}")
+            print(f"Slice count: {len(ai_features['slices'])}")
+            print(f"Parse type: {ai_features.get('parse_type', 'unknown')}")
+        else:
+            print("AI features saved to database successfully")
     else:
         print(f"Errors: {result['errors']}")
 
@@ -336,7 +341,7 @@ def main():
     print("\n" + "=" * 60)
     print("🎥 DirectVideoParsingPipeline 极简示例")
     print("=" * 60)
-    direct_result = direct_video_parsing_example()
+    direct_result = example_direct_video_parsing()
 
     print("\n" + "=" * 60)
     print("🎉 所有流水线示例运行完成！")

@@ -35,7 +35,7 @@ def _pipeline_start_msg(func, args, kwargs) -> Tuple[str, str, Dict]:
             "pipeline_type": pipeline_type,
             "status": "running",
             "progress": 0,
-            "total_processors": len(getattr(func.__self__, 'processors', [])),
+            "total_processors": len(getattr(func.__self__, 'processors', [])) if hasattr(func, '__self__') else 0,
             "video_id": input_data.get("video_id"),
             "product_id": input_data.get("product_id"),
             "asset_id": input_data.get("asset_id")
@@ -209,8 +209,12 @@ class BasePipeline:
 
         if existing_context:
             context = existing_context
-            # 合并输入数据到上下文
-            context.data.update(input_data)
+            # 合并输入数据到上下文，仅添加不存在的key，避免覆盖已有处理结果
+            for key, value in input_data.items():
+                if key not in context.data:
+                    context.data[key] = value
+                else:
+                    logger.debug(f"恢复执行时跳过已存在的上下文key: {key}，保留原有值")
         else:
             context = PipelineContext(input_data)
 

@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 from abc import ABC
 
-from backend.store.vector import VectorDatabase, get_vector_db_client, VectorDBType, ChromaDBClient
+from backend.store.vector import VectorDatabase, get_vector_db_client, VectorDBType
 from backend.v1.app.config.config import settings
 
 
@@ -11,32 +11,15 @@ class CollectionDAO(ABC):
     每个具体的Collection对应一个DAO类，封装该集合的所有操作
     """
     # 子类需要配置对应向量数据库的集合名称
-    chroma_collection_name: str = None  # ChromaDB集合名
-    milvus_collection_name: str = None  # Milvus集合名
-    qdrant_collection_name: str = None  # Qdrant集合名
-
-    _vector_client: VectorDatabase = None
+    collection_name: str = None  # Qdrant集合名
 
     def __init__(self):
-        # 根据当前配置的向量数据库类型获取对应的集合名
-        if settings.VECTOR_DB_TYPE == VectorDBType.CHROMADB:
-            if not self.chroma_collection_name:
-                raise ValueError(f"{self.__class__.__name__} 必须配置chroma_collection_name")
-            self.collection_name = self.chroma_collection_name
-        elif settings.VECTOR_DB_TYPE == VectorDBType.MILVUS:
-            if not self.milvus_collection_name:
-                raise ValueError(f"{self.__class__.__name__} 必须配置milvus_collection_name")
-            self.collection_name = self.milvus_collection_name
-        elif settings.VECTOR_DB_TYPE == VectorDBType.QDRANT:
-            if not self.qdrant_collection_name:
-                raise ValueError(f"{self.__class__.__name__} 必须配置qdrant_collection_name")
-            self.collection_name = self.qdrant_collection_name
-        else:
-            raise ValueError(f"不支持的向量数据库类型: {settings.VECTOR_DB_TYPE}")
+        # 获取Qdrant集合名
+        if not self.collection_name:
+            raise ValueError(f"{self.__class__.__name__} 必须配置collection_name")
 
-        # 获取向量数据库客户端（单例）
-        if CollectionDAO._vector_client is None:
-            CollectionDAO._vector_client = get_vector_db_client(self.collection_name)
+        # 获取向量数据库客户端，每个DAO实例对应自己的集合
+        self._vector_client = get_vector_db_client(self.collection_name)
 
 
     def add_embeddings(self, ids: List[str], embeddings: List[List[float]],

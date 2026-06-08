@@ -33,6 +33,22 @@ class PasswordChangeRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=32, description="新密码")
 
 
+class AdminUserCreateRequest(BaseModel):
+    """管理员创建用户请求体"""
+    username: str = Field(..., min_length=2, max_length=50, description="用户名，2-50字符")
+    password: str = Field(..., min_length=8, max_length=32, description="密码，8-32字符")
+    avatar_url: Optional[str] = Field(None, description="头像URL")
+    role: int = Field(1, ge=0, le=2, description="角色：0超级管理员 1普通用户 2VIP用户")
+
+
+class AdminUserUpdateRequest(BaseModel):
+    """管理员更新用户信息请求体"""
+    username: Optional[str] = Field(None, min_length=2, max_length=50, description="新用户名")
+    avatar_url: Optional[str] = Field(None, description="新头像URL")
+    role: Optional[int] = Field(None, ge=0, le=2, description="新角色：0超级管理员 1普通用户 2VIP用户")
+    password: Optional[str] = Field(None, min_length=8, max_length=32, description="新密码（可选）")
+
+
 # ==================== 响应模型 ====================
 
 class UserResponse(BaseModel):

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Upload, Play, RefreshCw, Import } from 'lucide-react'
 import PageContainer from '../../components/Admin/Layout/PageContainer'
 import Table from '../../components/Admin/Common/Table'
-import { getVideoList, deleteVideo, triggerVideoParsing, batchImportHotVideos, uploadVideo } from '../../services/admin'
+import { getVideoList, deleteVideo, triggerVideoParsing, batchImportHotVideos, uploadVideo, getCategoryTree } from '../../services/admin'
 
 const columns = [
   { key: 'id', title: 'ID' },
@@ -10,11 +10,29 @@ const columns = [
   {
     key: 'category',
     title: '分类',
-    render: (category) => (
-      <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-        {category || '未分类'}
-      </span>
-    )
+    render: (category, row) => {
+      // 如果有category名称直接显示，否则通过category_id查找
+      if (category) {
+        return (
+          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            {category}
+          </span>
+        )
+      }
+      if (row.category_id) {
+        const categoryName = getCategoryNameById(row.category_id)
+        return (
+          <span className="px-2 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+            {categoryName || '未知分类'}
+          </span>
+        )
+      }
+      return (
+        <span className="px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+          未分类
+        </span>
+      )
+    }
   },
   {
     key: 'hot_score',
@@ -58,14 +76,6 @@ const columns = [
   { key: 'created_at', title: '创建时间' },
 ]
 
-const categoryOptions = [
-  { value: '', label: '全部分类' },
-  { value: '营销', label: '营销' },
-  { value: '企业', label: '企业' },
-  { value: '社交', label: '社交' },
-  { value: '教育', label: '教育' },
-  { value: '生活', label: '生活' },
-]
 
 const statusOptions = [
   { value: '', label: '全部状态' },
@@ -78,8 +88,10 @@ const statusOptions = [
 export default function VideoLibrary() {
   const [loading, setLoading] = useState(true)
   const [videos, setVideos] = useState([])
+  const [categoryTree, setCategoryTree] = useState([])
+  const [categoryLoading, setCategoryLoading] = useState(false)
   const [filters, setFilters] = useState({
-    category: '',
+    category_id: '',
     min_hot_score: '',
     source_type: '',
     keyword: '',
@@ -94,12 +106,12 @@ export default function VideoLibrary() {
     file: null,
     title: '',
     description: '',
-    category: '',
+    category_id: '',
     tags: [],
     trigger_ai_parse: true,
   })
   const [importForm, setImportForm] = useState({
-    category: '',
+    category_id: '',
     min_hot_score: 80,
     limit: 50,
   })
@@ -107,7 +119,21 @@ export default function VideoLibrary() {
 
   useEffect(() => {
     fetchVideos()
+    fetchCategoryTree()
   }, [filters])
+
+  const fetchCategoryTree = async () => {
+    try {
+      setCategoryLoading(true)
+      const data = await getCategoryTree()
+      setCategoryTree(Array.isArray(data) ? data : [])
+    } catch (error) {
+      console.error('获取分类树失败:', error)
+      setCategoryTree([])
+    } finally {
+      setCategoryLoading(false)
+    }
+  }
 
   const fetchVideos = async () => {
     try {
@@ -206,6 +232,51 @@ export default function VideoLibrary() {
     }
   }
 
+  // 递归渲染分类选项
+  const renderCategoryOptions = (categories, level = 0, allowSelectAllLevels = false) => {
+    const options = []
+    const indent = ' '.repeat(level * 4) // 使用空格缩进显示层级
+
+    categories.forEach(category => {
+      // 对于上传弹窗，只允许选择三级分类；对于筛选和批量导入，可以选择任意层级
+      const isDisabled = !allowSelectAllLevels && category.level < 3
+
+      options.push(
+        <option
+          key={category.id}
+          value={category.id}
+          disabled={isDisabled}
+          className={isDisabled ? 'text-gray-400' : ''}
+        >
+          {indent}{category.name}{isDisabled ? ' (不可选)' : ''}
+        </option>
+      )
+
+      // 递归渲染子分类
+      if (category.children && category.children.length > 0) {
+        options.push(...renderCategoryOptions(category.children, level + 1, allowSelectAllLevels))
+      }
+    })
+
+    return options
+  }
+
+  // 根据分类id获取分类名称
+  const getCategoryNameById = (categoryId, categories = categoryTree) => {
+    if (!categoryId) return null
+    const id = parseInt(categoryId)
+    for (const category of categories) {
+      if (category.id === id) {
+        return category.name
+      }
+      if (category.children && category.children.length > 0) {
+        const name = getCategoryNameById(categoryId, category.children)
+        if (name) return name
+      }
+    }
+    return null
+  }
+
   const actions = (row) => (
     <div className="flex items-center justify-end space-x-1">
       <button
@@ -264,13 +335,17 @@ export default function VideoLibrary() {
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
           <select
-            value={filters.category}
-            onChange={(e) => handleFilterChange('category', e.target.value)}
+            value={filters.category_id}
+            onChange={(e) => handleFilterChange('category_id', e.target.value)}
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={categoryLoading}
           >
-            {categoryOptions.map(opt => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
+            <option value="">全部分类</option>
+            {categoryLoading ? (
+              <option value="" disabled>加载中...</option>
+            ) : (
+              renderCategoryOptions(categoryTree, 0, true)
+            )}
           </select>
         </div>
         <div>
@@ -387,15 +462,19 @@ export default function VideoLibrary() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
                 <select
-                  value={uploadForm.category}
-                  onChange={(e) => setUploadForm({ ...uploadForm, category: e.target.value })}
+                  value={uploadForm.category_id}
+                  onChange={(e) => setUploadForm({ ...uploadForm, category_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={categoryLoading}
                 >
-                  <option value="">请选择分类</option>
-                  {categoryOptions.filter(opt => opt.value).map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
+                  <option value="">请选择三级分类</option>
+                  {categoryLoading ? (
+                    <option value="" disabled>加载中...</option>
+                  ) : (
+                    renderCategoryOptions(categoryTree, 0, false)
+                  )}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">请选择三级分类，一级和二级分类不可选</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">标签（用逗号分隔）</label>
@@ -457,15 +536,19 @@ export default function VideoLibrary() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">分类（可选）</label>
                 <select
-                  value={importForm.category}
-                  onChange={(e) => setImportForm({ ...importForm, category: e.target.value })}
+                  value={importForm.category_id}
+                  onChange={(e) => setImportForm({ ...importForm, category_id: e.target.value })}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={categoryLoading}
                 >
-                  <option value="">全部分类</option>
-                  {categoryOptions.filter(opt => opt.value).map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
+                  <option value="">不指定分类</option>
+                  {categoryLoading ? (
+                    <option value="" disabled>加载中...</option>
+                  ) : (
+                    renderCategoryOptions(categoryTree, 0, false)
+                  )}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">可选，请选择三级分类，导入的视频将归属到该分类下</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">最低爆款分数</label>

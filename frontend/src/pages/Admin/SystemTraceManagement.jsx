@@ -120,7 +120,7 @@ export default function SystemTraceManagement() {
 
   useEffect(() => {
     fetchData()
-  }, [filters.page, filters.period])
+  }, [filters])
 
   const fetchData = async () => {
     try {
@@ -141,8 +141,8 @@ export default function SystemTraceManagement() {
       setTraces(Array.isArray(listData) ? listData : listData?.list || [])
       setPagination({
         total: listData?.total || listData?.length || 0,
-        page: listParams.page || 1,
-        page_size: listParams.page_size || 20,
+        page: listData?.page || listParams.page || 1,
+        page_size: listData?.page_size || listParams.page_size || 20,
       })
 
       // 获取统计数据
@@ -200,7 +200,7 @@ export default function SystemTraceManagement() {
     try {
       const [detail, spans] = await Promise.all([
         getSystemTraceDetail(traceId),
-        getSystemTraceSpans(traceId)
+        getSystemTraceSpans(traceId, { include_details: true })
       ])
       setCurrentTrace(detail)
       // 给Span添加expanded属性，默认展开第一层
@@ -550,14 +550,14 @@ export default function SystemTraceManagement() {
         </div>
         <div className="space-x-2">
           <button
-            onClick={() => handleFilterChange('page', Math.max(1, pagination.page - 1))}
+            onClick={() => setFilters(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
             disabled={pagination.page <= 1}
             className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
           >
             上一页
           </button>
           <button
-            onClick={() => handleFilterChange('page', pagination.page + 1)}
+            onClick={() => setFilters(prev => ({ ...prev, page: prev.page + 1 }))}
             disabled={pagination.page >= Math.ceil(pagination.total / pagination.page_size)}
             className="px-3 py-1 border rounded disabled:opacity-50 hover:bg-gray-50"
           >

@@ -1,6 +1,6 @@
 from backend.v1.app.pipeline.base.pipeline import BasePipeline
 from backend.v1.app.pipeline.processors.cluster import HotReportFetchProcessor, EmbeddingClusteringProcessor, \
-    CommonFactorExtractor, StrategyGenerator, TemplateAssembler
+    CommonFactorExtractor, StrategyGenerator, TemplateAssembler, TemplatePersistenceProcessor
 
 
 class InspirationTemplatePipeline(BasePipeline):
@@ -21,7 +21,8 @@ class InspirationTemplatePipeline(BasePipeline):
                  cluster_eps: float = 0.2,
                  cluster_min_samples: int = 3,
                  limit: int = None,
-                 enable_persistence: bool = True):
+                 enable_persistence: bool = True,
+                 auto_save_to_db: bool = True):
         """
         初始化灵感模板流水线
 
@@ -29,7 +30,8 @@ class InspirationTemplatePipeline(BasePipeline):
         :param cluster_eps: DBSCAN聚类邻域阈值，默认0.2（余弦距离）
         :param cluster_min_samples: 聚类最小样本数，默认3
         :param limit: 最大处理报告数量，默认不限制
-        :param enable_persistence: 是否开启持久化
+        :param enable_persistence: 是否开启执行状态持久化（断点续跑用）
+        :param auto_save_to_db: 是否自动将生成的模板保存到业务数据库
         """
         processors = [
             HotReportFetchProcessor(min_hot_score=min_hot_score, limit=limit),
@@ -38,6 +40,10 @@ class InspirationTemplatePipeline(BasePipeline):
             StrategyGenerator(),
             TemplateAssembler()
         ]
+
+        # 添加持久化处理器
+        if auto_save_to_db:
+            processors.append(TemplatePersistenceProcessor())
 
         super().__init__(
             processors=processors,

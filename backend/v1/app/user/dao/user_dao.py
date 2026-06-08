@@ -91,3 +91,18 @@ class UserDAO:
         users = query.order_by(User.created_at.desc()).offset(offset).limit(page_size).all()
 
         return total, users
+
+    @staticmethod
+    def delete_user(db: Session, user_id: int) -> bool:
+        """删除用户（硬删除）
+
+        :param db: 数据库会话
+        :param user_id: 用户ID
+        :return: 删除成功返回True，用户不存在返回False
+        """
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return False
+        db.delete(user)
+        db.commit()
+        return True

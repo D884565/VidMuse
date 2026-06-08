@@ -8,7 +8,7 @@ from fastapi import APIRouter, Body, Depends
 from sqlalchemy.orm import Session
 
 from backend.framework.web.response import Response
-from backend.framework.web.auth import get_current_user_id
+from backend.framework.web.auth import get_current_user_id, admin_required
 from backend.store.database.sync_database import get_db
 from backend.v1.app.user.service.user_service import user_service
 from backend.v1.app.user.dao.schema import (
@@ -16,6 +16,8 @@ from backend.v1.app.user.dao.schema import (
     UserLoginRequest,
     UserUpdateRequest,
     PasswordChangeRequest,
+    AdminUserCreateRequest,
+    AdminUserUpdateRequest,
 )
 
 router = APIRouter(tags=["用户模块"])
@@ -83,9 +85,58 @@ def list_users(
     keyword: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
-    current_user_id: int = Depends(get_current_user_id),
+    current_user_id: int = Depends(admin_required),
     db: Session = Depends(get_db),
 ):
     """获取所有用户列表，支持按角色筛选和关键词搜索"""
     result = user_service.list_users(db, role=role, keyword=keyword, page=page, page_size=page_size)
     return Response.success(data=result)
+
+
+@router.post("/users", response_model=Response, summary="创建用户（管理员）")
+def create_user(
+    req: AdminUserCreateRequest,
+    current_user_id: int = Depends(admin_required),
+    db: Session = Depends(get_db),
+):
+    """管理员创建新用户"""
+    result = user_service.admin_create_user(
+        db,
+        username=req.username,
+        password=req.password,
+        avatar_url=req.avatar_url,
+        role=req.role
+    )
+    return Response.success(data=result, message="用户创建成功")
+
+
+@router.put("/users/{user_id}", response_model=Response, summary="更新用户信息（管理员）")
+def update_user(
+    user_id: int,
+    req: AdminUserUpdateRequest,
+    current_user_id: int = Depends(admin_required),
+    db: Session = Depends(get_db),
+):
+    """管理员更新用户信息，支持修改用户名、头像、角色和密码"""
+    result = user_service.admin_update_user(
+        db,
+        user_id=user_id,
+        username=req.username,
+        avatar_url=req.avatar_url,
+        role=req.role,
+        password=req.password
+    )
+    return Response.success(data=result, message="用户更新成功")
+
+
+@router.delete("/users/{user_id}", response_model=Response, summary="删除用户（管理员）")
+def delete_user(
+    user_id: int,
+    current_user_id: int = Depends(admin_required),
+    db: Session = Depends(get_db),
+):
+    """管理员删除用户，禁止删除超级管理员"""
+    success = user_service.admin_delete_user(db, user_id)
+    if success:
+        return Response.success(message="用户删除成功")
+    return Response.error(message="用户不存在")

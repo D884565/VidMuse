@@ -63,8 +63,7 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         执行视频整体理解逻辑
 
         输入（从上下文获取）：
-        - aggregated_video_data: Dict 聚合后的视频完整数据（VideoAggregationProcessor输出）
-        - segment_list: List[Dict] 分片索引列表（VideoAggregationProcessor输出）
+        - aggregated_video_data: Dict 聚合后的视频完整数据（VideoAggregationProcessor输出，包含完整的slices_detail）
         - all_script_lines: List[str] 所有分片的台词列表（VideoAggregationProcessor输出）
         - video_id: str 视频ID（初始输入）
         - video_duration: int 视频总时长（毫秒，初始输入）
@@ -74,24 +73,29 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         - embed_video: str 扁平化后的视频整体数据，用于向量化
         """
         aggregated_data = context.get(constants.AGGREGATED_VIDEO_DATA, {})
-        segment_list = context.get(constants.SEGMENT_LIST, [])
         all_script_lines = context.get(constants.ALL_SCRIPT_LINES, [])
         video_id = context.get(constants.VIDEO_ID)
         video_duration = context.get("video_duration", 0)
 
-        if not aggregated_data or not segment_list:
+        if not aggregated_data:
             raise ValueError("No aggregated video data found in context, please ensure VideoAggregationProcessor executed successfully")
 
         # 构建结构化的分片信息文本
         segment_info_lines = []
 
-        if len(segment_list) == 0:
-            raise BusinessException("No segments found in context, please ensure VideoAggregationProcessor executed successfully")
+        # 使用聚合数据中的完整分片详情，而不是截断的segment_list
+        slices_detail = aggregated_data.get("slices_detail", [])
 
+        if len(slices_detail) == 0:
+            raise BusinessException("No slices detail found in aggregated data, please ensure VideoAggregationProcessor executed successfully")
 
-        for i, segment in enumerate(segment_list):
+        for i, slice_info in enumerate(slices_detail):
+            understanding = slice_info.get("understanding", {})
+            creative_elements = understanding.get(prompt_manager.FIELD_CREATIVE_ELEMENTS, {})
+            full_content = understanding.get(prompt_manager.FIELD_GENERATE_PROMPT, "")
+
             segment_info_lines.append(
-                f"分片{i+1}(ID:{segment['slice_id']}): 模板类型={segment['template_type']}, 模板名称={segment['template_name']}, 内容摘要={segment['content_summary']}"
+                f"分片{i+1}(ID:{slice_info['slice_id']}): 模板类型={understanding.get(prompt_manager.FIELD_TEMPLATE_TYPE, '')}, 模板名称={understanding.get(prompt_manager.FIELD_TEMPLATE_NAME, '')}, 完整内容={full_content}"
             )
         segment_info_str = "\n".join(segment_info_lines)
 
@@ -99,7 +103,7 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
         full_input = f"""
 视频ID: {video_id}
 视频总时长: {video_duration}ms
-总分片数: {len(segment_list)}
+总分片数: {len(slices_detail)}
 
 所有台词:
 {chr(10).join(all_script_lines)}
@@ -113,13 +117,22 @@ class VideoOverallUnderstandingProcessor(BaseProcessor):
 
 
         # 构建大模型请求
-        response = self.llm_client.text_understanding(TextUnderstandingRequest(
+        request = TextUnderstandingRequest(
             prompt=prompt,
             text=full_input,
             max_tokens=16384,  # 整体理解内容较多，设置更大的token限制
             temperature=0.1,  # 整体理解需要更稳定的输出
             top_p=0.9
-        ))
+        )
+
+        # 尝试异步调用（如果方法是异步的）
+        if inspect.iscoroutinefunction(self.llm_client.text_understanding):
+            coro = self.llm_client.text_understanding(request)
+            # 使用辅助方法运行异步函数，处理已有事件循环的情况
+            response = self._run_async(coro)
+        else:
+            # 同步调用
+            response = self.llm_client.text_understanding(request)
 
         # 解析返回结果
         try:

@@ -12,7 +12,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/video-library", tags=["video-library"])
-video_service = VideoLibraryService()
+video_service = VideoLibraryService()   
 
 
 # 请求模型
@@ -168,6 +168,14 @@ async def trigger_parsing(
     db: AsyncSession = Depends(get_db),
     current_user_id: int = Depends(admin_required),
 ):
+    """
+    手动触发视频解析
+    :param video_id: 视频ID
+    :param force: 是否强制重新解析，即使已经解析过
+    :param db: 数据库会话
+    :param current_user_id: 当前用户ID
+    :return: 返回结果
+    """
     success = await video_service.trigger_parsing(db, video_id, force=force)
     if not success:
         return Response.error(message="视频不存在或未关联资产")

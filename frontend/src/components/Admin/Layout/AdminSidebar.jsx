@@ -1,10 +1,8 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import {
-  LayoutDashboard,
   Users,
   FileImage,
   Settings,
-  Layers,
   LogOut,
   FolderTree,
   Image,
@@ -16,17 +14,13 @@ import {
 import { useAppStore } from '../../../store/appStore'
 
 const menuItems = [
-  { path: '/admin/dashboard', icon: LayoutDashboard, label: '数据概览' },
   { path: '/admin/users', icon: Users, label: '用户管理' },
-  { path: '/admin/content', icon: FileImage, label: '内容管理' },
   { path: '/admin/categories', icon: FolderTree, label: '分类管理' },
   { path: '/admin/assets', icon: Image, label: '资产管理' },
   { path: '/admin/videos', icon: Video, label: '视频库' },
   { path: '/admin/inspiration', icon: Lightbulb, label: '灵感模板' },
-  { path: '/admin/system', icon: Settings, label: '系统监控' },
   { path: '/admin/traces', icon: Activity, label: 'Agent链路追踪' },
   { path: '/admin/system-traces', icon: Server, label: '系统链路追踪' },
-  { path: '/admin/templates', icon: Layers, label: '模板管理' },
 ]
 
 export default function AdminSidebar() {
