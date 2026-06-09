@@ -9,6 +9,7 @@ import {
   Save,
   ScrollText,
 } from 'lucide-react'
+import { appendImageCacheBuster, appendVideoCacheBuster } from '../../utils/mediaUrl.js'
 import { useProjectPolling } from '../../hooks/useProjectPolling.js'
 import { useAppStore } from '../../store/appStore.js'
 import {
@@ -113,12 +114,6 @@ function patchTouchesFrameVideo(patch) {
   return ['video_prompt', 'duration', 'subtitle_text', 'subtitle_position'].some((field) =>
     Object.prototype.hasOwnProperty.call(patch, field)
   )
-}
-
-function appendVideoCacheBuster(url, taskId) {
-  if (!url || !taskId) return url
-  const separator = url.includes('?') ? '&' : '?'
-  return `${url}${separator}v=${encodeURIComponent(taskId)}`
 }
 
 /** Poll a single task until it reaches a terminal status */
@@ -567,7 +562,7 @@ export default function FrameGrid() {
   const hasEditedFrames = Object.keys(editedFrames).length > 0
   const isVideoGenerating = project?.workflow_stage === 'video' && project?.stage_status === 'running'
   const displayVideoUrl = videoUrl && !isVideoGenerating
-    ? appendVideoCacheBuster(videoUrl, project?.last_task_id)
+    ? appendVideoCacheBuster(videoUrl, project?.updated_at, project?.last_task_id)
     : null
 
   return (
@@ -722,7 +717,16 @@ export default function FrameGrid() {
 
                 <div className="flex aspect-video items-center justify-center bg-[var(--bg-main)]">
                   {frame.image_url ? (
-                    <img src={frame.image_url} alt={`Frame ${frame.sequence}`} className="h-full w-full object-cover" />
+                    <img
+                      src={appendImageCacheBuster(
+                        frame.image_url,
+                        frame.updated_at,
+                        project?.updated_at,
+                        project?.last_task_id
+                      )}
+                      alt={`Frame ${frame.sequence}`}
+                      className="h-full w-full object-cover"
+                    />
                   ) : (
                     <ImageIcon size={32} className="text-[var(--text-muted)]" />
                   )}

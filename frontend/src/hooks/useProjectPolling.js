@@ -14,6 +14,19 @@ function isProjectTerminal(data) {
   return false
 }
 
+function buildFrameSnapshot(frames = []) {
+  if (!Array.isArray(frames) || frames.length === 0) return ''
+  return frames
+    .map((frame) => [
+      frame.id,
+      frame.image_url,
+      frame.status,
+      frame.dirty,
+      frame.updated_at,
+    ].join(':'))
+    .join('|')
+}
+
 /**
  * 项目状态轮询 hook
  * 每 3 秒获取一次项目详情，状态变为终态时停止轮询
@@ -91,9 +104,11 @@ export function useProjectPolling(projectId) {
           data.workflow_stage,
           data.stage_status,
           data.last_task_id,
+          data.updated_at,
           data.video_output_url,
           data.video_url,
           data.audio_url,
+          buildFrameSnapshot(data.frames),
         ].join('|')
         if (lastSnapshotRef.current !== snapshot) {
           stableFetchCountRef.current = 0

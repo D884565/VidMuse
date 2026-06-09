@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X, Download, Edit3, Film, Image as ImageIcon, Loader2, Save } from 'lucide-react'
+import { appendVideoCacheBuster } from '../../utils/mediaUrl.js'
+import { appendImageCacheBuster } from '../../utils/mediaUrl.js'
 import {
   downloadProjectVideo,
   getGenerationTask,
@@ -24,13 +26,6 @@ const DEFAULT_FORM = {
 
 const TASK_POLL_INTERVAL_MS = 1500
 const TERMINAL_TASK_STATUSES = new Set(['succeeded', 'failed', 'cancelled', 'completed'])
-
-function appendVideoCacheBuster(url, taskId) {
-  if (!url) return url
-  const separator = url.includes('?') ? '&' : '?'
-  const token = taskId || Date.now()
-  return `${url}${separator}v=${encodeURIComponent(token)}`
-}
 
 function buildFrameForm(frame) {
   return {
@@ -184,6 +179,7 @@ function FrameEditorPanel({
 }
 
 export default function ProjectDetail({ project, onClose }) {
+  const [projectSnapshot, setProjectSnapshot] = useState(project)
   const [scriptDetail, setScriptDetail] = useState(null)
   const [frames, setFrames] = useState([])
   const [loading, setLoading] = useState(true)
@@ -203,8 +199,8 @@ export default function ProjectDetail({ project, onClose }) {
     [frames, selectedFrameId]
   )
   const displayVideoUrl = useMemo(
-    () => appendVideoCacheBuster(videoUrl, project.last_task_id),
-    [project.last_task_id, videoUrl]
+    () => appendVideoCacheBuster(videoUrl, projectSnapshot.updated_at, projectSnapshot.last_task_id),
+    [projectSnapshot.last_task_id, projectSnapshot.updated_at, videoUrl]
   )
   const mustRegenerateImageFirst = !!selectedFrame && (
     !selectedFrame.image_url || Number(selectedFrame.status) !== 2 || !!selectedFrame.dirty
@@ -246,6 +242,7 @@ export default function ProjectDetail({ project, onClose }) {
       }
 
       if (detail) {
+        setProjectSnapshot(detail)
         const nextFrames = detail.frames || []
         setFrames(nextFrames)
         setVideoUrl(detail.video_url || detail.video_output_url || project.video_output_url || '')
@@ -255,6 +252,7 @@ export default function ProjectDetail({ project, onClose }) {
           return nextFrames[0].id
         })
       } else {
+        setProjectSnapshot(project)
         setFrames([])
         setVideoUrl(project.video_output_url || '')
         setSelectedFrameId(null)
@@ -265,6 +263,10 @@ export default function ProjectDetail({ project, onClose }) {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    setProjectSnapshot(project)
+  }, [project])
 
   useEffect(() => {
     let cancelled = false
@@ -579,7 +581,12 @@ export default function ProjectDetail({ project, onClose }) {
                       <div className="mb-3 flex items-start gap-3">
                         {frame?.image_url ? (
                           <img
-                            src={frame.image_url}
+                            src={appendImageCacheBuster(
+                              frame.image_url,
+                              frame.updated_at,
+                              projectSnapshot.updated_at,
+                              projectSnapshot.last_task_id
+                            )}
                             alt={`分镜 ${frame.sequence || idx + 1}`}
                             className="h-20 w-28 shrink-0 rounded-lg object-cover"
                           />
