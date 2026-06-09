@@ -1,15 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Trash2 } from 'lucide-react'
+import { appendVideoCacheBuster } from '../../utils/mediaUrl.js'
 import { getProjects, deleteProject } from '../../services/project.js'
 import ConfirmDialog from '../Common/ConfirmDialog.jsx'
 import ProjectDetail from './ProjectDetail.jsx'
-
-function appendVideoCacheBuster(url, taskId) {
-  if (!url) return url
-  const separator = url.includes('?') ? '&' : '?'
-  const token = taskId || Date.now()
-  return `${url}${separator}v=${encodeURIComponent(token)}`
-}
 
 export default function ProjectManager() {
   const [projects, setProjects] = useState([])
@@ -149,7 +143,7 @@ function ProjectCard({ project, onClick, onDelete }) {
   const statusColor =
     stage === 'completed' ? 'bg-[rgba(16,185,129,0.14)] text-[#6ee7b7]' :
     'bg-[rgba(124,58,237,0.14)] text-[#c4b5fd]'
-  const displayVideoUrl = appendVideoCacheBuster(project.video_output_url, project.last_task_id)
+  const displayVideoUrl = appendVideoCacheBuster(project.video_output_url, project.updated_at, project.last_task_id)
 
   return (
     <div className="group relative">

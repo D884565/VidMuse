@@ -58,28 +58,7 @@ class ReActAgent(BaseAgent):
         # 追踪配置
         self.tracing_config = AGENT_CONFIG["tracing"]
 
-        # 初始化异步事件循环（用于同步环境下的异步保存）
-        self._loop = None
-        if self.tracing_config.get("async_save", True) and HAS_TRACE_STORAGE:
-            self._init_event_loop()
-
-    def _init_event_loop(self):
-        """初始化事件循环，处理同步环境下的异步任务"""
-        try:
-            self._loop = asyncio.get_running_loop()
-        except RuntimeError:
-            # 没有运行中的事件循环，创建一个新的
-            self._loop = asyncio.new_event_loop()
-            # 启动后台线程运行事件循环
-            import threading
-            threading.Thread(target=self._run_event_loop, daemon=True).start()
-
-    def _run_event_loop(self):
-        """在后台线程中运行事件循环"""
-        asyncio.set_event_loop(self._loop)
-        self._loop.run_forever()
-
-    async def _save_trace_async(
+    def _do_save_trace(
         self,
         session_id: str,
         user_input: str,
@@ -95,12 +74,12 @@ class ReActAgent(BaseAgent):
         project_id: Optional[int] = None,
         meta_data: Optional[Dict[str, Any]] = None
     ):
-        """异步保存推理轨迹"""
+        """同步保存推理轨迹"""
         if not HAS_TRACE_STORAGE or not self.tracing_config.get("enabled", True):
             return
 
         try:
-            await trace_storage.save_trace(
+            trace_storage.save_trace(
                 session_id=session_id,
                 user_input=user_input,
                 system_prompt=system_prompt if self.tracing_config.get("save_system_prompt", True) else "",
@@ -121,7 +100,6 @@ class ReActAgent(BaseAgent):
                 meta_data=meta_data
             )
         except Exception as e:
-            # 轨迹保存失败不影响主流程
             import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"保存Agent轨迹失败: {str(e)}")
@@ -162,22 +140,9 @@ class ReActAgent(BaseAgent):
             "meta_data": meta_data
         }
 
-        if self.tracing_config.get("async_save", True) and self._loop and self._loop.is_running():
-            # 异步保存
-            try:
-                asyncio.run_coroutine_threadsafe(self._save_trace_async(**save_kwargs), self._loop)
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"异步保存推理轨迹失败: {str(e)}")
-        else:
-            # 同步保存
-            try:
-                asyncio.run(self._save_trace_async(**save_kwargs))
-            except Exception as e:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"同步保存推理轨迹失败: {str(e)}")
+        # 直接同步调用，避免事件循环问题
+        self._do_save_trace(**save_kwargs)
+
 
     def _init_llm_client(self):
         """初始化大模型客户端"""

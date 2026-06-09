@@ -836,6 +836,17 @@ class ScriptGenerationService:
 
         try:
             # 在独立线程中运行Agent（避免阻塞事件循环）
+            trace_context = {
+                "session_id": f"script_project_{getattr(project, 'id', 'unknown')}",
+                "project_id": getattr(project, "id", None),
+                "user_id": getattr(project, "user_id", None),
+                "meta_data": {
+                    "source": "script_generation_service",
+                    "creation_mode": creation_mode,
+                    "template_id": template_id,
+                    "strategy_id": strategy_id,
+                },
+            }
             loop = asyncio.get_event_loop()
             script_content = await loop.run_in_executor(
                 None,
@@ -847,7 +858,8 @@ class ScriptGenerationService:
                         creation_mode=creation_mode,
                         template_id=template_id,
                         strategy_id=strategy_id,
-                        template_params=template_params
+                        template_params=template_params,
+                        context=trace_context
                     )
                 )
             )

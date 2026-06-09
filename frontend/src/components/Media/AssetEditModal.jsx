@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Trash2, X } from 'lucide-react'
-import { reuploadImageAsset, updateAsset, updateTextAsset } from '../../services/asset.js'
+import {
+  deleteAsset,
+  reuploadImageAsset,
+  updateAsset,
+  updateTextAsset,
+} from '../../services/asset.js'
 
 /**
  * 素材编辑弹窗
@@ -49,8 +54,8 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
   async function handleReupload(event) {
     const file = event.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) {
-      setError('请选择图片文件')
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) {
+      setError('请选择图片或视频文件')
       return
     }
 
@@ -77,7 +82,6 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
   async function handleDelete() {
     try {
       setSaving(true)
-      const { deleteAsset } = await import('../../services/asset.js')
       await deleteAsset(asset.id)
       onDeleted?.(asset.id)
     } catch (err) {
@@ -94,10 +98,10 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
         <div className="flex items-center justify-between border-b border-[var(--border-soft)] px-6 py-4">
           <div>
             <h2 className="m-0 text-lg font-semibold text-white">
-              {asset.type === 'text' ? '编辑文本素材' : '编辑图片素材'}
+              {asset.type === 'text' ? '编辑文本素材' : asset.type === 'video' ? '编辑视频素材' : '编辑图片素材'}
             </h2>
             <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">
-              ID: {asset.id} · {asset.type === 'text' ? '文本' : '图片'}
+              ID: {asset.id} · {asset.type === 'text' ? '文本' : asset.type === 'video' ? '视频' : '图片'}
             </p>
           </div>
           <button
@@ -128,6 +132,18 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
                       无图片
                     </div>
                   )
+                ) : asset.type === 'video' ? (
+                  asset.url ? (
+                    <video
+                      src={asset.url}
+                      controls
+                      className="aspect-video w-full object-contain"
+                    />
+                  ) : (
+                    <div className="flex aspect-video items-center justify-center text-[var(--text-muted)]">
+                      无视频
+                    </div>
+                  )
                 ) : (
                   <div className="max-h-64 overflow-y-auto p-4 text-sm leading-6 text-white/80">
                     {contentText || '（空文本）'}
@@ -140,12 +156,12 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
                 )}
               </div>
 
-              {asset.type === 'image' && (
+              {(asset.type === 'image' || asset.type === 'video') && (
                 <div className="mt-3">
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept={asset.type === 'video' ? 'video/*' : 'image/*'}
                     className="hidden"
                     onChange={handleReupload}
                   />
@@ -156,7 +172,7 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
                     className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.04)] px-4 py-2.5 text-sm text-white transition hover:bg-[rgba(255,255,255,0.08)] disabled:opacity-50"
                   >
                     <RefreshCw size={15} />
-                    {uploading ? '上传中...' : '重新上传图片'}
+                    {uploading ? '上传中...' : asset.type === 'video' ? '重新上传视频' : '重新上传图片'}
                   </button>
                 </div>
               )}
@@ -189,7 +205,7 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
               )}
 
               <div className="rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.02)] p-3 text-xs text-[var(--text-muted)]">
-                {asset.type === 'image' ? '更换图片后，所有引用该素材的地方都会使用新图片。' : '修改文本内容后会立即更新素材记录。'}
+                {asset.type === 'text' ? '修改文本内容后会立即更新素材记录。' : asset.type === 'video' ? '更换视频后，所有引用该素材的地方都会使用新视频。' : '更换图片后，所有引用该素材的地方都会使用新图片。'}
               </div>
 
               {error && (

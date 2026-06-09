@@ -5,6 +5,7 @@ import {
   DRAFT_PROJECT_KEY,
   appendOptimisticMessages,
   appendTokenToMessage,
+  buildScriptHistorySyncPlaceholder,
   buildScriptGenerationMessagePayload,
   clearPersistedDraftState,
   getProjectMessages,
@@ -336,4 +337,46 @@ test('buildScriptGenerationMessagePayload keeps script generation copy aligned w
       message: '剧本创建完成',
     },
   ])
+})
+
+test('buildScriptHistorySyncPlaceholder hides the local script completion message until persisted history arrives', () => {
+  assert.deepEqual(buildScriptHistorySyncPlaceholder('task-123'), {
+    content: '',
+    blocks: [],
+    stage: 'script',
+    action_type: 'GENERATE_SCRIPT',
+    task_id: 'task-123',
+  })
+})
+
+test('mergeFetchedMessages drops the local script completion placeholder when persisted script history exists', () => {
+  const merged = mergeFetchedMessages(
+    [
+      {
+        id: 'assistant-local',
+        role: 'assistant',
+        content: '',
+        blocks: [],
+        streaming: false,
+        optimistic: false,
+        client_id: 'client-assistant-script',
+        ...buildScriptHistorySyncPlaceholder('task-123'),
+      },
+    ],
+    [
+      {
+        id: 501,
+        role: 'assistant',
+        content: '剧本阶段已完成，请检查主题、风格和每个分镜内容，满意后可以确认并生成图片。',
+        blocks: [{ type: 'storyboard_table', frames: [{ id: 1 }] }],
+        stage: 'script',
+        action_type: 'GENERATE_SCRIPT',
+        task_id: 123,
+      },
+    ]
+  )
+
+  assert.equal(merged.length, 1)
+  assert.equal(merged[0]?.id, 501)
+  assert.equal(merged[0]?.action_type, 'GENERATE_SCRIPT')
 })

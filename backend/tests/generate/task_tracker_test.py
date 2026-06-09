@@ -62,3 +62,22 @@ def test_get_frame_summary(tracker, mock_db):
 
         assert result["total"] == 6
         assert result["failed"] == 1
+
+
+def test_update_stage_accepts_retrying_status_and_error_message(tracker, mock_db):
+    with patch("backend.v1.app.generate.service.generateUtils.task_tracker.task_tracker_dao") as mock_dao:
+        tracker.update_stage(
+            mock_db,
+            "gen_retry",
+            "retrying",
+            status="retrying",
+            error_message="retrying after timeout",
+        )
+
+        mock_dao.update_task.assert_called_once_with(
+            mock_db,
+            "gen_retry",
+            current_stage="retrying",
+            status="retrying",
+            error_message="retrying after timeout",
+        )

@@ -2,7 +2,9 @@ import { useEffect, useRef, useState } from 'react'
 import { CheckCircle2, Play, RefreshCw, XCircle } from 'lucide-react'
 import { getGenerationTask } from '../../services/project.js'
 import { useAppStore } from '../../store/appStore.js'
+import { appendVideoCacheBuster } from '../../utils/mediaUrl.js'
 import { formatVideoStyle } from '../../utils/videoStyle.js'
+import { localizeProgressMessage } from './progressCardLocalization.js'
 
 const TASK_POLL_INTERVAL_MS = 2000
 const SUCCESS_STATUSES = new Set(['confirmed', 'completed', 'complete', 'success', 'succeeded', 'done'])
@@ -134,6 +136,7 @@ function ImageGrid({ block }) {
 }
 
 function VideoCard({ block }) {
+  const displayVideoUrl = appendVideoCacheBuster(block.video_url, block.updated_at, block.task_id)
   return (
     <div className="inline-block max-w-[280px] rounded-xl border border-[#10b981]/25 bg-[#052e24]/50 p-3">
       <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-[#6ee7b7]">
@@ -141,7 +144,7 @@ function VideoCard({ block }) {
         视频成片
       </div>
       {block.video_url ? (
-        <video src={block.video_url} controls className="aspect-[9/16] w-full rounded-lg bg-black object-cover" />
+        <video key={displayVideoUrl} src={displayVideoUrl} controls className="aspect-[9/16] w-full rounded-lg bg-black object-cover" />
       ) : (
         <div className="flex aspect-[9/16] items-center justify-center rounded-lg bg-black/40 text-xs text-[var(--text-muted)]">视频生成中...</div>
       )}
@@ -156,6 +159,7 @@ function ProgressCard({ block, onActionComplete }) {
   const effectiveStatus = taskStatus || initialStatus
   const tone = getProgressCardTone(effectiveStatus)
   const Icon = tone.icon
+  const displayMessage = localizeProgressMessage(block.message)
 
   useEffect(() => {
     setTaskStatus(initialStatus)
@@ -196,7 +200,7 @@ function ProgressCard({ block, onActionComplete }) {
     <div className={`rounded-xl border ${tone.wrapper} p-4 text-sm`}>
       <div className={`flex items-center gap-2 ${tone.text}`}>
         <Icon size={15} className={tone.spin ? 'animate-spin' : undefined} />
-        {block.message}
+        {displayMessage}
       </div>
     </div>
   )

@@ -1,4 +1,4 @@
-export function appendVideoCacheBuster(url, ...tokens) {
+function appendCacheBuster(url, ...tokens) {
   if (!url) return url
 
   const stableToken = tokens.find((token) => token !== undefined && token !== null && token !== '')
@@ -6,4 +6,12 @@ export function appendVideoCacheBuster(url, ...tokens) {
 
   const separator = url.includes('?') ? '&' : '?'
   return `${url}${separator}v=${encodeURIComponent(String(stableToken))}`
+}
+
+export function appendVideoCacheBuster(url, ...tokens) {
+  return appendCacheBuster(url, ...tokens)
+}
+
+export function appendImageCacheBuster(url, ...tokens) {
+  return appendCacheBuster(url, ...tokens)
 }

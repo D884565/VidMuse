@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { X, Download, Edit3, Film, Image as ImageIcon, Loader2, Save } from 'lucide-react'
+import { appendVideoCacheBuster } from '../../utils/mediaUrl.js'
+import { appendImageCacheBuster } from '../../utils/mediaUrl.js'
 import {
   downloadProjectVideo,
   getGenerationTask,
@@ -10,7 +12,6 @@ import {
 import { regenerateFrameImage, regenerateFrameVideo, updateFrame } from '../../services/frame.js'
 import { useAppStore } from '../../store/appStore.js'
 import { formatVideoStyle } from '../../utils/videoStyle.js'
-import StoryboardTimeline from '../Workflow/StoryboardTimeline.jsx'
 
 const DEFAULT_FORM = {
   narration: '',
@@ -24,13 +25,6 @@ const DEFAULT_FORM = {
 
 const TASK_POLL_INTERVAL_MS = 1500
 const TERMINAL_TASK_STATUSES = new Set(['succeeded', 'failed', 'cancelled', 'completed'])
-
-function appendVideoCacheBuster(url, taskId) {
-  if (!url) return url
-  const separator = url.includes('?') ? '&' : '?'
-  const token = taskId || Date.now()
-  return `${url}${separator}v=${encodeURIComponent(token)}`
-}
 
 function buildFrameForm(frame) {
   return {
@@ -184,6 +178,7 @@ function FrameEditorPanel({
 }
 
 export default function ProjectDetail({ project, onClose }) {
+  const [projectSnapshot, setProjectSnapshot] = useState(project)
   const [scriptDetail, setScriptDetail] = useState(null)
   const [frames, setFrames] = useState([])
   const [loading, setLoading] = useState(true)
@@ -203,8 +198,8 @@ export default function ProjectDetail({ project, onClose }) {
     [frames, selectedFrameId]
   )
   const displayVideoUrl = useMemo(
-    () => appendVideoCacheBuster(videoUrl, project.last_task_id),
-    [project.last_task_id, videoUrl]
+    () => appendVideoCacheBuster(videoUrl, projectSnapshot.updated_at, projectSnapshot.last_task_id),
+    [projectSnapshot.last_task_id, projectSnapshot.updated_at, videoUrl]
   )
   const mustRegenerateImageFirst = !!selectedFrame && (
     !selectedFrame.image_url || Number(selectedFrame.status) !== 2 || !!selectedFrame.dirty
@@ -246,6 +241,7 @@ export default function ProjectDetail({ project, onClose }) {
       }
 
       if (detail) {
+        setProjectSnapshot(detail)
         const nextFrames = detail.frames || []
         setFrames(nextFrames)
         setVideoUrl(detail.video_url || detail.video_output_url || project.video_output_url || '')
@@ -255,6 +251,7 @@ export default function ProjectDetail({ project, onClose }) {
           return nextFrames[0].id
         })
       } else {
+        setProjectSnapshot(project)
         setFrames([])
         setVideoUrl(project.video_output_url || '')
         setSelectedFrameId(null)
@@ -265,6 +262,10 @@ export default function ProjectDetail({ project, onClose }) {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    setProjectSnapshot(project)
+  }, [project])
 
   useEffect(() => {
     let cancelled = false
@@ -488,19 +489,6 @@ export default function ProjectDetail({ project, onClose }) {
             </div>
           </div>
 
-          {frames.length > 0 ? (
-            <div className="mb-4">
-              <StoryboardTimeline
-                frames={frames}
-                selectedFrameId={selectedFrameId}
-                onSelectFrame={(frame) => {
-                  setSelectedFrameId(frame.id)
-                  setEditorOpen(true)
-                }}
-              />
-            </div>
-          ) : null}
-
           {feedback ? (
             <div className="mb-3 rounded-lg border border-[rgba(167,139,250,0.25)] bg-[rgba(124,58,237,0.12)] px-3 py-2 text-xs text-[#d8b4fe]">
               {feedback}
@@ -579,7 +567,12 @@ export default function ProjectDetail({ project, onClose }) {
                       <div className="mb-3 flex items-start gap-3">
                         {frame?.image_url ? (
                           <img
-                            src={frame.image_url}
+                            src={appendImageCacheBuster(
+                              frame.image_url,
+                              frame.updated_at,
+                              projectSnapshot.updated_at,
+                              projectSnapshot.last_task_id
+                            )}
                             alt={`分镜 ${frame.sequence || idx + 1}`}
                             className="h-20 w-28 shrink-0 rounded-lg object-cover"
                           />
@@ -587,7 +580,6 @@ export default function ProjectDetail({ project, onClose }) {
                         <div className="flex-1">
                           <p className="m-0 text-xs font-medium text-[#a78bfa]">
                             分镜 {frame.sequence || idx + 1}
-                            {frame?.duration ? ` · ${Math.round(frame.duration)}s` : ''}
                             {frame?.dirty ? ' · 待应用修改' : ''}
                           </p>
                           <p className="m-0 mt-1 text-sm text-white">{sceneDescription}</p>

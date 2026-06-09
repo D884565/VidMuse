@@ -1,6 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { notification } from 'antd'
 import { PushClient } from '@/utils/push-sdk'
-import { message } from 'antd'
+import { showPushNotification } from './pushNotifications'
 
 const PushContext = createContext()
 
@@ -68,15 +69,13 @@ export function PushProvider({ children }) {
     }
   }, [])
 
-  // 初始化推送客户端
   useEffect(() => {
     const token = localStorage.getItem('token')
     if (!token) {
       setError(new Error('未登录，无法连接推送服务'))
-      return
+      return undefined
     }
 
-    // 使用相对路径走Vite代理，避免跨域问题
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/ws/connect`
 
@@ -93,16 +92,20 @@ export function PushProvider({ children }) {
     client.onConnect(() => {
       setIsConnected(true)
       setError(null)
-      message.success('实时推送服务已连接')
-
-      // 获取未读消息数量
-      client.getUnreadCount().then(res => {
-        if (res.code === 200) {
-          setUnreadCount(res.data.unread_count)
-        }
-      }).catch(err => {
-        console.error('获取未读消息数量失败:', err)
+      notification.success({
+        message: '实时推送服务已连接',
+        duration: 3,
       })
+
+      client.getUnreadCount()
+        .then((res) => {
+          if (res.code === 200) {
+            setUnreadCount(res.data.unread_count)
+          }
+        })
+        .catch((err) => {
+          console.error('获取未读消息数量失败:', err)
+        })
     })
 
     client.onDisconnect(({ code, reason }) => {
@@ -131,7 +134,7 @@ export function PushProvider({ children }) {
       setError(err)
     })
 
-    client.onMessage(handleMessage)
+    client.onMessage(handlePushMessage)
 
     client.connect()
     setPushClient(client)
@@ -141,9 +144,8 @@ export function PushProvider({ children }) {
     }
   }, [handleMessage, showReconnectTip])
 
-  // 标记消息为已读
   const markMessagesAsRead = useCallback(async (messageIds) => {
-    if (!pushClient) return
+    if (!pushClient) return undefined
 
     try {
       const res = await pushClient.markMessagesAsRead(messageIds)
@@ -152,35 +154,49 @@ export function PushProvider({ children }) {
         await refreshUnreadCount()
         return res
       }
+      return res
     } catch (err) {
       console.error('标记消息已读失败:', err)
       throw err
     }
   }, [pushClient, refreshUnreadCount])
 
-  // 获取历史消息
   const getHistoryMessages = useCallback(async (params = {}) => {
-    if (!pushClient) return
+    if (!pushClient) return undefined
 
     try {
-      const res = await pushClient.getHistoryMessages(params)
-      return res
+      return await pushClient.getHistoryMessages(params)
     } catch (err) {
       console.error('获取历史消息失败:', err)
       throw err
     }
   }, [pushClient])
 
+  const refreshUnreadCount = useCallback(async () => {
+    if (!pushClient) return
+
+    try {
+      const res = await pushClient.getUnreadCount()
+      if (res.code === 200) {
+        setUnreadCount(res.data.unread_count)
+      }
+    } catch (err) {
+      console.error('刷新未读数量失败:', err)
+    }
+  }, [pushClient])
+
   return (
-    <PushContext.Provider value={{
-      isConnected,
-      error,
-      pushClient,
-      unreadCount,
-      markMessagesAsRead,
-      getHistoryMessages,
-      refreshUnreadCount
-    }}>
+    <PushContext.Provider
+      value={{
+        isConnected,
+        error,
+        pushClient,
+        unreadCount,
+        markMessagesAsRead,
+        getHistoryMessages,
+        refreshUnreadCount,
+      }}
+    >
       {children}
     </PushContext.Provider>
   )
