@@ -8,6 +8,8 @@ import CategoryManagement from '../pages/Admin/CategoryManagement.jsx'
 import AssetManagement from '../pages/Admin/AssetManagement.jsx'
 import VideoLibrary from '../pages/Admin/VideoLibrary.jsx'
 import InspirationTemplate from '../pages/Admin/InspirationTemplate.jsx'
+import RelationGraph from '../pages/Admin/RelationGraph'
+import ClusterVisualization from '../pages/Admin/ClusterVisualization.jsx'
 import TraceManagement from '../pages/Admin/TraceManagement.jsx'
 import SystemTraceManagement from '../pages/Admin/SystemTraceManagement.jsx'
 import PipelineManagement from '../pages/Admin/PipelineManagement.jsx'
@@ -68,6 +70,14 @@ export const router = createBrowserRouter([
       {
         path: 'pipelines',
         element: <PipelineManagement />
+      },
+      {
+        path: 'cluster-visualization',
+        element: <ClusterVisualization />
+      },
+      {
+        path: 'relation-graph',
+        element: <RelationGraph />
       },
     ]
   },

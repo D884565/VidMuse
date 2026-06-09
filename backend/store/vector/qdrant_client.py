@@ -40,15 +40,18 @@ class QdrantClient(VectorDatabase):
         # 初始化共享的Qdrant客户端连接
         if QdrantClient._client is None:
             try:
-                QdrantClient._client = Qdrant(
-                    host=settings.QDRANT_HOST,
-                    port=settings.QDRANT_PORT,
-                    grpc_port=settings.QDRANT_GRPC_PORT,
-                    prefer_grpc=settings.QDRANT_PREFER_GRPC,
-                    api_key=settings.QDRANT_API_KEY,
-                    https=False,
-                    check_compatibility=False,
-                )
+                # 仅当API密钥非空时才传递
+                qdrant_kwargs = {
+                    "host": settings.QDRANT_HOST,
+                    "port": settings.QDRANT_PORT,
+                    "grpc_port": settings.QDRANT_GRPC_PORT,
+                    "prefer_grpc": settings.QDRANT_PREFER_GRPC,
+                    "https": False,
+                }
+                if settings.QDRANT_API_KEY and settings.QDRANT_API_KEY.strip():
+                    qdrant_kwargs["api_key"] = settings.QDRANT_API_KEY
+
+                QdrantClient._client = Qdrant(**qdrant_kwargs)
             except Exception as e:
                 raise RuntimeError(f"连接Qdrant失败: {str(e)}")
 

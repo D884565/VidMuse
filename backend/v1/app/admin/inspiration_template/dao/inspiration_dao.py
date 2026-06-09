@@ -127,6 +127,37 @@ class FactorDAO:
 
         return total, factors
 
+    @staticmethod
+    async def count_factors(db: AsyncSession) -> int:
+        """统计有效因子总数
+
+        :param db: 数据库会话
+        :return: 因子总数
+        """
+        count_query = select(func.count()).select_from(
+            select(Factor).where(Factor.is_deleted == 0).subquery()
+        )
+        total = await db.scalar(count_query) or 0
+        return total
+
+    @staticmethod
+    async def list_all_factors(db: AsyncSession, min_usage: Optional[int] = None) -> List[Factor]:
+        """查询所有有效因子（不分页，供图谱使用）
+
+        :param db: 数据库会话
+        :param min_usage: 最小使用次数筛选（可选）
+        :return: 因子列表
+        """
+        # 暂时去掉is_deleted条件调试
+        query = select(Factor)
+
+        if min_usage is not None:
+            query = query.where(Factor.usage_count >= min_usage)
+
+        query = query.order_by(Factor.popularity.desc(), Factor.created_at.desc())
+        result = await db.execute(query)
+        return result.scalars().all()
+
 
 class StrategyDAO:
     """创作策略数据访问层"""
@@ -249,6 +280,40 @@ class StrategyDAO:
         strategies = result.scalars().all()
 
         return total, strategies
+
+    @staticmethod
+    async def count_strategies(db: AsyncSession) -> int:
+        """统计有效策略总数
+
+        :param db: 数据库会话
+        :return: 策略总数
+        """
+        count_query = select(func.count()).select_from(
+            select(Strategy).where(Strategy.is_deleted == 0).subquery()
+        )
+        total = await db.scalar(count_query) or 0
+        return total
+
+    @staticmethod
+    async def list_all_strategies(db: AsyncSession, min_usage: Optional[int] = None, min_success_rate: Optional[float] = None) -> List[Strategy]:
+        """查询所有有效策略（不分页，供图谱使用）
+
+        :param db: 数据库会话
+        :param min_usage: 最小使用次数筛选（可选）
+        :param min_success_rate: 最低成功率筛选（可选）
+        :return: 策略列表
+        """
+        # 暂时去掉is_deleted条件调试
+        query = select(Strategy)
+
+        if min_usage is not None:
+            query = query.where(Strategy.usage_count >= min_usage)
+        if min_success_rate is not None:
+            query = query.where(Strategy.success_rate >= min_success_rate)
+
+        query = query.order_by(Strategy.success_rate.desc(), Strategy.created_at.desc())
+        result = await db.execute(query)
+        return result.scalars().all()
 
 
 class InspirationTemplateDAO:
@@ -373,6 +438,39 @@ class InspirationTemplateDAO:
 
         return total, templates
 
+    @staticmethod
+    async def count_templates(db: AsyncSession) -> int:
+        """统计有效模板总数
+
+        :param db: 数据库会话
+        :return: 模板总数
+        """
+        count_query = select(func.count()).select_from(
+            select(InspirationTemplate).where(InspirationTemplate.is_deleted == 0).subquery()
+        )
+        total = await db.scalar(count_query) or 0
+        return total
+
+    @staticmethod
+    async def list_all_templates(db: AsyncSession, min_usage: Optional[int] = None, min_success_rate: Optional[float] = None) -> List[InspirationTemplate]:
+        """查询所有有效模板（不分页，供图谱使用）
+
+        :param db: 数据库会话
+        :param min_usage: 最小使用次数筛选（可选）
+        :param min_success_rate: 最低成功率筛选（可选）
+        :return: 模板列表
+        """
+        query = select(InspirationTemplate).where(InspirationTemplate.is_deleted == 0)
+
+        if min_usage is not None:
+            query = query.where(InspirationTemplate.usage_count >= min_usage)
+        if min_success_rate is not None:
+            query = query.where(InspirationTemplate.success_rate >= min_success_rate)
+
+        query = query.order_by(InspirationTemplate.success_rate.desc(), InspirationTemplate.created_at.desc())
+        result = await db.execute(query)
+        return result.scalars().all()
+
 
 class TemplateFactorRelationDAO:
     """模板-因子关联数据访问层"""
@@ -481,3 +579,14 @@ class TemplateFactorRelationDAO:
         result = await db.execute(stmt)
         await db.commit()
         return result.rowcount
+
+    @staticmethod
+    async def list_all_relations(db: AsyncSession) -> List[TemplateFactorRelation]:
+        """查询所有模板-因子关联关系（供图谱使用）
+
+        :param db: 数据库会话
+        :return: 关联关系列表
+        """
+        query = select(TemplateFactorRelation).order_by(TemplateFactorRelation.sort_order)
+        result = await db.execute(query)
+        return result.scalars().all()

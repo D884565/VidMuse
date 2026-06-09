@@ -199,6 +199,28 @@ export const deleteTemplateFactorRelation = (relationId) => {
   return api.delete(`/v1/admin/inspiration/relations/${relationId}`)
 }
 
+// ==================== 聚类分析接口 ====================
+export const getClusterOverview = () => {
+  return api.get('/v1/admin/inspiration/cluster/overview')
+}
+
+export const getClusterDetail = (clusterId) => {
+  return api.get(`/v1/admin/inspiration/cluster/detail/${clusterId}`)
+}
+
+export const runClusterAnalysis = (params) => {
+  return api.post('/v1/admin/inspiration/cluster/run', null, { params })
+}
+
+export const getClusterAnalysisStatus = (taskId) => {
+  return api.get('/v1/admin/inspiration/cluster/status', { params: taskId ? { task_id: taskId } : {} })
+}
+
+// 获取关系图谱数据
+export const getRelationGraph = (params) => {
+  return api.get('/v1/admin/inspiration/relation-graph', { params })
+}
+
 // ==================== Agent追踪/监控（TraceManagement页面使用）====================
 export const getTraceList = (params) => {
   return api.get('/v1/admin/agent/traces', { params })

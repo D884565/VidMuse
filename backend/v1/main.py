@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from backend.v1.app.slice.controller.slice_controller import router as slice_router
 from backend.v1.app.assets.controller.asset_controller import router as asset_router
 from backend.v1.app.script.controller.script_controller import router as script_router
+from backend.v1.app.push.service.connection_manager import connection_manager
 
 from fastapi import Request, Depends
 from typing import Annotated
@@ -48,9 +49,20 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     os.makedirs(settings.LOCAL_STORAGE_ROOT, exist_ok=True)
     from backend.store.database.schema_bootstrap import ensure_product_assets_table
+    from backend.v1.app.push.service.redis_client import redis_client
 
     ensure_product_assets_table()
+
+    # 初始化Redis客户端
+    await redis_client.initialize()
+
+    await connection_manager.initialize()
+
+
     yield
+
+    # 关闭Redis客户端
+    await redis_client.close()
 
 
 app = FastAPI(title="VidMuse", version="0.1.0", lifespan=lifespan, swagger_ui_parameters={"persistAuthorization": True})

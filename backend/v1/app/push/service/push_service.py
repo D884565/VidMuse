@@ -107,7 +107,9 @@ class PushService:
         if message_dict.get("created_at"):
             message_dict["created_at"] = message_dict["created_at"].isoformat()
 
-        # 推送消息
+        # 推送消息 - 通过Redis发布，支持多worker环境
+        await connection_manager.publish_personal_message(message_dict, user_id)
+        # 检查本地是否有连接，返回是否发送成功（仅代表本地实例的发送状态）
         success = await connection_manager.send_personal_message(message_dict, user_id)
 
         logger.info(
@@ -145,6 +147,9 @@ class PushService:
             "created_at": None
         }
 
+        # 广播消息 - 通过Redis发布，支持多worker环境
+        await connection_manager.publish_broadcast(message_dict)
+        # 本地也发送一份
         await connection_manager.broadcast(message_dict)
         logger.info(f"Broadcast message {message_id}, type: {message_type}")
 

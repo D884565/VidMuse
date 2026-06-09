@@ -10,7 +10,9 @@ import {
   Lightbulb,
   Activity,
   Server,
-  Workflow
+  Workflow,
+  Network,
+  BarChart3
 } from 'lucide-react'
 import { useAppStore } from '../../../store/appStore'
 
@@ -20,6 +22,8 @@ const menuItems = [
   { path: '/admin/assets', icon: Image, label: '资产管理' },
   { path: '/admin/videos', icon: Video, label: '视频库' },
   { path: '/admin/inspiration', icon: Lightbulb, label: '灵感模板' },
+  { path: '/admin/relation-graph', icon: BarChart3, label: '关系图谱' },
+  { path: '/admin/cluster-visualization', icon: Network, label: '聚类可视化' },
   { path: '/admin/pipelines', icon: Workflow, label: '流水线管理' },
   { path: '/admin/traces', icon: Activity, label: 'Agent链路追踪' },
   { path: '/admin/system-traces', icon: Server, label: '系统链路追踪' },

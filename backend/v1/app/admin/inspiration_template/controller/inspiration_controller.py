@@ -16,6 +16,7 @@ from backend.v1.app.admin.inspiration_template.service.inspiration_service impor
     inspiration_template_service,
     template_factor_relation_service
 )
+from backend.v1.app.admin.inspiration_template.service.cluster_service import cluster_service
 from backend.v1.app.admin.inspiration_template.dao.schema import (
     # 因子相关
     FactorCreateRequest,
@@ -78,7 +79,7 @@ async def list_factors(
     keyword: Optional[str] = Query(None, description="按名称/描述模糊搜索"),
     tag: Optional[str] = Query(None, description="按标签筛选"),
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    page_size: int = Query(20, ge=1, le=1000, description="每页数量"),
     db: AsyncSession = Depends(get_db)
 ):
     """分页查询创作因子列表，支持多种筛选条件"""
@@ -125,7 +126,7 @@ async def list_strategies(
     tag: Optional[str] = Query(None, description="按标签筛选"),
     min_success_rate: Optional[float] = Query(None, ge=0, le=1, description="最低成功率筛选"),
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    page_size: int = Query(20, ge=1, le=1000, description="每页数量"),
     db: AsyncSession = Depends(get_db)
 ):
     """分页查询创作策略列表，支持多种筛选条件"""
@@ -173,7 +174,7 @@ async def list_templates(
     version: Optional[str] = Query(None, description="按版本号筛选"),
     min_success_rate: Optional[float] = Query(None, ge=0, le=1, description="最低成功率筛选"),
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    page_size: int = Query(20, ge=1, le=1000, description="每页数量"),
     db: AsyncSession = Depends(get_db)
 ):
     """分页查询灵感模板列表，支持多种筛选条件"""
@@ -211,4 +212,62 @@ async def delete_relation(relation_id: int, db: AsyncSession = Depends(get_db)):
 async def get_template_factors(template_id: str, db: AsyncSession = Depends(get_db)):
     """获取指定模板关联的所有因子，区分为必填和可选"""
     result = await template_factor_relation_service.get_template_factors(db, template_id)
+    return Response.success(data=result)
+
+
+# ==================== 聚类分析接口 ====================
+
+@router.get("/cluster/overview", response_model=Response, summary="获取聚类概览")
+async def get_cluster_overview(db: AsyncSession = Depends(get_db)):
+    """获取聚类分析的概览数据，包括统计信息和簇列表"""
+    result = await cluster_service.get_overview(db)
+    return Response.success(data=result)
+
+
+@router.get("/cluster/detail/{cluster_id}", response_model=Response, summary="获取簇详情")
+async def get_cluster_detail(
+    cluster_id: str,
+    db: AsyncSession = Depends(get_db)
+):
+    """获取指定簇的详细信息，包括关键词、样本文本、关联因子等"""
+    result = await cluster_service.get_cluster_detail(db, cluster_id)
+    return Response.success(data=result)
+
+
+@router.post("/cluster/run", response_model=Response, summary="运行聚类分析")
+async def run_cluster_analysis(
+    max_vectors: int = Query(800, description="最大处理向量数量"),
+    cluster_eps: float = Query(0.2, description="DBSCAN聚类阈值"),
+    min_samples: int = Query(3, description="聚类最小样本数"),
+    db: AsyncSession = Depends(get_db)
+):
+    """触发一次完整的聚类分析任务，后台异步执行"""
+    params = {
+        "max_vectors": max_vectors,
+        "cluster_eps": cluster_eps,
+        "min_samples": min_samples
+    }
+    result = await cluster_service.run_analysis(params)
+    return Response.success(data=result, message="聚类分析任务已启动")
+
+
+@router.get("/cluster/status", response_model=Response, summary="获取聚类分析状态")
+async def get_cluster_analysis_status(task_id: Optional[str] = Query(None, description="任务ID")):
+    """获取聚类分析任务的运行状态和进度"""
+    result = cluster_service.get_analysis_status(task_id)
+    return Response.success(data=result)
+
+
+# ==================== 关系图谱接口 ====================
+
+@router.get("/relation-graph", response_model=Response, summary="获取灵感模板关系图谱数据")
+async def get_relation_graph(
+    min_usage: Optional[int] = Query(None, ge=0, description="最小使用次数筛选"),
+    min_success_rate: Optional[float] = Query(None, ge=0, le=1, description="最低成功率筛选，0-1"),
+    db: AsyncSession = Depends(get_db)
+):
+    """获取灵感模板关系图谱数据，包含所有策略、模板、因子节点及其关联关系"""
+    result = await inspiration_template_service.get_relation_graph(
+        db, min_usage=min_usage, min_success_rate=min_success_rate
+    )
     return Response.success(data=result)

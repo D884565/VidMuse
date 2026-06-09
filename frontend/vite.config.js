@@ -28,6 +28,7 @@ export default defineConfig(({ mode }) => {
           target: apiTarget,
           changeOrigin: true,
           rewrite: (path) => path.replace(/^\/api/, ''),
+          ws: true,  // 支持WebSocket代理
         },
         '/uploads': {
           target: apiTarget,

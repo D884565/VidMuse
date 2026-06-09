@@ -255,8 +255,33 @@ class PushClient {
           }
         })
       }
+
+      // 发送消息确认（除了系统消息和心跳）
+      if (message.message_id && message.message_type !== 'system') {
+        this._sendAck(message.message_id)
+      }
     } catch (error) {
       console.error('Failed to parse message:', error)
+    }
+  }
+
+  /**
+   * 发送消息确认
+   * @param {string|Array<string>} messageIds - 消息ID或消息ID列表
+   */
+  _sendAck(messageIds) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      return
+    }
+
+    const ids = Array.isArray(messageIds) ? messageIds : [messageIds]
+    try {
+      this.ws.send(JSON.stringify({
+        type: 'ack',
+        message_ids: ids
+      }))
+    } catch (error) {
+      console.error('Failed to send ack:', error)
     }
   }
 
@@ -369,10 +394,8 @@ class PushClient {
    * 获取API基础地址
    */
   _getApiBaseUrl() {
-    // 从WebSocket地址推断API地址
-    const url = new URL(this.options.wsUrl)
-    const protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
-    return `${protocol}//${url.host}`
+    // 使用相对路径走代理，避免跨域和路径前缀问题
+    return '/api'
   }
 }
 

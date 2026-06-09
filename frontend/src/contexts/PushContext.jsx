@@ -9,45 +9,61 @@ export function PushProvider({ children }) {
   const [error, setError] = useState(null)
   const [pushClient, setPushClient] = useState(null)
   const [unreadCount, setUnreadCount] = useState(0)
+  // 控制提示消息的显示，避免频繁弹出
+  const [showReconnectTip, setShowReconnectTip] = useState(true)
+
+  // 刷新未读数量
+  const refreshUnreadCount = useCallback(async () => {
+    if (!pushClient) return
+
+    try {
+      const res = await pushClient.getUnreadCount()
+      if (res.code === 200) {
+        setUnreadCount(res.data.unread_count)
+      }
+    } catch (err) {
+      console.error('刷新未读数量失败:', err)
+    }
+  }, [pushClient])
 
   // 处理消息
-  const handleMessage = useCallback((message) => {
+  const handleMessage = useCallback((msg) => {
     // 全局消息提示
-    if (message.level && message.title) {
-      const content = message.content?.message || message.content
-      switch (message.level) {
+    if (msg.level && msg.title) {
+      const content = msg.content?.message || msg.content
+      switch (msg.level) {
         case 'success':
           message.success({
-            content: message.title,
+            content: msg.title,
             description: content,
             duration: 5
           })
           break
         case 'error':
           message.error({
-            content: message.title,
+            content: msg.title,
             description: content,
             duration: 8
           })
           break
         case 'warning':
           message.warning({
-            content: message.title,
+            content: msg.title,
             description: content,
             duration: 6
           })
           break
         default:
           message.info({
-            content: message.title,
+            content: msg.title,
             description: content,
             duration: 5
           })
       }
     }
 
-    // 更新未读数量
-    if (message.message_type !== 'system') {
+    // 更新未读数量 - 离线消息已经在数据库中统计过，不需要重复增加
+    if (msg.message_type !== 'system' && !msg.offline) {
       setUnreadCount(prev => prev + 1)
     }
   }, [])
@@ -68,9 +84,10 @@ export function PushProvider({ children }) {
       wsUrl,
       token,
       autoReconnect: true,
-      maxReconnectAttempts: 10,
+      maxReconnectAttempts: 20,  // 增加最大重连次数
       reconnectInterval: 3000,
       heartbeatInterval: 30000,
+      heartbeatTimeout: 15000,  // 延长心跳超时时间
     })
 
     client.onConnect(() => {
@@ -91,15 +108,22 @@ export function PushProvider({ children }) {
     client.onDisconnect(({ code, reason }) => {
       setIsConnected(false)
       setError(new Error(`连接断开: ${reason || code}`))
-      if (code !== 1000) { // 不是正常关闭
+      if (code !== 1000 && showReconnectTip) { // 不是正常关闭
         message.warning('实时推送服务已断开，正在尝试重连...')
+        // 30秒内不再显示重连提示
+        setShowReconnectTip(false)
+        setTimeout(() => setShowReconnectTip(true), 30000)
       }
     })
 
     client.onReconnectSuccess(() => {
       setIsConnected(true)
       setError(null)
-      message.success('实时推送服务已重新连接')
+      if (showReconnectTip) {
+        message.success('实时推送服务已重新连接')
+        // 重连成功后重置提示状态
+        setShowReconnectTip(true)
+      }
     })
 
     client.onError((err) => {
@@ -115,7 +139,7 @@ export function PushProvider({ children }) {
     return () => {
       client.disconnect()
     }
-  }, [handleMessage])
+  }, [handleMessage, showReconnectTip])
 
   // 标记消息为已读
   const markMessagesAsRead = useCallback(async (messageIds) => {
@@ -124,14 +148,15 @@ export function PushProvider({ children }) {
     try {
       const res = await pushClient.markMessagesAsRead(messageIds)
       if (res.code === 200) {
-        setUnreadCount(prev => Math.max(0, prev - messageIds.length))
+        // 标记成功后重新获取最新的未读计数，确保准确性
+        await refreshUnreadCount()
         return res
       }
     } catch (err) {
       console.error('标记消息已读失败:', err)
       throw err
     }
-  }, [pushClient])
+  }, [pushClient, refreshUnreadCount])
 
   // 获取历史消息
   const getHistoryMessages = useCallback(async (params = {}) => {
@@ -143,20 +168,6 @@ export function PushProvider({ children }) {
     } catch (err) {
       console.error('获取历史消息失败:', err)
       throw err
-    }
-  }, [pushClient])
-
-  // 刷新未读数量
-  const refreshUnreadCount = useCallback(async () => {
-    if (!pushClient) return
-
-    try {
-      const res = await pushClient.getUnreadCount()
-      if (res.code === 200) {
-        setUnreadCount(res.data.unread_count)
-      }
-    } catch (err) {
-      console.error('刷新未读数量失败:', err)
     }
   }, [pushClient])
 

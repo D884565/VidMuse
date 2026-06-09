@@ -3,9 +3,12 @@
 职责：处理灵感模板相关的业务逻辑，包括因子、策略、模板的CRUD操作，关联数据组装等。
 不直接操作数据库，通过 DAO 层访问数据层。
 """
+import logging
 from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 import uuid
+
+logger = logging.getLogger(__name__)
 
 from backend.v1.app.models.inspiration_template import (
     Factor, Strategy, InspirationTemplate, TemplateFactorRelation
@@ -592,6 +595,159 @@ class InspirationTemplateService:
             "usage_count": template.usage_count,
             "created_at": template.created_at.isoformat() if template.created_at else "",
             "updated_at": template.updated_at.isoformat() if template.updated_at else "",
+        }
+
+    @staticmethod
+    async def get_relation_graph(db: AsyncSession, min_usage: Optional[int] = None, min_success_rate: Optional[float] = None) -> Dict[str, Any]:
+        """获取关系图谱数据
+        :param db: 数据库会话
+        :param min_usage: 最小使用次数筛选
+        :param min_success_rate: 最低成功率筛选
+        :return: 图谱数据（nodes和edges）
+        """
+        # 1. 查询所有数据
+        # 查询因子
+        factors = await FactorDAO.list_all_factors(db, min_usage=None)  # 暂时去掉筛选
+        logger.info(f"查询到因子数量: {len(factors)}")
+        # 查询策略
+        strategies = await StrategyDAO.list_all_strategies(db, min_usage=None, min_success_rate=None)  # 暂时去掉筛选
+        logger.info(f"查询到策略数量: {len(strategies)}")
+        # 查询模板
+        templates = await InspirationTemplateDAO.list_all_templates(db, min_usage=None, min_success_rate=None)  # 暂时去掉筛选
+        logger.info(f"查询到模板数量: {len(templates)}")
+        # 查询所有关联关系
+        relations = await TemplateFactorRelationDAO.list_all_relations(db)
+        logger.info(f"查询到关联关系数量: {len(relations)}")
+
+        # 2. 生成节点
+        nodes = []
+        # 添加策略节点
+        for strategy in strategies:
+            success_rate = float(strategy.success_rate) if strategy.success_rate is not None else 0.0
+            size = 30 + (success_rate * 30)
+            nodes.append({
+                "id": f"strategy_{strategy.strategy_id}",
+                "type": "strategy",
+                "name": strategy.name,
+                "size": size,
+                "color": "#1890ff",
+                "data": {
+                    "id": strategy.id,
+                    "strategy_id": strategy.strategy_id,
+                    "usage_count": strategy.usage_count,
+                    "success_rate": success_rate,
+                    "description": strategy.description,
+                    "tags": strategy.tags,
+                    "applicable_scenarios": strategy.applicable_scenarios
+                }
+            })
+
+        # 添加模板节点
+        for template in templates:
+            success_rate = float(template.success_rate) if template.success_rate is not None else 0.0
+            size = 25 + (min(template.usage_count, 500) / 20)
+            nodes.append({
+                "id": f"template_{template.template_id}",
+                "type": "template",
+                "name": template.name,
+                "size": size,
+                "color": "#52c41a",
+                "data": {
+                    "id": template.id,
+                    "template_id": template.template_id,
+                    "strategy_id": template.strategy_id,
+                    "usage_count": template.usage_count,
+                    "success_rate": success_rate,
+                    "description": template.description,
+                    "version": template.version
+                }
+            })
+
+        # 添加因子节点
+        for factor in factors:
+            popularity = float(factor.popularity) if factor.popularity is not None else 0.0
+            size = 20 + (popularity * 20)
+            nodes.append({
+                "id": f"factor_{factor.factor_id}",
+                "type": "factor",
+                "name": factor.name,
+                "size": size,
+                "color": "#fa8c16",
+                "data": {
+                    "id": factor.id,
+                    "factor_id": factor.factor_id,
+                    "factor_type": factor.factor_type,
+                    "popularity": popularity,
+                    "usage_count": factor.usage_count,
+                    "description": factor.description,
+                    "tags": factor.tags
+                }
+            })
+
+        # 3. 生成边
+        edges = []
+        # 策略→模板 边
+        for template in templates:
+            strategy_id = f"strategy_{template.strategy_id}"
+            template_id = f"template_{template.template_id}"
+            edge_id = f"strategy-template_{template.strategy_id}_{template.template_id}"
+            value = 2 + (min(template.usage_count, 200) / 50)
+
+            edges.append({
+                "id": edge_id,
+                "source": strategy_id,
+                "target": template_id,
+                "type": "strategy-template",
+                "label": "关联",
+                "value": value,
+                "color": "#1890ff",
+                "style": "solid",
+                "data": {
+                    "usage_count": template.usage_count,
+                    "success_rate": float(template.success_rate) if template.success_rate is not None else 0.0
+                }
+            })
+
+        # 模板→因子 边
+        for rel in relations:
+            template_id = f"template_{rel.template_id}"
+            factor_id = f"factor_{rel.factor_id}"
+            edge_id = f"template-factor_{rel.template_id}_{rel.factor_id}"
+
+            if rel.factor_usage_type == 1:  # 必填
+                color = "#f5222d"
+                style = "solid"
+                value = 3 + (rel.sort_order * 2)
+                label = "必填"
+            else:  # 可选
+                color = "#faad14"
+                style = "dashed"
+                value = 1 + (rel.sort_order * 1)
+                label = "可选"
+
+            edges.append({
+                "id": edge_id,
+                "source": template_id,
+                "target": factor_id,
+                "type": "template-factor",
+                "label": label,
+                "value": value,
+                "color": color,
+                "style": style,
+                "data": {
+                    "factor_usage_type": rel.factor_usage_type,
+                    "sort_order": rel.sort_order,
+                    "weight": rel.sort_order
+                }
+            })
+
+        # 4. 过滤边，只保留两端都存在的边
+        filtered_node_ids = {node["id"] for node in nodes}
+        edges = [edge for edge in edges if edge["source"] in filtered_node_ids and edge["target"] in filtered_node_ids]
+
+        return {
+            "nodes": nodes,
+            "edges": edges
         }
 
 

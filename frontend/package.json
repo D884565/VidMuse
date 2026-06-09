@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@antv/g6": "^4.8.25",
     "antd": "^6.4.3",
     "axios": "^1.16.1",
     "lucide-react": "^1.16.0",

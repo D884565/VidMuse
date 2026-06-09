@@ -21,6 +21,13 @@ services:
       - MYSQL_USER=aigc_user
       - MYSQL_PASSWORD=123456
       - MYSQL_ROOT_PASSWORD=root_password
+      - DATABASE_URL=mysql+aiomysql://root:root_password@mysql:3306/aigc_video?charset=utf8mb4
+
+      # Redis 配置
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
 
       # MinIO 配置
       - MINIO_ENDPOINT=minio:9000
@@ -46,7 +53,15 @@ services:
       - QDRANT_VECTOR_DIMENSION=1536
 
       # 存储配置
-      - STORAGE_TYPE=minio
+      - STORAGE_TYPE=${STORAGE_TYPE:-minio}
+
+      # TOS 配置（火山引擎对象存储，当STORAGE_TYPE=tos时生效）
+      - TOS_ENDPOINT=${TOS_ENDPOINT:-tos-cn-beijing.volces.com}
+      - TOS_ACCESS_KEY=${TOS_ACCESS_KEY:-}
+      - TOS_SECRET_KEY=${TOS_SECRET_KEY:-}
+      - TOS_BUCKET_NAME=${TOS_BUCKET_NAME:-vidmuse}
+      - TOS_REGION=${TOS_REGION:-cn-beijing}
+      - TOS_SECURE=${TOS_SECURE:-true}
 
 
 
@@ -60,7 +75,8 @@ services:
       qdrant:
         condition: service_healthy
     volumes:
-      - ./app:/app/app:ro
+      - ./backend:/app/backend:ro
+      - ./resources:/app/resources:ro
       - ./logs:/app/logs
       - video_temp:/app/temp
     networks:
@@ -79,7 +95,7 @@ services:
     container_name: aigc_mysql
     ports:
       - "3306:3306"
-    environment:
+    environment: 
       - MYSQL_ROOT_PASSWORD=root_password
       - MYSQL_DATABASE=aigc_video
       - MYSQL_USER=aigc_user
@@ -173,16 +189,50 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
+
+      # MySQL 配置
       - MYSQL_HOST=mysql
+      - MYSQL_PORT=3306
+      - MYSQL_DATABASE=aigc_video
+      - MYSQL_USER=aigc_user
+      - MYSQL_PASSWORD=123456
+      - MYSQL_ROOT_PASSWORD=root_password
+      - DATABASE_URL=mysql+aiomysql://aigc_user:123456@mysql:3306/aigc_video?charset=utf8mb4
+
+      # Redis 配置
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+
+      # MinIO 配置
       - MINIO_ENDPOINT=minio:9000
       - MINIO_ACCESS_KEY=minioadmin
       - MINIO_SECRET_KEY=minioadmin
       - MINIO_BUCKET_NAME=aigc-videos
       - MINIO_SECURE=false
-      - REDISINSERT 
+
+      # Qdrant 配置
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_GRPC_PORT=6334
+      - QDRANT_API_KEY=123456
+      - QDRANT_PREFER_GRPC=true
+      - QDRANT_PRODUCT_COLLECTION=product_knowledge
+      - QDRANT_SLICE_COLLECTION=slice_knowledge
+      - QDRANT_VIDEO_COLLECTION=video_knowledge
+      - QDRANT_IMAGE_COLLECTION=img_knowledge
+      - QDRANT_AUDIO_COLLECTION=audio_knowledge
+      - QDRANT_VECTOR_DIMENSION=1536
 
       # 存储配置
-      - STORAGE_TYPE=minio
+      - STORAGE_TYPE=${STORAGE_TYPE:-minio}
+
+      # TOS 配置（火山引擎对象存储，当STORAGE_TYPE=tos时生效）
+      - TOS_ENDPOINT=${TOS_ENDPOINT:-tos-cn-beijing.volces.com}
+      - TOS_ACCESS_KEY=${TOS_ACCESS_KEY:-}
+      - TOS_SECRET_KEY=${TOS_SECRET_KEY:-}
+      - TOS_BUCKET_NAME=${TOS_BUCKET_NAME:-vidmuse}
+      - TOS_REGION=${TOS_REGION:-cn-beijing}
+      - TOS_SECURE=${TOS_SECURE:-true}
     env_file:
       - .env
     depends_on:
@@ -190,7 +240,8 @@ services:
       - mysql
       - minio
     volumes:
-      - ./app:/app/app:ro
+      - ./backend:/app/backend:ro
+      - ./resources:/app/resources:ro
       - video_temp:/app/temp
     networks:
       - aigc_network
@@ -203,37 +254,6 @@ services:
               count: 1
               capabilities: [gpu]  # 如需 GPU 加速视频生成
 
-  # ==================== Flower (Celery 监控) ====================
-  flower:
-    image: mher/flower:2.0
-    container_name: aigc_flower
-    ports:
-      - "5555:5555"
-    environment:
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - FLOWER_PORT=5555
-    depends_on:
-      - redis
-      - celery_worker
-    networks:
-      - aigc_network
-    restart: unless-stopped
-
-  # ==================== Nginx (反向代理) ====================
-  nginx:
-    image: nginx:1.27.5-alpine
-    container_name: aigc_nginx
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./ssl:/etc/nginx/ssl:ro
-    depends_on:
-      - api
-    networks:
-      - aigc_network
-    restart: unless-stopped
 
 volumes:
   mysql_data:

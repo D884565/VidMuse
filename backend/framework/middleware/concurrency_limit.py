@@ -60,10 +60,12 @@ class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
 
         # 获取或创建信号量
         semaphore = self._get_or_create_semaphore(path, limit)
+        acquired = False
 
         try:
             # 尝试获取信号量，超时时间内等待
             await asyncio.wait_for(semaphore.acquire(), timeout=self.timeout)
+            acquired = True
 
             logger.debug(
                 f"Acquired semaphore for path={path}, "
@@ -72,8 +74,7 @@ class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
             )
 
             # 执行请求
-            response = await call_next(request)
-            return response
+            return await call_next(request)
 
         except asyncio.TimeoutError:
             # 等待超时，返回429错误
@@ -91,12 +92,12 @@ class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
                 }
             )
         except Exception as e:
-            # 其他异常，记录日志并放行，避免中间件故障影响业务
-            logger.error(f"Concurrency limit middleware error: {str(e)}", exc_info=True)
+            # 中间件异常（获取信号量阶段），记录日志并放行，避免中间件故障影响业务
+            logger.error(f"Concurrency limit middleware error when acquiring semaphore: {str(e)}", exc_info=True)
             return await call_next(request)
         finally:
-            # 释放信号量（只有成功获取到的才需要释放）
-            if 'semaphore' in locals() and semaphore.locked():
+            # 只有成功获取到信号量的才需要释放
+            if acquired:
                 try:
                     semaphore.release()
                     logger.debug(

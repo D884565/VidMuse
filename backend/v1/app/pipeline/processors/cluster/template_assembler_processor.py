@@ -45,14 +45,22 @@ class TemplateAssembler(BaseProcessor):
             # 获取该策略的适用因子ID列表
             applicable_factor_ids = strategy_factor_mapping.get(strategy_id, [])
 
-            # 从索引中获取因子实例
-            applicable_factors: List[Factor] = []
-            for factor_id in applicable_factor_ids:
-                factor = factor_index.get(factor_id)
-                if factor:
-                    applicable_factors.append(factor)
-                else:
-                    logger.warning(f"因子 {factor_id} 不存在于索引中，已忽略")
+            # 如果没有映射关系，根据因子类型自动匹配
+            if not applicable_factor_ids:
+                logger.info(f"策略 {strategy_id} 没有预映射的因子，将根据类型自动匹配")
+                all_factors = list(factor_index.values())
+                # 匹配所有符合必填和可选类型的因子
+                applicable_types = strategy.required_factor_types + strategy.optional_factor_types
+                applicable_factors = [f for f in all_factors if f.factor_type in applicable_types]
+            else:
+                # 从索引中获取因子实例
+                applicable_factors: List[Factor] = []
+                for factor_id in applicable_factor_ids:
+                    factor = factor_index.get(factor_id)
+                    if factor:
+                        applicable_factors.append(factor)
+                    else:
+                        logger.warning(f"因子 {factor_id} 不存在于索引中，已忽略")
 
             # 分为必填和可选因子
             required_factors = []
@@ -71,13 +79,17 @@ class TemplateAssembler(BaseProcessor):
             # 组装模板
             template = InspirationTemplate(
                 template_id=f"t_{uuid.uuid4().hex[:8]}",
-                strategy=strategy,
-                required_factors=required_factors,
-                optional_factors=optional_factors,
+                strategy_id=strategy.strategy_id,
+                name=strategy.name,
+                description=strategy.description,
                 combination_example=combination_example,
                 version="v1.0",
-                created_at=datetime.now()
+                success_rate=strategy.success_rate,
+                usage_count=0
             )
+            # 临时存储关联的因子，用于后续持久化
+            template.required_factors = required_factors
+            template.optional_factors = optional_factors
 
             templates.append(template)
             logger.info(f"生成模板: {template.template_id}, 必填因子: {len(required_factors)}, 可选因子: {len(optional_factors)}")
