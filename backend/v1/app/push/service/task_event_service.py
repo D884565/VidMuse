@@ -34,6 +34,12 @@ class TaskEvent:
 
 
 class TaskEventService:
+    @staticmethod
+    def _event_field(event: TaskEvent | dict[str, Any], field: str, default: Any = None) -> Any:
+        if isinstance(event, dict):
+            return event.get(field, default)
+        return getattr(event, field, default)
+
     def generate_task_id(self, task_domain: str) -> str:
         prefix = "merge" if task_domain == "merge" else "gen"
         return f"{prefix}_{uuid.uuid4().hex[:16]}"
@@ -320,16 +326,17 @@ class TaskEventService:
             "finished_at": finished.created_at if finished else None,
         }
 
-    def aggregate_steps(self, events: list[TaskEvent]) -> list[dict[str, Any]]:
+    def aggregate_steps(self, events: list[TaskEvent] | list[dict[str, Any]]) -> list[dict[str, Any]]:
         grouped: dict[tuple[str, int | None], dict[str, Any]] = {}
 
         for event in events:
-            if not event.step:
+            step = self._event_field(event, "step")
+            if not step:
                 continue
-            step_key = event.step.get("step_key")
+            step_key = step.get("step_key")
             if not step_key:
                 continue
-            frame_id = event.step.get("frame_id")
+            frame_id = step.get("frame_id")
             key = (step_key, frame_id)
             current = grouped.setdefault(
                 key,
@@ -346,14 +353,14 @@ class TaskEventService:
                 },
             )
             if current["started_at"] is None:
-                current["started_at"] = event.created_at
-            current["status"] = event.step.get("status", event.status)
-            current["progress"] = self._clamp_progress(event.step.get("progress", event.progress))
-            current["input_snapshot"] = event.step.get("input_snapshot", current["input_snapshot"])
-            current["output_snapshot"] = event.step.get("output_snapshot", current["output_snapshot"])
-            current["error_message"] = event.step.get("error_message", current["error_message"])
-            if current["status"] in TERMINAL_STATUSES or event.event_type == "step_finished":
-                current["finished_at"] = event.created_at
+                current["started_at"] = self._event_field(event, "created_at")
+            current["status"] = step.get("status", self._event_field(event, "status"))
+            current["progress"] = self._clamp_progress(step.get("progress", self._event_field(event, "progress")))
+            current["input_snapshot"] = step.get("input_snapshot", current["input_snapshot"])
+            current["output_snapshot"] = step.get("output_snapshot", current["output_snapshot"])
+            current["error_message"] = step.get("error_message", current["error_message"])
+            if current["status"] in TERMINAL_STATUSES or self._event_field(event, "event_type") == "step_finished":
+                current["finished_at"] = self._event_field(event, "created_at")
 
         return list(grouped.values())
 

@@ -25,6 +25,7 @@ def _extract_product_phrase(text: str) -> str:
     product = re.sub(r"https?://\S+", "", text)
     product = re.sub(r"[，。！？、；：,.!?;:\"'“”‘’（）()【】\[\]{}<>《》]", "", product)
     product = re.sub(r"^(请|麻烦|帮我|帮忙|我要|我想|想要|给我)?(生成|制作|创建|做|来)(一个|一条|一段|个|条|段)?", "", product)
+    product = re.sub(r"^(这个|那个|这款|那款|一款|一个|一种)\s*", "", product)
     product = re.sub(r"(带货)?(短视频|视频|广告片|广告|推广片|推广|宣传片|宣传|种草)$", "", product)
     product = re.sub(r"(剧本|脚本|分镜)$", "", product)
     product = product.strip()

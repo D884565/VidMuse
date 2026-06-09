@@ -2,6 +2,10 @@ import ProjectCard from './ProjectCard.jsx'
 import { useProjects } from '../../hooks/useProjects.js'
 import { useAppStore } from '../../store/appStore.js'
 
+/**
+ * 侧边栏项目列表
+ * 显示草稿对话和已创建的项目列表，点击可切换到对应对话。
+ */
 export default function ProjectList() {
   const { projects, loading, error } = useProjects()
   const draftConversationTitle = useAppStore((state) => state.draftConversationTitle)

@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS projects (
     rag_weight      DECIMAL(3,2) NOT NULL DEFAULT 0.30 COMMENT 'RAG权重',
     target_duration INT NOT NULL DEFAULT 15 COMMENT '目标视频时长(秒)',
     voice_type      VARCHAR(50) NOT NULL DEFAULT 'zh_female_cancan_mars_bigtts' COMMENT '语音类型',
+    music_config    JSON COMMENT '音乐配置，如当前 BGM ID',
     summary         VARCHAR(200) COMMENT '对话摘要，用于侧边栏展示',
     workflow_stage  VARCHAR(30) NOT NULL DEFAULT 'created' COMMENT '工作流阶段: created/script/images/video/completed',
     stage_status    VARCHAR(30) NOT NULL DEFAULT 'idle' COMMENT '阶段状态: idle/running/done/failed',
@@ -211,7 +212,6 @@ CREATE TABLE IF NOT EXISTS asset_upload_sessions (
     INDEX idx_session_id (session_id),
     INDEX idx_asset_id (asset_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='断点续传会话表';
-
 
 CREATE TABLE IF NOT EXISTS slices (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '切片id',

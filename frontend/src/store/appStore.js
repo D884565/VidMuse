@@ -8,13 +8,15 @@ export const useAppStore = create((set, get) => ({
   draftConversationMessages: [],
   projectListVersion: 0,
   conversationVersion: 0,
+  creationMode: 'independent',
   isLoggedIn: !!localStorage.getItem('token'),
   authLoading: false,
   // 用户信息（会话内有效，可通过 /users/me 刷新）
   user: null,
   // refresh_token 存 localStorage 实现跨会话持久化
   parameters: {
-    style: 'cinematic',
+    style: 'product',
+    voice_type: 'zh_female_cancan_mars_bigtts',
     target_duration: 15,
     rag_weight: 0.3,
   },
@@ -33,6 +35,7 @@ export const useAppStore = create((set, get) => ({
   clearDraftConversation: () => set({ draftConversationTitle: '', draftConversationMessages: [] }),
   bumpProjectListVersion: () => set((state) => ({ projectListVersion: state.projectListVersion + 1 })),
   bumpConversationVersion: () => set((state) => ({ conversationVersion: state.conversationVersion + 1 })),
+  setCreationMode: (creationMode) => set({ creationMode }),
   setUser: (user) => set({ user }),
   setAuthLoading: (authLoading) => set({ authLoading }),
   setRefreshToken: (refreshToken) => {

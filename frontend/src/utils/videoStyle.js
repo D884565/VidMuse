@@ -1,3 +1,4 @@
+/** 视频风格标识 → 中文标签映射 */
 const VIDEO_STYLE_LABELS = {
   cinematic: '电影感',
   product: '产品展示',

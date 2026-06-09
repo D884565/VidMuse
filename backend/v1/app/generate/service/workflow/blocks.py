@@ -78,7 +78,7 @@ def build_image_stage_blocks(frames: Iterable) -> list[dict]:
 
 def build_video_stage_blocks(project, *, video_url: str | None = None, task_id: int | None = None) -> list[dict]:
     """构建视频阶段的结构化 blocks：视频播放卡片 + 对话式追问。"""
-    url = video_url or getattr(project, "video_output_url", None)
+    url = video_url
     return [
         {
             "type": "video_card",

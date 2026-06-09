@@ -3,7 +3,8 @@ import os
 import logging
 import tempfile
 import shutil
-import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from celery.exceptions import SoftTimeLimitExceeded
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -23,7 +24,6 @@ from backend.v1.app.generate.service.stages.bgm_selector import bgm_selector_ser
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
 from backend.v1.app.generate.service.generateUtils.task_tracker import generation_task_tracker
 from backend.v1.app.generate.service.generateUtils.retry_coordinator import retry_coordinator
-from backend.v1.app.push.service.task_event_service import task_event_service
 from backend.v1.app.models.script import Script
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
 from backend.v1.app.generate.service.workflow.blocks import build_video_stage_blocks
@@ -34,9 +34,6 @@ from backend.store.obj.factory import get_storage_client
 
 logger = logging.getLogger(__name__)
 
-FRAME_VIDEO_WAIT_TIMEOUT_SECONDS = int(os.getenv("FRAME_VIDEO_WAIT_TIMEOUT_SECONDS", "1800"))
-FRAME_VIDEO_POLL_INTERVAL_SECONDS = float(os.getenv("FRAME_VIDEO_POLL_INTERVAL_SECONDS", "5"))
-TERMINAL_TASK_STATUSES = {"succeeded", "failed", "cancelled"}
 MAX_TTS_OVERRUN_SECONDS = float(os.getenv("MAX_TTS_OVERRUN_SECONDS", "0.5"))
 TAIL_PADDING_SECONDS = float(os.getenv("TTS_TAIL_PADDING_SECONDS", "0.25"))
 
@@ -71,8 +68,6 @@ def ensure_task_not_cancelled(db: Session, task_id: int | None) -> None:
 def _persist_frame_video_segment(project_id: int, frame: Frame, local_path: str) -> str:
     object_key = f"projects/{project_id}/frames/frame_{frame.id or frame.sequence}.mp4"
     video_url = get_storage_client().upload_file(local_path, object_key)
-    frame.video_url = video_url
-    frame.dirty = 0
     return video_url
 
 
@@ -108,63 +103,6 @@ def _reload_project_frames(db: Session, project_id: int) -> list[Frame]:
     ).scalars())
 
 
-def _dispatch_frame_video_tasks(db: Session, project_id: int, frames: list[Frame]) -> list[int]:
-    child_task_ids: list[str] = []
-    for frame in frames:
-        task = generation_task_service.create_task_sync(db, project_id, "frame_video", status="queued")
-        sent = celery_app.send_task("generate_frame_video_task", args=[project_id, frame.id, task.id])
-        generation_task_service.update_task_sync(
-            db,
-            task.id,
-            current_step="CELERY_DISPATCHED",
-            error_message=None,
-        )
-        child_task_ids.append(task.id)
-    return child_task_ids
-
-
-def _wait_for_frame_video_tasks(
-    db: Session,
-    task_ids: list[str],
-    *,
-    timeout_seconds: int = FRAME_VIDEO_WAIT_TIMEOUT_SECONDS,
-    poll_interval_seconds: float = FRAME_VIDEO_POLL_INTERVAL_SECONDS,
-) -> None:
-    if not task_ids:
-        return
-
-    started_at = time.monotonic()
-    while True:
-        statuses = {}
-        failed = []
-        for task_id in task_ids:
-            snapshot = task_event_service.get_task_snapshot_sync(db, task_id)
-            statuses[task_id] = snapshot.get("status")
-            if snapshot.get("status") in {"failed", "cancelled"}:
-                failed.append(snapshot)
-        if failed:
-            details = ", ".join(
-                f"{task['task_id']}:{task.get('status')}:{task.get('error_message') or task.get('error_code') or ''}"
-                for task in failed
-            )
-            raise GenerationStageError(
-                stage="video",
-                current_step="VIDEO_SEGMENT_GENERATION_FAILED",
-                error_code="VIDEO_SEGMENT_GENERATION_FAILED",
-                message=f"frame video child task failed: {details}",
-            )
-        if len(statuses) == len(task_ids) and all(status in TERMINAL_TASK_STATUSES for status in statuses.values()):
-            return
-        if time.monotonic() - started_at > timeout_seconds:
-            raise GenerationStageError(
-                stage="video",
-                current_step="VIDEO_SEGMENT_GENERATION_TIMEOUT",
-                error_code="VIDEO_SEGMENT_GENERATION_TIMEOUT",
-                message=f"frame video child tasks timed out: {statuses}",
-            )
-        time.sleep(poll_interval_seconds)
-
-
 def _compose_frame_video_urls(frames: list[Frame], output_dir: str, target_duration: float | None = None) -> str:
     os.makedirs(output_dir, exist_ok=True)
     video_composer.validate_frames_for_video(frames)
@@ -196,10 +134,135 @@ def _compose_frame_video_urls(frames: list[Frame], output_dir: str, target_durat
     return final_path
 
 
-def _generate_frame_videos_parallel(db: Session, project_id: int, frames: list[Frame], output_dir: str, target_duration: float | None = None) -> tuple[str, list[Frame]]:
+def _write_frame_image_regeneration_conversation(
+    db: Session,
+    project: Project,
+    frame: Frame,
+    task_id: int | None,
+) -> None:
+    frames = list(db.execute(
+        select(Frame)
+        .where(Frame.project_id == project.id)
+        .order_by(Frame.sequence)
+    ).scalars())
+    all_images_ready = bool(frames) and all(getattr(item, "image_url", None) for item in frames)
+    original_stage = getattr(project, "workflow_stage", None)
+    if original_stage in ("video", "completed"):
+        project_workflow_state.invalidate_project_from(project, "video")
+    elif all_images_ready:
+        project_workflow_state.mark_project_stage_review(project, "image", task_id)
+
+    db.add(Conversation(
+        project_id=project.id,
+        role="assistant",
+        content=f"第{frame.sequence}个分镜的图片已重新生成。"
+        + ("你可以确认图片并继续生成视频。" if all_images_ready else ""),
+        message_type="stage_card",
+        stage="image",
+        blocks=[
+            {
+                "type": "image_grid",
+                "images": [
+                    {
+                        "frame_id": f.id,
+                        "sequence": f.sequence,
+                        "url": f.image_url,
+                        "status": f.status,
+                        "description": f.description or "",
+                        "error_message": f.error_message,
+                    }
+                    for f in frames
+                ],
+            },
+            {
+                "type": "follow_up",
+                "message": f"第{frame.sequence}个分镜的图片已更新。继续调整可以直接说具体镜头；满意的话回复「继续」生成视频。",
+            },
+        ],
+        action_type="REGENERATE_FRAME_IMAGE",
+        task_id=task_id,
+        frame_id=frame.id,
+    ))
+
+
+def _write_frame_video_regeneration_conversation(
+    db: Session,
+    project: Project,
+    frame: Frame,
+    task_id: int | None,
+) -> None:
+    db.add(Conversation(
+        project_id=project.id,
+        role="assistant",
+        content=f"第{frame.sequence}个分镜的视频片段已重新生成。",
+        message_type="stage_card",
+        stage="video",
+        blocks=[
+            {
+                "type": "follow_up",
+                "message": f"第{frame.sequence}个分镜的视频片段已更新。它是单个分镜片段，不是整条成片；如需更新成片，请继续触发整片视频生成。",
+            },
+        ],
+        action_type="REGENERATE_FRAME_VIDEO",
+        task_id=task_id,
+        frame_id=frame.id,
+    ))
+
+
+def _generate_single_frame_video(project_id: int, frame: Frame, output_dir: str, style: str | None = None) -> dict:
+    """在当前线程中为单帧生成视频片段，成功后回填 frame.video_url。失败抛异常。"""
+    frame_dir = os.path.join(output_dir, f"frame_{frame.id}_{uuid.uuid4().hex}")
+    os.makedirs(frame_dir, exist_ok=True)
+    video_path = video_composer.compose_frames(
+        [frame],
+        frame_dir,
+        style=style,
+        allow_placeholder_segments=False,
+    )
+    video_url = _persist_frame_video_segment(project_id, frame, video_path)
+    logger.info(f"[视频] frame {frame.sequence} (id={frame.id}) 生成完成: {video_url}")
+    return {"frame_id": frame.id, "video_url": video_url}
+
+
+def _generate_frame_videos_parallel(db: Session, project_id: int, frames: list[Frame], output_dir: str, target_duration: float | None = None, style: str | None = None) -> tuple[str, list[Frame]]:
     frames_to_generate = [frame for frame in frames if _frame_needs_video_generation(frame)]
-    child_task_ids = _dispatch_frame_video_tasks(db, project_id, frames_to_generate)
-    _wait_for_frame_video_tasks(db, child_task_ids)
+    skipped_count = len(frames) - len(frames_to_generate)
+    if skipped_count:
+        logger.info(f"[视频] 跳过 {skipped_count} 个已有视频的帧")
+
+    if not frames_to_generate:
+        fresh_frames = _reload_project_frames(db, project_id)
+        return _compose_frame_video_urls(fresh_frames, output_dir, target_duration), fresh_frames
+
+    max_workers = min(5, len(frames_to_generate))
+    logger.info(f"[视频] ThreadPoolExecutor 并行生成 {len(frames_to_generate)} 帧, max_workers={max_workers}")
+
+    errors: dict[int, Exception] = {}
+    generated_segments: list[dict] = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_frame = {
+            executor.submit(_generate_single_frame_video, project_id, frame, output_dir, style): frame
+            for frame in frames_to_generate
+        }
+        for future in as_completed(future_to_frame):
+            frame = future_to_frame[future]
+            try:
+                generated_segments.append(future.result())
+            except Exception as e:
+                errors[frame.id] = e
+                logger.error(f"[视频] frame {frame.sequence} (id={frame.id}) 生成失败: {e}")
+
+    if errors:
+        logger.error(f"[视频] {len(errors)}/{len(frames_to_generate)} 帧生成失败: {list(errors.keys())}")
+
+    frame_map = {frame.id: frame for frame in frames_to_generate}
+    for segment in generated_segments:
+        frame = frame_map.get(segment["frame_id"])
+        if frame:
+            frame.video_url = segment["video_url"]
+            frame.dirty = 0
+    db.flush()
+
     fresh_frames = _reload_project_frames(db, project_id)
     return _compose_frame_video_urls(fresh_frames, output_dir, target_duration), fresh_frames
 
@@ -254,11 +317,14 @@ def _build_project_audio_track(project: Project, frames: list[Frame]) -> object:
     )()
 
 
-def _mark_project_failed(db: Session, project_id: int, stage: str) -> None:
+def _mark_project_failed(db: Session, project_id: int, stage: str, task_id: str | int | None = None) -> None:
     project = db.execute(select(Project).where(Project.id == project_id)).scalar_one_or_none()
     if project:
         # 只修改状态，不在 helper 内提交；失败处理器统一控制事务边界。
         project_workflow_state.mark_project_stage_failed(project, stage)
+        # 确保 last_task_id 指向正确的任务，避免回滚后引用丢失的任务
+        if task_id is not None:
+            project.last_task_id = task_id
 
 
 def _update_task_failure_state(
@@ -289,7 +355,7 @@ def _update_task_failure_state(
             )
         # 只有最终失败才标记项目阶段失败；重试中的任务仍保持可恢复状态。
         if project_id is not None and stage and not will_retry:
-            _mark_project_failed(fail_db, project_id, stage)
+            _mark_project_failed(fail_db, project_id, stage, task_id=task_id)
             fail_db.commit()
     finally:
         fail_db.close()
@@ -313,8 +379,8 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
         if not frames:
             raise ValueError(f"项目 {project_id} 没有帧数据，请先生成剧本")
 
-        # 初始化帧进度追踪
-        tracker_task_id = str(task_id) if task_id else generation_task_tracker.create_task(db, project_id, "image")
+        # 初始化帧进度追踪（复用提交时的 task_id，确保 generation_tasks 表有记录）
+        tracker_task_id = generation_task_tracker.create_task(db, project_id, "image", task_id=task_id)
         all_frame_ids = [f.id for f in frames]
         generation_task_tracker.init_frame_progress(db, tracker_task_id, project_id, all_frame_ids, "image")
         db.commit()
@@ -339,6 +405,7 @@ def generate_image_task(self, project_id: int, task_id: int | None = None):
             frames,
             project_id,
             reference_images=reference_images,
+            style=project.style,
         )
 
         # 更新每帧状态到追踪器
@@ -460,8 +527,8 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         generation_task_service.start_task_sync(db, task_id, "PROJECT_VALIDATION") if task_id else None
         ensure_task_not_cancelled(db, task_id)
 
-        # 创建 generation_tasks 追踪记录
-        tracker_task_id = generation_task_tracker.create_task(db, project_id, "render", trigger_source)
+        # 创建 generation_tasks 追踪记录（复用提交时的 task_id，避免两套系统 ID 不互通）
+        tracker_task_id = generation_task_tracker.create_task(db, project_id, "render", trigger_source, task_id=task_id)
         generation_task_tracker.start_task(db, tracker_task_id, "tts")
         db.commit()
 
@@ -541,12 +608,14 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         all_frame_ids = [f.id for f in frames]
         generation_task_tracker.init_frame_progress(db, tracker_task_id, project_id, all_frame_ids, "image")
 
-        # 跳过已完成的帧
+        # 跳过已完成的帧，记录哪些帧需要重新生成
+        frames_needing_image = []
         for f in frames:
             if f.status == 2 and f.image_url:
                 generation_task_tracker.update_frame_status(db, tracker_task_id, f.id, "image", "succeeded", result_url=f.image_url)
             else:
                 generation_task_tracker.update_frame_status(db, tracker_task_id, f.id, "image", "running")
+                frames_needing_image.append(f)
         db.commit()
 
         reference_images = extract_reference_images(project)
@@ -554,6 +623,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
             frames,
             project_id,
             reference_images=reference_images,
+            style=project.style,
         )
 
         # 更新帧状态
@@ -580,6 +650,22 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         db.commit()
         logger.info(f"[image] completed frames: {len(frames)}")
 
+        # 图片生成完成后写入 image_grid 快照消息，确保对话中保留本次图片版本
+        if frames_needing_image:
+            image_msg = build_image_stage_message(frames, task_id)
+            db.add(Conversation(
+                project_id=project_id,
+                role=image_msg["role"],
+                content=image_msg["content"],
+                message_type=image_msg["message_type"],
+                stage=image_msg["stage"],
+                blocks=image_msg["blocks"],
+                action_type=image_msg["action_type"],
+                task_id=image_msg["task_id"],
+                metadata_=image_msg["metadata"],
+            ))
+            db.commit()
+
         # ---- Step 4+5: 为每个分镜生成视频并拼接 ----
         step = generation_task_service.start_step_sync(db, task_id, "VIDEO_GENERATING", progress=50) if task_id else None
         logger.info("[视频] 开始生成帧视频...")
@@ -598,6 +684,7 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
             frames,
             output_dir,
             target_duration=project.target_duration,
+            style=project.style,
         )
 
         # 更新视频帧状态
@@ -651,7 +738,12 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
             script = script_result.scalar_one_or_none()
             script_content = script.content if script and script.content else {}
 
-            bgm_id = bgm_selector_service.select_bgm(db, script_content)
+            music_config = dict(getattr(project, "music_config", None) or {})
+            current_bgm_id = music_config.get("current_bgm_id")
+            bgm_id = int(current_bgm_id) if current_bgm_id else bgm_selector_service.select_bgm(db, script_content)
+            if bgm_id and not current_bgm_id:
+                music_config["current_bgm_id"] = int(bgm_id)
+                project.music_config = music_config
             if bgm_id:
                 bgm_asset = AssetDAO.get_asset_by_id(db, bgm_id)
                 if bgm_asset and bgm_asset.url:
@@ -693,7 +785,8 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         generation_task_tracker.update_stage(db, tracker_task_id, "output", 88)
         db.commit()
         step = generation_task_service.start_step_sync(db, task_id, "OUTPUT_UPLOADING", progress=88) if task_id else None
-        video_object = f"projects/{project_id}/output.mp4"
+        output_task_key = task_id or uuid.uuid4().hex
+        video_object = f"projects/{project_id}/outputs/{output_task_key}/output.mp4"
         video_url = get_storage_client().upload_file(video_path, video_object)
 
         db.commit()
@@ -935,6 +1028,7 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
             [frame],
             project_id,
             reference_images=reference_images,
+            style=project.style,
         )
         db.commit()
 
@@ -967,7 +1061,7 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
                 error_code="FRAME_IMAGE_FAILED", error_message=frame.error_message,
             ) if task_id else None
             raise RuntimeError(frame.error_message or "frame image generation failed")
-        frame.dirty = 1
+        frame.dirty = 0
         generation_task_service.finish_step_sync(
             db, step, progress=100, output_snapshot={"image_url": frame.image_url}
         ) if task_id else None
@@ -975,6 +1069,8 @@ def generate_frame_image_task(self, project_id: int, frame_id: int, task_id: int
             db, task_id, status="succeeded", progress=100, current_step="FRAME_IMAGE_GENERATED",
             current_frame_id=frame_id,
         ) if task_id else None
+        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
+        _write_frame_image_regeneration_conversation(db, project, frame, task_id)
         db.commit()
     except SoftTimeLimitExceeded as exc:
         logger.error(f"[单帧图片任务超时] project_id={project_id}, frame_id={frame_id}", exc_info=True)
@@ -1036,10 +1132,12 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
         frame = db.execute(
             select(Frame).where(Frame.id == frame_id, Frame.project_id == project_id)
         ).scalar_one()
+        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
         output_dir = os.path.join(temp_dir, f"project_{project_id}_frame_{frame_id}")
         video_path = video_composer.compose_frames(
             [frame],
             output_dir,
+            style=project.style,
             allow_placeholder_segments=False,
         )
         object_key = f"projects/{project_id}/frames/frame_{frame_id}.mp4"
@@ -1047,8 +1145,8 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
         # 单帧视频产物写入 video_url，避免覆盖帧配音/音效 URL。
         frame.video_url = video_url
         frame.dirty = 0
-        project = db.execute(select(Project).where(Project.id == project_id)).scalar_one()
-        project.dirty_stage = "video"
+        project.dirty_stage = None
+        project.stage_status = "awaiting_review"
         db.commit()
         generation_task_service.finish_step_sync(
             db, step, progress=100, output_snapshot={"video_url": video_url}
@@ -1057,6 +1155,7 @@ def generate_frame_video_task(self, project_id: int, frame_id: int, task_id: int
             db, task_id, status="succeeded", progress=100, current_step="FRAME_VIDEO_GENERATED",
             current_frame_id=frame_id,
         ) if task_id else None
+        _write_frame_video_regeneration_conversation(db, project, frame, task_id)
         db.commit()
     except SoftTimeLimitExceeded as exc:
         logger.error(f"[单帧视频任务超时] project_id={project_id}, frame_id={frame_id}", exc_info=True)

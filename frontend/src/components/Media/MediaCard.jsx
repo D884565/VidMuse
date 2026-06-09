@@ -1,5 +1,6 @@
 import { FileText, Image, Music, Play, Trash2 } from 'lucide-react'
 
+/** 素材类型对应的图标映射 */
 const iconMap = {
   video: Play,
   image: Image,
@@ -7,6 +8,10 @@ const iconMap = {
   text: FileText,
 }
 
+/**
+ * 素材卡片组件
+ * 在素材库网格中展示单个素材的预览、标题和操作按钮。
+ */
 export default function MediaCard({ item, onClick, onDelete }) {
   const Icon = iconMap[item.type] || Image
 

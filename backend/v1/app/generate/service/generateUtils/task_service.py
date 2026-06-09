@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
+from backend.v1.app.generate.dao.task_tracker_dao import task_tracker_dao
 from backend.v1.app.push.service.task_event_service import task_event_service
 
 
@@ -53,6 +55,13 @@ class GenerationTaskService:
             status,
             trace_id,
         )
+        await db.run_sync(
+            self._mirror_task_created_sync,
+            event["task_id"],
+            project_id,
+            task_type,
+            status,
+        )
         if commit:
             await db.commit()
         else:
@@ -62,6 +71,11 @@ class GenerationTaskService:
     async def set_celery_task_id(self, db: AsyncSession, task_id: str, celery_task_id: str) -> None:
         await db.run_sync(
             self._bind_celery_task_id_sync,
+            task_id,
+            celery_task_id,
+        )
+        await db.run_sync(
+            self._mirror_celery_task_id_sync,
             task_id,
             celery_task_id,
         )
@@ -90,6 +104,7 @@ class GenerationTaskService:
             status=status,
             trace_id=trace_id,
         )
+        self._mirror_task_created_sync(db, event["task_id"], project_id, task_type, status)
         return self._reference_from_event(event, project_id, task_type)
 
     def get_task_sync(self, db: Session, task_id: str) -> TaskReference:
@@ -119,7 +134,7 @@ class GenerationTaskService:
         snapshot = task_event_service.get_task_snapshot_sync(db, str(task_id))
         if snapshot.get("status") in TERMINAL_STATUSES and not allow_restart:
             raise ValueError(f"generation task is terminal: {task_id} status={snapshot.get('status')}")
-        task_event_service.emit_event_sync(
+        emitted = task_event_service.emit_event_sync(
             db=db,
             task_id=str(task_id),
             task_domain="generation",
@@ -130,6 +145,15 @@ class GenerationTaskService:
             project_id=snapshot.get("project_id"),
             trace_id=snapshot.get("trace_id"),
             current_step=step_name,
+        )
+        self._mirror_task_update_sync(
+            db=db,
+            task_id=str(task_id),
+            project_id=snapshot.get("project_id") or emitted.get("project_id"),
+            task_type=snapshot.get("task_type") or "unknown",
+            status="running",
+            progress=snapshot.get("progress") or 0,
+            current_stage=step_name,
         )
 
     def update_task_sync(
@@ -154,7 +178,7 @@ class GenerationTaskService:
         elif status == "cancelled":
             event_type = "task_cancelled"
         result = {"retry_count": retry_count} if retry_count is not None else None
-        task_event_service.emit_event_sync(
+        emitted = task_event_service.emit_event_sync(
             db=db,
             task_id=str(task_id),
             task_domain="generation",
@@ -168,6 +192,19 @@ class GenerationTaskService:
             current_frame_id=current_frame_id,
             error={"code": error_code, "message": error_message} if (error_code or error_message) else None,
             result=result,
+        )
+        self._mirror_task_update_sync(
+            db=db,
+            task_id=str(task_id),
+            project_id=snapshot.get("project_id") or emitted.get("project_id"),
+            task_type=snapshot.get("task_type") or "unknown",
+            status=status or snapshot.get("status"),
+            progress=progress,
+            current_stage=current_step,
+            current_frame_id=current_frame_id,
+            error_code=error_code,
+            error_message=error_message,
+            retry_count=retry_count,
         )
 
     def start_step_sync(
@@ -219,7 +256,7 @@ class GenerationTaskService:
         if step is None:
             return
         snapshot = task_event_service.get_task_snapshot_sync(db, step.task_id)
-        task_event_service.emit_event_sync(
+        emitted = task_event_service.emit_event_sync(
             db=db,
             task_id=step.task_id,
             task_domain="generation",
@@ -241,6 +278,76 @@ class GenerationTaskService:
                 "error_message": error_message,
             },
         )
+        self._mirror_task_update_sync(
+            db=db,
+            task_id=step.task_id,
+            project_id=snapshot.get("project_id") or emitted.get("project_id"),
+            task_type=snapshot.get("task_type") or "unknown",
+            status=snapshot.get("status"),
+            progress=progress,
+            current_stage=step.step_name,
+            current_frame_id=step.frame_id,
+            error_message=error_message,
+        )
+
+    @staticmethod
+    def _mirror_task_created_sync(
+        db: Session,
+        task_id: str,
+        project_id: int,
+        task_type: str,
+        status: str,
+    ) -> None:
+        task = task_tracker_dao.create_task(db, project_id, task_type, task_id=task_id)
+        task.status = status
+        task.progress = 0
+        db.flush()
+
+    @staticmethod
+    def _mirror_celery_task_id_sync(db: Session, task_id: str, celery_task_id: str) -> None:
+        task = task_tracker_dao.get_task(db, task_id)
+        if not task:
+            return
+        task.celery_task_id = celery_task_id
+        db.flush()
+
+    @staticmethod
+    def _mirror_task_update_sync(
+        db: Session,
+        task_id: str,
+        project_id: int | None,
+        task_type: str,
+        *,
+        status: str | None = None,
+        progress: int | None = None,
+        current_stage: str | None = None,
+        current_frame_id: int | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        retry_count: int | None = None,
+    ) -> None:
+        task = task_tracker_dao.get_task(db, task_id)
+        if not task:
+            if project_id is None:
+                return
+            task = task_tracker_dao.create_task(db, project_id, task_type, task_id=task_id)
+        if status is not None:
+            task.status = status
+            if status == "running" and task.started_at is None:
+                task.started_at = datetime.utcnow()
+            elif status in TERMINAL_STATUSES:
+                task.finished_at = datetime.utcnow()
+        if progress is not None:
+            task.progress = progress
+        if current_stage is not None:
+            task.current_stage = current_stage
+        if error_code is not None:
+            task.error_code = error_code
+        if error_message is not None:
+            task.error_message = error_message
+        if retry_count is not None:
+            task.retry_count = retry_count
+        db.flush()
 
     @staticmethod
     def _reference_from_event(event: dict, project_id: int, task_type: str) -> TaskReference:

@@ -1,5 +1,6 @@
 import { PieChart, Pie, Cell, ResponsiveContainer } from 'recharts'
 
+/** 仪表盘图表组件 — 用饼图模拟环形进度条，用于展示百分比数据 */
 export default function GaugeChart({ value, title, max = 100, color = '#3b82f6' }) {
   const data = [
     { name: 'value', value: value },

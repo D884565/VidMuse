@@ -4,11 +4,7 @@ import re
 
 
 def classify_no_project_message(content: str) -> dict:
-    """Classify a message before a project exists.
-
-    Ordinary conversation must not create a project. Only explicit video/product
-    creation intent should enter the project workflow.
-    """
+    """Classify a message before a project exists."""
     text = (content or "").strip()
     if not text:
         return {"action": "CONVERSE", "should_create_project": False}
@@ -27,8 +23,8 @@ def _has_project_creation_intent(text: str) -> bool:
     if re.search(r"https?://\S+", text):
         return True
 
-    creation_words = ("生成", "制作", "做一个", "来一个", "创建", "帮我做", "帮我生成")
-    video_words = ("视频", "短视频", "广告", "带货", "商品", "产品", "推广", "宣传", "种草")
+    creation_words = ("生成", "制作", "做一个", "来一个", "创建", "帮我做", "帮我生成", "创作")
+    video_words = ("视频", "短视频", "广告", "带货", "商品", "产品", "推广", "宣传", "种草", "宣传片")
     script_words = ("剧本", "分镜", "脚本")
 
     has_creation = any(word in text for word in creation_words)

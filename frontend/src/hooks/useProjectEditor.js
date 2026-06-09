@@ -1,4 +1,4 @@
-import { useCallback } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useChat } from './useChat.js'
 import { useProjectPolling } from './useProjectPolling.js'
 import { useAppStore } from '../store/appStore.js'
@@ -13,12 +13,60 @@ export function useProjectEditor() {
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   const polling = useProjectPolling(activeProjectId)
   const bumpProjectListVersion = useAppStore((state) => state.bumpProjectListVersion)
-  const { refetch } = polling
-  const handleMessageHandled = useCallback(() => {
+  const bumpConversationVersion = useAppStore((state) => state.bumpConversationVersion)
+  const { applyFrameUpdates, applyProjectSnapshot, refetch } = polling
+  const lastSyncedTaskRef = useRef(null)
+  const lastStageStatusRef = useRef(null)
+
+  const handleMessageHandled = useCallback(({ result } = {}) => {
+    if (result?.updated_frames?.length) {
+      applyFrameUpdates(result.updated_frames)
+    }
+    if (result?.workflow_stage || result?.stage_status || result?.task_id) {
+      applyProjectSnapshot(result)
+    }
     refetch()
     bumpProjectListVersion()
-  }, [bumpProjectListVersion, refetch])
+    bumpConversationVersion()
+  }, [applyFrameUpdates, applyProjectSnapshot, bumpConversationVersion, bumpProjectListVersion, refetch])
   const chat = useChat({ onMessageHandled: handleMessageHandled })
+  const reloadChat = chat.reload
+  const projectLastTaskId = polling.project?.last_task_id || null
+  const projectStageStatus = polling.project?.stage_status || null
+  const projectWorkflowStage = polling.project?.workflow_stage || null
+
+  useEffect(() => {
+    if (!activeProjectId || !polling.project) return
+
+    const currentStatus = projectStageStatus
+    const previousStatus = lastStageStatusRef.current
+    const taskId = projectLastTaskId
+    lastStageStatusRef.current = currentStatus
+
+    const finishedAsyncTask =
+      taskId
+      && previousStatus === 'running'
+      && ['awaiting_review', 'failed'].includes(currentStatus)
+
+    const completedWorkflow = projectWorkflowStage === 'completed' && taskId
+
+    if (!finishedAsyncTask && !completedWorkflow) return
+    if (lastSyncedTaskRef.current === `${taskId}:${currentStatus}:${projectWorkflowStage}`) return
+
+    lastSyncedTaskRef.current = `${taskId}:${currentStatus}:${projectWorkflowStage}`
+    reloadChat()
+    bumpProjectListVersion()
+    bumpConversationVersion()
+  }, [
+    activeProjectId,
+    polling.project,
+    projectLastTaskId,
+    projectStageStatus,
+    projectWorkflowStage,
+    reloadChat,
+    bumpConversationVersion,
+    bumpProjectListVersion,
+  ])
 
   // 统一的操作方法——Chat 和 Canvas 都调用这些
   const editFrame = async (frameId, patch) => {
@@ -84,6 +132,8 @@ export function useProjectEditor() {
     // 对话状态
     messages: chat.messages,
     isTyping: chat.isTyping,
+    isThinking: chat.isThinking,
+    historyLoaded: chat.historyLoaded,
     sendMessage: chat.sendMessage,
     reloadChat: chat.reload,
 

@@ -49,6 +49,26 @@ def test_chat_frame_description_edit_keeps_image_prompt_in_sync():
     assert frame.image_prompt == "主体是年纪男生拿着冒热气的保温杯"
 
 
+def test_chat_price_edit_propagates_to_narration_and_visible_text_fields():
+    frame = SimpleNamespace(
+        description="电竞鼠标放在桌面C位，旁边立着醒目的89元价格牌",
+        image_prompt="电竞鼠标放在桌面C位，旁边立着醒目的89元价格牌",
+        video_prompt="镜头推向价格牌",
+        narration="今天只要89元，点击小黄车带走！",
+        subtitle_text="到手仅89元",
+        text_overlay="限时89元",
+        duration=4.152,
+    )
+
+    apply_frame_modifications(frame, {"price": "109元"})
+
+    assert "109元" in frame.description
+    assert "109元" in frame.image_prompt
+    assert frame.narration == "今天只要109元，点击小黄车带走！"
+    assert frame.subtitle_text == "到手仅109元"
+    assert frame.text_overlay == "限时109元"
+
+
 def test_tts_text_prefers_narration():
     frame = SimpleNamespace(
         narration="new concise narration",
@@ -62,16 +82,17 @@ def test_tts_text_prefers_narration():
 def test_chat_service_has_real_generation_action_branches():
     source = Path("backend/v1/app/generate/service/chat/chat_service.py").read_text(encoding="utf-8")
 
-    assert 'plan["action"] == "GENERATE_IMAGES"' in source
-    assert 'plan["action"] == "GENERATE_VIDEO"' in source
-    assert 'plan["action"] == "REGENERATE_TTS"' in source
-    assert 'plan["action"] in PROJECT_REGENERATION_ACTIONS' in source
+    assert 'action == "GENERATE_IMAGES"' in source
+    assert 'action == "GENERATE_VIDEO"' in source
+    assert 'action == "REGENERATE_TTS"' in source
+    assert "action in PROJECT_REGENERATION_ACTIONS" in source
+    assert "async def _execute_action(" in source
     assert "def _submit_project_regeneration(" in source
     assert '"generate_frame_image_task"' in source
     assert '"generate_frame_video_task"' in source
 
 
-def test_tts_regeneration_has_audio_only_celery_task_and_chat_schedules_it():
+def test_tts_regeneration_has_audio_only_task_but_chat_narration_edit_renders_video():
     task_source = Path("backend/v1/app/generate/tasks/video_tasks.py").read_text(encoding="utf-8")
     chat_source = Path("backend/v1/app/generate/service/chat/chat_service.py").read_text(encoding="utf-8")
 
@@ -79,7 +100,7 @@ def test_tts_regeneration_has_audio_only_celery_task_and_chat_schedules_it():
     assert "def generate_project_tts_task" in task_source
     assert "_build_project_audio_track(project, frames)" in task_source
     assert 'audio_object = f"projects/{project_id}/audio.mp3"' in task_source
-    assert "generate_project_tts_task" in chat_source
+    assert 'trigger_source="chat_narration_edit"' in chat_source
 
 
 def test_pending_actions_are_persisted_and_exposed_by_controller():
@@ -115,7 +136,7 @@ def test_project_regeneration_actions_are_confirmed_pending_actions():
 
     assert "PROJECT_REGENERATION_ACTIONS" in chat_source
     assert "build_confirmation_preview_block(" in chat_source
-    assert '_submit_project_regeneration(db, project, project_id, plan["action"])' in chat_source
+    assert "self._submit_project_regeneration(db, project, project_id, action)" in chat_source
 
 
 def test_streaming_script_generation_does_not_restore_legacy_button_copy():
@@ -183,6 +204,24 @@ def test_entry_chat_stream_uses_intent_service_for_conversation():
     assert "intent_service.stream_entry_converse" in route_section
 
 
+def test_image_generation_prompt_includes_hard_price_revision_constraints():
+    frame = SimpleNamespace(
+        description="保温杯放在左侧，右侧是醒目的99元价格牌",
+        image_prompt="保温杯放在左侧，右侧是醒目的99元价格牌",
+        ai_params={
+            "image_revision_instruction": "将画面中的价格改为99元，旁白不变",
+            "price_revision_target": "99元",
+            "price_revision_original": "39.9",
+        },
+    )
+
+    prompt = resolve_image_generation_prompt(frame)
+
+    assert "99元" in prompt
+    assert "MUST render the visible price text as 99元" in prompt
+    assert "Do not render 39.9" in prompt
+
+
 def test_chat_service_uses_intent_service_not_legacy_agents():
     chat_source = Path("backend/v1/app/generate/service/chat/chat_service.py").read_text(encoding="utf-8")
 
@@ -195,5 +234,11 @@ def test_chat_service_uses_intent_service_not_legacy_agents():
 def test_chat_service_handles_confirm_and_advance():
     chat_source = Path("backend/v1/app/generate/service/chat/chat_service.py").read_text(encoding="utf-8")
 
-    assert 'plan["action"] == "CONFIRM_AND_ADVANCE"' in chat_source
+    assert 'action == "CONFIRM_AND_ADVANCE"' in chat_source
     assert "def _handle_confirm_and_advance(" in chat_source
+
+
+def test_image_workflow_does_not_emit_duplicate_image_start_chat_message():
+    image_workflow_source = Path("backend/v1/app/generate/service/stages/image_workflow.py").read_text(encoding="utf-8")
+
+    assert "我开始生成分镜图片了，完成后会把图片网格发在这里。" not in image_workflow_source

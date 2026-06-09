@@ -144,6 +144,7 @@ class ProductService(BaseParsingService):
                         asset_ids=asset_ids,
                         roles=data.asset_roles
                     )
+            db.commit()
             # 事务提交成功
         except Exception as e:
             # 事务回滚，重新抛出异常
@@ -226,6 +227,7 @@ class ProductService(BaseParsingService):
                     update_data["category_path"] = None
 
                 product = ProductDAO.update_product(db, product_id, update_data)
+            db.commit()
             # 事务提交成功
         except Exception as e:
             # 事务回滚，重新抛出异常
@@ -260,6 +262,7 @@ class ProductService(BaseParsingService):
                 ProductAssetDAO.delete_all_by_product_id(db, product_id)
                 # 再删除商品
                 ProductDAO.delete_product(db, product_id)
+            db.commit()
             # 事务提交成功
         except Exception as e:
             # 事务回滚，重新抛出异常
@@ -495,7 +498,8 @@ class ProductService(BaseParsingService):
                 type=asset_type,
                 title=f"{req.name}_素材_{index+1}",
                 source_type=0,  # 用户上传
-                skip_analysis=True  # 跳过自动解析，由商品解析统一处理
+                skip_analysis=True,  # 跳过自动解析，由商品解析统一处理
+                user_id=user_id,
             )
             asset_ids.append(asset_result["id"])
             # 设置资产角色
@@ -526,6 +530,7 @@ class ProductService(BaseParsingService):
                     # 解析主资产
                     main_asset_id = next((aid for aid, role in asset_role_map.items() if role == "main"), asset_ids[0])
                     ProductService.parse_product(db_bg, product_result["id"], user_id, asset_id=main_asset_id)
+                    db_bg.commit()  # 确保解析结果持久化
                     db_bg.close()
                 except Exception as e:
                     # 后台任务失败只记录日志，不影响主流程

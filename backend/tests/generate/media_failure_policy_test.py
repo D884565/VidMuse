@@ -77,6 +77,30 @@ def test_completed_image_frame_is_skipped_without_api_call(monkeypatch):
     assert frame.status == 2
 
 
+def test_dirty_completed_image_frame_is_regenerated(monkeypatch):
+    service = ImageGenerationService()
+    frame = Frame(status=2, image_url="https://cdn.test/old.png")
+    frame.dirty = 1
+    calls = []
+
+    monkeypatch.setattr(
+        service,
+        "_call_text_to_image",
+        lambda *args, **kwargs: calls.append(args) or "new-local-image.png",
+    )
+    monkeypatch.setattr(
+        service,
+        "_upload_to_tos",
+        lambda image_path, project_id, index: "https://cdn.test/new.png",
+    )
+
+    service.generate_frame_images([frame], project_id=1)
+
+    assert calls
+    assert frame.image_url == "https://cdn.test/new.png"
+    assert frame.status == 2
+
+
 def test_compose_frames_raises_when_segment_generation_fails_in_strict_mode(monkeypatch, tmp_path):
     composer = VideoComposer()
     frame = Frame(sequence=1)

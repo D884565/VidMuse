@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { MoreHorizontal, Trash2 } from 'lucide-react'
 import { deleteProject } from '../../services/project.js'
 import { useAppStore } from '../../store/appStore.js'
@@ -76,6 +76,7 @@ export default function ProjectCard({ project }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const triggerRef = useRef(null)
 
   const status = getWorkflowStatusDisplay(project)
   const sidebarTitle = getSidebarProjectTitle(project)
@@ -128,6 +129,7 @@ export default function ProjectCard({ project }) {
 
       {/* "..." 按钮，hover 时显示 */}
       <button
+        ref={triggerRef}
         type="button"
         className="absolute right-1 top-1/2 -translate-y-1/2 hidden rounded-md p-1 text-[var(--text-muted)] transition hover:bg-[rgba(255,255,255,0.08)] hover:text-white group-hover:block"
         onClick={(e) => {
@@ -138,26 +140,34 @@ export default function ProjectCard({ project }) {
         <MoreHorizontal size={14} />
       </button>
 
-      {/* 下拉菜单 */}
-      {menuOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-          <div className="absolute right-0 top-full z-50 mt-1 w-32 overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[rgba(26,26,46,0.95)] py-1 shadow-xl">
-            <button
-              type="button"
-              className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
-              onClick={(e) => {
-                e.stopPropagation()
-                setMenuOpen(false)
-                setConfirmOpen(true)
-              }}
+      {/* 下拉菜单：用 fixed 定位，避免被 overflow-y-auto 裁剪 */}
+      {menuOpen && (() => {
+        const rect = triggerRef.current?.getBoundingClientRect()
+        const top = rect ? rect.bottom + 4 : 0
+        const right = rect ? window.innerWidth - rect.right : 0
+        return (
+          <>
+            <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
+            <div
+              className="fixed z-50 w-32 overflow-hidden rounded-lg border border-[var(--border-soft)] bg-[rgba(26,26,46,0.95)] py-1 shadow-xl"
+              style={{ top: `${top}px`, right: `${right}px` }}
             >
-              <Trash2 size={12} />
-              删除项目
-            </button>
-          </div>
-        </>
-      )}
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setMenuOpen(false)
+                  setConfirmOpen(true)
+                }}
+              >
+                <Trash2 size={12} />
+                删除项目
+              </button>
+            </div>
+          </>
+        )
+      })()}
 
       <ConfirmDialog
         open={confirmOpen}

@@ -1,6 +1,7 @@
 """独立的图片阶段工作流服务：负责批量生成分镜图片。"""
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from sqlalchemy import select
@@ -12,10 +13,10 @@ from backend.v1.app.generate.service.stages.image_service import image_generatio
 from backend.v1.app.generate.service.generateUtils.reference_image_utils import extract_reference_images
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
 from backend.v1.app.generate.service.generateUtils.task_service import generation_task_service
-from backend.v1.app.generate.service.workflow.blocks import build_image_stage_blocks, build_progress_block
-from backend.v1.app.models.conversation import Conversation
+from backend.v1.app.generate.service.workflow.blocks import build_image_stage_blocks
 from backend.v1.app.models.frame import Frame
 from backend.v1.app.models.project import Project
+from backend.v1.app.models.conversation import Conversation
 
 
 def build_image_stage_message(frames: list[Frame], task_id: int | None = None) -> dict:
@@ -55,16 +56,6 @@ class ImageWorkflowService:
 
         task = await generation_task_service.create_task(db, project_id, "image", status="queued")
         project_workflow_state.mark_project_stage_running(project, "image", task.id)
-        db.add(Conversation(
-            project_id=project_id,
-            role="assistant",
-            content="我开始生成分镜图片了，完成后会把图片网格发在这里。",
-            message_type="progress",
-            stage="image",
-            blocks=[build_progress_block("image", "running", task.id, "正在生成分镜图片")],
-            action_type="GENERATE_IMAGES",
-            task_id=task.id,
-        ))
         await db.commit()
 
         async_result = celery_app.send_task("generate_image_task", args=[project_id, task.id])
@@ -91,16 +82,6 @@ class ImageWorkflowService:
         task = await generation_task_service.create_task(db, project_id, "image", status="running")
         project_workflow_state.mark_project_stage_running(project, "image", task.id)
         # 写入一条进度消息到对话
-        db.add(Conversation(
-            project_id=project_id,
-            role="assistant",
-            content="我开始生成分镜图片了，完成后会把图片网格发在这里。",
-            message_type="progress",
-            stage="image",
-            blocks=[build_progress_block("image", "running", task.id, "正在生成分镜图片")],
-            action_type="GENERATE_IMAGES",
-            task_id=task.id,
-        ))
         await db.commit()
 
         reference_images = extract_reference_images(project)
@@ -110,6 +91,7 @@ class ImageWorkflowService:
                 frames,
                 project_id,
                 reference_images=reference_images,
+                style=project.style,
             )
             failed = [frame.id for frame in frames if frame.status == 3]
             task.status = "failed" if failed else "succeeded"

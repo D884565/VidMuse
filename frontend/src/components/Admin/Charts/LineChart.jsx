@@ -1,5 +1,6 @@
 import { LineChart as ReLineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 
+/** 折线图组件 — 基于 Recharts 封装，用于管理后台数据可视化 */
 export default function LineChart({ data, xKey, yKey, title, color = '#3b82f6' }) {
   return (
     <div className="bg-white rounded-lg shadow p-6">

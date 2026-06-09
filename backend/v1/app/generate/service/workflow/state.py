@@ -42,6 +42,7 @@ VALID_TRANSITIONS = {
     ("script", "awaiting_review", "script", "running"),
     ("script", "running", "script", "awaiting_review"),
     ("script", "awaiting_review", "script", "confirmed"),
+    ("script", "confirmed", "script", "awaiting_review"),
     ("script", "awaiting_review", "video", "running"),
     ("script", "confirmed", "image", "idle"),
     ("script", "confirmed", "image", "running"),
@@ -59,6 +60,7 @@ VALID_TRANSITIONS = {
     ("video", "running", "video", "awaiting_review"),
     ("video", "awaiting_review", "video", "confirmed"),
     ("video", "confirmed", "completed", "confirmed"),
+    ("completed", "confirmed", "video", "running"),
     # 合法失效回退：保留上一个已确认阶段，用 dirty_stage 标记需要重做的阶段。
     ("image", "idle", "script", "confirmed"),
     ("image", "running", "script", "confirmed"),

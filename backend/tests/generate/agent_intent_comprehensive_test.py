@@ -55,6 +55,25 @@ class TestFallbackLogic:
         result = _fallback_project_intent("图片不好看", "image", [])
         assert result["action"] == "CONVERSE"
 
+    def test_fallback_price_edit_maps_to_edit_frame_with_price_modification(self):
+        frames = [
+            SimpleNamespace(
+                id=55,
+                sequence=4,
+                description="电竞鼠标放在桌面C位，旁边立着醒目的89元价格牌",
+                narration="今天只要89元，点击小黄车带走！",
+                image_prompt="电竞鼠标放在桌面C位，旁边立着醒目的89元价格牌",
+                subtitle_text="到手仅89元",
+                text_overlay="限时89元",
+            )
+        ]
+
+        result = _fallback_project_intent("这个鼠标我想改为109元", "video", frames)
+
+        assert result["action"] == "EDIT_FRAME"
+        assert result["affected_frame_ids"] == [55]
+        assert result["modifications"] == {"price": "109元"}
+
 
 # ============ 2. 计划规范化 ============
 

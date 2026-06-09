@@ -1,3 +1,7 @@
+/**
+ * 标准化商品表单数据
+ * 清理空白字段，转换价格为数字，空值设为 null。
+ */
 export function normalizeProductPayload(form) {
   const name = (form.name || '').trim()
   const brand = (form.brand || '').trim()

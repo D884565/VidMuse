@@ -3,6 +3,7 @@ import { Loader2, Lock, LogOut, Save } from 'lucide-react'
 import { useAppStore } from '../../store/appStore.js'
 import { changePassword, getUserInfo, logoutApi, updateUserInfo } from '../../services/user.js'
 
+/** 个人资料页面 — 查看/编辑用户信息、修改密码、退出登录 */
 export default function UserProfile() {
   const setUser = useAppStore((state) => state.setUser)
   const storeLogout = useAppStore((state) => state.logout)

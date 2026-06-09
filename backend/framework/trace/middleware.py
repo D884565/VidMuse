@@ -12,6 +12,7 @@ from .context import trace_id_var, span_stack_var, get_all_spans, clear_context,
 from .dao import save_trace_data, flush_batch
 from .config import trace_config
 from backend.framework.web.auth import parse_token_from_header
+from backend.framework.exceptions.exceptions import BusinessException
 
 
 logger = logging.getLogger("trace.middleware")
@@ -41,7 +42,11 @@ class TraceMiddleware(BaseHTTPMiddleware):
         token_stack = span_stack_var.set([])
 
         # 尝试获取并设置用户ID（公共接口可能没有token，忽略异常）
-        user_id = parse_token_from_header(request.headers.get("Authorization"))
+        user_id = None
+        try:
+            user_id = parse_token_from_header(request.headers.get("Authorization"))
+        except BusinessException as exc:
+            logger.info("trace auth parse skipped: code=%s, path=%s", exc.code, request.url.path)
         if user_id:
             set_user_id(user_id)
 

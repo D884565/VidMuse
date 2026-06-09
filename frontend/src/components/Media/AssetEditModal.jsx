@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Loader2, RefreshCw, Trash2, X } from 'lucide-react'
 import { reuploadImageAsset, updateAsset, updateTextAsset } from '../../services/asset.js'
 
+/**
+ * 素材编辑弹窗
+ * 支持编辑标题、文本内容，重新上传图片，以及删除素材。
+ */
 export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
   const [title, setTitle] = useState('')
   const [contentText, setContentText] = useState('')
@@ -17,6 +21,8 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
     setTitle(asset.name || '')
     setContentText(asset.content_text || '')
     setImagePreview(asset.url || '')
+    setSaving(false)
+    setUploading(false)
     setError('')
     setShowDeleteConfirm(false)
   }, [asset])
@@ -76,6 +82,7 @@ export default function AssetEditModal({ asset, onClose, onSaved, onDeleted }) {
       onDeleted?.(asset.id)
     } catch (err) {
       setError(err.message || '删除失败')
+    } finally {
       setSaving(false)
     }
   }

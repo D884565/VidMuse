@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.orm import Session
 
 from backend.v1.app.models.generation_task import GenerationTask
@@ -25,6 +26,11 @@ class TaskTrackerDAO:
         task_id: Optional[str] = None,
     ) -> GenerationTask:
         """创建生成任务。"""
+        if task_id:
+            existing = self.get_task(db, task_id)
+            if existing:
+                return existing
+
         task = GenerationTask(
             task_id=task_id or self.generate_task_id(),
             project_id=project_id,
@@ -102,15 +108,34 @@ class TaskTrackerDAO:
         stage: str,
     ) -> None:
         """批量初始化帧进度记录。"""
-        for frame_id in frame_ids:
-            progress = GenerationFrameProgress(
-                task_id=task_id,
-                project_id=project_id,
-                frame_id=frame_id,
-                stage=stage,
-                status="pending",
-            )
-            db.add(progress)
+        if not frame_ids:
+            return
+
+        rows = [
+            {
+                "task_id": task_id,
+                "project_id": project_id,
+                "frame_id": frame_id,
+                "stage": stage,
+                "status": "pending",
+                "attempt_count": 0,
+                "error_message": None,
+                "result_url": None,
+                "started_at": None,
+                "finished_at": None,
+            }
+            for frame_id in frame_ids
+        ]
+        statement = mysql_insert(GenerationFrameProgress).values(rows)
+        statement = statement.on_duplicate_key_update(
+            project_id=statement.inserted.project_id,
+            status="pending",
+            error_message=None,
+            result_url=None,
+            started_at=None,
+            finished_at=None,
+        )
+        db.execute(statement)
         db.flush()
 
     def update_frame_status(

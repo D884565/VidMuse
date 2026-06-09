@@ -1,4 +1,4 @@
-import { Package, Plus, Send, SlidersHorizontal, X, Image as ImageIcon, Upload, FileText, Loader2 } from 'lucide-react'
+import { Package, Plus, Send, SlidersHorizontal, X, Image as ImageIcon, Upload, FileText, Loader2, Sparkles, Wand2, Flame } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import MaterialPickerModal from './MaterialPickerModal.jsx'
 import ProductPickerModal from './ProductPickerModal.jsx'
@@ -175,7 +175,7 @@ function PlusMenu({ onSelect, onClose }) {
   )
 }
 
-export default function SmartInput({ onSend }) {
+export default function SmartInput({ onSend, creationMode, onCreationModeChange }) {
   const [value, setValue] = useState('')
   const [panelOpen, setPanelOpen] = useState(false)
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -184,9 +184,12 @@ export default function SmartInput({ onSend }) {
   const [selectedProduct, setSelectedProduct] = useState(null)
   const [localRefs, setLocalRefs] = useState([])
   const [menuOpen, setMenuOpen] = useState(false)
+  const [modeMenuOpen, setModeMenuOpen] = useState(false)
   const [textInputOpen, setTextInputOpen] = useState(false)
   const [textDraft, setTextDraft] = useState('')
   const fileInputRef = useRef(null)
+  const panelRef = useRef(null)
+  const modeMenuRef = useRef(null)
 
   const canSend = value.trim().length > 0
   const selectedAssetIds = useMemo(
@@ -204,6 +207,7 @@ export default function SmartInput({ onSend }) {
       selectedAssets,
       selectedProduct,
       localRefs: readyRefs,
+      creationMode,
     })
     setValue('')
     setSelectedAssets([])
@@ -319,13 +323,37 @@ export default function SmartInput({ onSend }) {
     })
   }
 
+  // 点击外部关闭参数面板
+  useEffect(() => {
+    if (!panelOpen) return
+    function handleClickOutside(e) {
+      if (panelRef.current && !panelRef.current.contains(e.target)) {
+        setPanelOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [panelOpen])
+
+  // 点击外部关闭创作模式菜单
+  useEffect(() => {
+    if (!modeMenuOpen) return
+    function handleClickOutside(e) {
+      if (modeMenuRef.current && !modeMenuRef.current.contains(e.target)) {
+        setModeMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [modeMenuOpen])
+
   const hasSelection = selectedAssets.length > 0 || selectedProduct || localRefs.length > 0
 
   return (
     <>
       <div className="fixed bottom-0 left-[260px] right-0 z-20 border-t border-[var(--border-soft)] bg-[rgba(15,15,26,0.88)] px-8 py-5 backdrop-blur-xl transition-[left] duration-300 max-[1024px]:left-[72px]">
         <div className="relative mx-auto max-w-4xl">
-          {panelOpen && <ParameterPanel />}
+          {panelOpen && <div ref={panelRef}><ParameterPanel /></div>}
 
           <form
             className="rounded-2xl border border-[rgba(56,189,248,0.2)] bg-[rgba(26,26,46,0.95)] p-3 shadow-[0_8px_32px_rgba(56,189,248,0.08)]"
@@ -411,6 +439,52 @@ export default function SmartInput({ onSend }) {
                   <SlidersHorizontal size={18} />
                   参数
                 </button>
+                {onCreationModeChange && (
+                  <div className="relative" ref={modeMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setModeMenuOpen((open) => !open)}
+                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-[var(--text-muted)] transition hover:bg-[rgba(56,189,248,0.1)] hover:text-white"
+                    >
+                      {creationMode === 'auto' ? (
+                        <Wand2 size={16} className="text-[#a78bfa]" />
+                      ) : creationMode === 'hot_video' ? (
+                        <Flame size={16} className="text-[#f97316]" />
+                      ) : (
+                        <Sparkles size={16} className="text-[#38bdf8]" />
+                      )}
+                      {creationMode === 'auto' ? '自动选择' : creationMode === 'hot_video' ? '爆款融合' : '自主创作'}
+                    </button>
+                    {modeMenuOpen && (
+                      <div className="absolute bottom-full left-0 mb-2 w-44 overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[rgba(22,22,40,0.98)] py-1 shadow-2xl backdrop-blur-xl">
+                        <button
+                          type="button"
+                          onClick={() => { onCreationModeChange('independent'); setModeMenuOpen(false) }}
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[var(--text-muted)] transition hover:bg-[rgba(56,189,248,0.1)] hover:text-white"
+                        >
+                          <Sparkles size={16} className="text-[#38bdf8]" />
+                          自主创作
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { onCreationModeChange('auto'); setModeMenuOpen(false) }}
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[var(--text-muted)] transition hover:bg-[rgba(167,139,250,0.1)] hover:text-white"
+                        >
+                          <Wand2 size={16} className="text-[#a78bfa]" />
+                          自动选择
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { onCreationModeChange('hot_video'); setModeMenuOpen(false) }}
+                          className="flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm text-[var(--text-muted)] transition hover:bg-[rgba(249,115,22,0.1)] hover:text-white"
+                        >
+                          <Flame size={16} className="text-[#f97316]" />
+                          爆款融合
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <button

@@ -13,6 +13,7 @@ from backend.v1.app.models.generation_task import GenerationTask
 from backend.v1.app.models.script import Script
 from backend.v1.app.models.asset import Asset
 from backend.v1.app.models.project_asset import ProjectAsset
+from backend.v1.app.generate.service.chat.material_resolver import MaterialResolver
 from backend.v1.app.generate.service.workflow import state as project_workflow_state
 from backend.v1.app.generate.service.workflow.limits import normalize_target_duration
 from backend.v1.app.script.service.template_script_service import template_script_service
@@ -168,7 +169,8 @@ class ScriptGenerationService:
             template_id=template_id,
             strategy_id=strategy_id,
             used_factors=used_factors,
-            template_params=template_params
+            template_params=template_params,
+            creation_mode=creation_mode,
         )
 
         # 逐场景写入 frames 表
@@ -397,6 +399,10 @@ class ScriptGenerationService:
                     db.add(frame)
                     frames.append(frame)
 
+            project.video_output_url = None
+            project.audio_url = None
+            project_workflow_state.invalidate_project_from(project, "script")
+            project_workflow_state.mark_project_stage_review(project, "script")
             await db.commit()
 
             # 刷新数据
@@ -431,6 +437,7 @@ class ScriptGenerationService:
         strategy_id: str | None = None,
         used_factors: list | dict | None = None,
         template_params: dict | None = None,
+        creation_mode: str | None = None,
     ) -> Script:
         result = await db.execute(
             select(func.coalesce(func.max(Script.version), 0)).where(Script.project_id == project.id)
@@ -489,14 +496,12 @@ class ScriptGenerationService:
         materials = []
         for asset in result.scalars().all():
             ai_features = asset.ai_features or {}
-            if not isinstance(ai_features, dict):
-                continue
-            prompt_summary = ai_features.get("prompt_summary", {}) or {}
-            if not prompt_summary:
+            reference_text = MaterialResolver._build_reference_text(ai_features)
+            if not reference_text:
                 continue
             materials.append({
                 "title": asset.title or f"Asset {asset.id}",
-                "prompt_summary": prompt_summary,
+                "prompt_summary": {"reference_text": reference_text},
             })
         return format_material_prompt_section(materials)
 
@@ -626,11 +631,11 @@ class ScriptGenerationService:
         selling_points = _parse_json_field(product.selling_points, [])
         if selling_points:
             parts.append(f"- 卖点：{'、'.join(selling_points)}")
-        specs = _parse_json_field(product.specs, {})
+        specs = _parse_json_field(getattr(product, 'specs', None), {})
         if specs:
             specs_text = "、".join(f"{k}:{v}" for k, v in specs.items())
             parts.append(f"- 规格参数：{specs_text}")
-        tags = _parse_json_field(product.tags, [])
+        tags = _parse_json_field(getattr(product, 'tags', None), [])
         if tags:
             parts.append(f"- 标签：{'、'.join(tags)}")
         # 从 ai_features 中提取解析结果
@@ -804,7 +809,7 @@ class ScriptGenerationService:
             "重点强调": ", ".join(project.key_points) if isinstance(project.key_points, list) and project.key_points else "",
             "需要避免": ", ".join(project.avoid) if isinstance(project.avoid, list) and project.avoid else "",
             "参考图片": "\n".join(f"- {url}" for url in project.reference_images) if isinstance(project.reference_images, list) and project.reference_images else "",
-            "商品分类": project.category or "",
+            "商品分类": getattr(project, "category", "") or "",
         }
 
         # 注入素材库解析内容

@@ -24,11 +24,14 @@ class ProjectInitialMessageBuilder:
         product_url: str | None,
         reference_images: list[str] | None,
         product_info: dict[str, Any] | None,
+        display_user_prompt: str | None = None,
     ) -> dict[str, Any]:
         """构建初始消息，返回包含 role/content/blocks/metadata 的字典。"""
+        original_prompt = (user_prompt or "").strip()
+        display_prompt = (display_user_prompt or "").strip()
         content = self._build_content(
             title=title,
-            user_prompt=user_prompt,
+            user_prompt=display_prompt or original_prompt,
             style=style,
             target_audience=target_audience,
             key_points=key_points or [],
@@ -52,6 +55,8 @@ class ProjectInitialMessageBuilder:
             "metadata": {
                 "source": "project_create",
                 "has_assets": any(block.get("type") == "asset_grid" for block in blocks),
+                "original_user_prompt": original_prompt,
+                "display_content": display_prompt or original_prompt,
             },
         }
 
@@ -106,6 +111,7 @@ class ProjectInitialMessageBuilder:
                 "title": (product_info or {}).get("title") or "商品链接",
                 "description": (product_info or {}).get("description"),
                 "url": product_url,
+                "image_url": (product_info or {}).get("main_image_url"),
             })
 
         # 素材网格：参考图 + 商品图
@@ -142,19 +148,23 @@ class ProjectInitialMessageBuilder:
         if not product_info:
             return []
         images: list[str] = []
-        for key in ("main_images", "detail_images", "images"):
+        for key in ("main_images", "main_image_url", "detail_images", "images"):
             value = product_info.get(key)
             if isinstance(value, list):
                 images.extend(str(item) for item in value if item)
             elif isinstance(value, str) and value:
                 images.append(value)
-        return images
+        deduped: list[str] = []
+        for url in images:
+            if url not in deduped:
+                deduped.append(url)
+        return deduped
 
     def build_system_intro(self) -> dict[str, Any]:
         """构建系统介绍消息，在项目创建时作为第一条助手消息存储。"""
         return {
             "role": "assistant",
-            "content": "欢迎使用带货视频生成系统！我将帮助您一步步创建带货短视频：\n\n"
+            "content": "我是 VidMuse——带货视频生成 Agent。我会帮你一步步创建带货短视频：\n\n"
                        "1. 剧本创作 - 根据您的产品和需求生成分镜脚本\n"
                        "2. 分镜配图 - 为每个分镜生成精美的画面\n"
                        "3. 视频成片 - 将所有分镜合成为最终视频\n\n"

@@ -39,6 +39,7 @@ class Project(Base):
         default="zh_female_cancan_mars_bigtts",
         comment="音色类型",
     )
+    music_config: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="音乐配置，如当前 BGM ID")
     summary: Mapped[str | None] = mapped_column(String(200), nullable=True, comment="对话摘要")
 
     workflow_stage: Mapped[str] = mapped_column(

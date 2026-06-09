@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { X, Download, Edit3, Loader2, Save, Sparkles } from 'lucide-react'
+import { X, Download, Edit3, Film, Image as ImageIcon, Loader2, Save } from 'lucide-react'
 import {
   downloadProjectVideo,
   getGenerationTask,
@@ -7,7 +7,7 @@ import {
   getProjectScript,
   getProjectScripts,
 } from '../../services/project.js'
-import { regenerateFrameImage, updateFrame } from '../../services/frame.js'
+import { regenerateFrameImage, regenerateFrameVideo, updateFrame } from '../../services/frame.js'
 import { useAppStore } from '../../store/appStore.js'
 import { formatVideoStyle } from '../../utils/videoStyle.js'
 import StoryboardTimeline from '../Workflow/StoryboardTimeline.jsx'
@@ -24,6 +24,13 @@ const DEFAULT_FORM = {
 
 const TASK_POLL_INTERVAL_MS = 1500
 const TERMINAL_TASK_STATUSES = new Set(['succeeded', 'failed', 'cancelled', 'completed'])
+
+function appendVideoCacheBuster(url, taskId) {
+  if (!url) return url
+  const separator = url.includes('?') ? '&' : '?'
+  const token = taskId || Date.now()
+  return `${url}${separator}v=${encodeURIComponent(token)}`
+}
 
 function buildFrameForm(frame) {
   return {
@@ -43,9 +50,12 @@ function FrameEditorPanel({
   onChange,
   onClose,
   onSave,
-  onRegenerate,
+  onRegenerateImage,
+  onRegenerateVideo,
   saving,
   actionLoading,
+  canRegenerateVideo,
+  mustRegenerateImageFirst,
 }) {
   if (!frame) return null
 
@@ -81,9 +91,9 @@ function FrameEditorPanel({
           时长
           <input
             type="number"
-            step="0.1"
+            step="1"
             value={form.duration}
-            onChange={(event) => onChange('duration', Number(event.target.value || 1))}
+            onChange={(event) => onChange('duration', Math.round(Number(event.target.value || 1)))}
             className="mt-1 w-full rounded-lg border border-[var(--border-soft)] bg-[var(--bg-sidebar)] px-3 py-2 text-sm text-white outline-none focus:border-[#7C3AED]"
           />
         </label>
@@ -147,14 +157,28 @@ function FrameEditorPanel({
         </button>
         <button
           type="button"
-          onClick={onRegenerate}
+          onClick={onRegenerateImage}
           disabled={saving || !!actionLoading}
           className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-white hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-50"
         >
-          {actionLoading === 'image' ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
-          重新生成
+          {actionLoading === 'image' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+          重新生成图片
+        </button>
+        <button
+          type="button"
+          onClick={onRegenerateVideo}
+          disabled={saving || !!actionLoading || !canRegenerateVideo}
+          title={mustRegenerateImageFirst ? '请先重新生成图片' : undefined}
+          className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-white hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-50"
+        >
+          {actionLoading === 'video' ? <Loader2 size={16} className="animate-spin" /> : <Film size={16} />}
+          重新生成视频
         </button>
       </div>
+      {mustRegenerateImageFirst ? (
+        <p className="m-0 mt-2 text-xs text-amber-200">请先重新生成图片，再生成视频。</p>
+      ) : null}
+    {/* 编辑分镜 */}
     </div>
   )
 }
@@ -178,6 +202,14 @@ export default function ProjectDetail({ project, onClose }) {
     () => frames.find((frame) => frame.id === selectedFrameId) || null,
     [frames, selectedFrameId]
   )
+  const displayVideoUrl = useMemo(
+    () => appendVideoCacheBuster(videoUrl, project.last_task_id),
+    [project.last_task_id, videoUrl]
+  )
+  const mustRegenerateImageFirst = !!selectedFrame && (
+    !selectedFrame.image_url || Number(selectedFrame.status) !== 2 || !!selectedFrame.dirty
+  )
+  const canRegenerateVideo = !!selectedFrame && !mustRegenerateImageFirst
 
   useEffect(() => {
     if (selectedFrame) {
@@ -285,7 +317,7 @@ export default function ProjectDetail({ project, onClose }) {
     }, 0)
 
     if (totalDuration - targetDuration > 0.001) {
-      throw new Error(`分镜总时长不能超过项目目标时长 ${targetDuration} 秒`)
+      setFeedback(`分镜总时长 ${Math.round(totalDuration)} 秒，已超过项目目标时长 ${Math.round(targetDuration)} 秒，请注意调整。`)
     }
   }
 
@@ -348,6 +380,30 @@ export default function ProjectDetail({ project, onClose }) {
     }
   }
 
+  const handleRegenerateVideo = async () => {
+    if (!selectedFrame) return
+    if (!canRegenerateVideo) {
+      setFeedback('请先重新生成图片，再生成视频。')
+      return
+    }
+    setActionLoading('video')
+    setFeedback('')
+    setError('')
+    try {
+      await saveFrameDraft()
+      const result = await regenerateFrameVideo(project.id, selectedFrame.id, '')
+      bumpConversationVersion()
+      await handleRefresh()
+      await waitForTaskCompletion(result?.task_id)
+      await handleRefresh()
+      setFeedback(`分镜 ${selectedFrame.sequence} 的视频片段已更新。`)
+    } catch (err) {
+      setError(err.message || '重新生成视频失败')
+    } finally {
+      setActionLoading('')
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
       <div className="relative flex h-[88vh] w-[94vw] max-w-[1320px] overflow-hidden rounded-2xl border border-[var(--border-soft)] bg-[var(--bg-sidebar)] shadow-2xl">
@@ -379,7 +435,8 @@ export default function ProjectDetail({ project, onClose }) {
           <div className="flex-1 overflow-hidden rounded-xl bg-black">
             {videoUrl ? (
               <video
-                src={videoUrl}
+                key={displayVideoUrl}
+                src={displayVideoUrl}
                 controls
                 className="h-full w-full"
                 preload="metadata"
@@ -406,21 +463,43 @@ export default function ProjectDetail({ project, onClose }) {
         </div>
 
         <div className="flex w-[54%] flex-col overflow-y-auto p-6">
-          <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h3 className="m-0 text-base font-semibold">剧本与分镜</h3>
-            {frames.length > 0 ? (
-              <div className="min-w-0 flex-1">
-                <StoryboardTimeline
-                  frames={frames}
-                  selectedFrameId={selectedFrameId}
-                  onSelectFrame={(frame) => {
-                    setSelectedFrameId(frame.id)
-                    setEditorOpen(true)
-                  }}
-                />
-              </div>
-            ) : null}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleRegenerateImage}
+                disabled={!selectedFrame || savingFrame || !!actionLoading}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-white hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-50"
+              >
+                {actionLoading === 'image' ? <Loader2 size={16} className="animate-spin" /> : <ImageIcon size={16} />}
+                重新生成图片
+              </button>
+              <button
+                type="button"
+                onClick={handleRegenerateVideo}
+                disabled={!selectedFrame || savingFrame || !!actionLoading || !canRegenerateVideo}
+                title={mustRegenerateImageFirst ? '请先重新生成图片' : undefined}
+                className="inline-flex items-center gap-2 rounded-lg border border-[var(--border-soft)] px-3 py-2 text-sm text-white hover:bg-[rgba(255,255,255,0.06)] disabled:opacity-50"
+              >
+                {actionLoading === 'video' ? <Loader2 size={16} className="animate-spin" /> : <Film size={16} />}
+                重新生成视频
+              </button>
+            </div>
           </div>
+
+          {frames.length > 0 ? (
+            <div className="mb-4">
+              <StoryboardTimeline
+                frames={frames}
+                selectedFrameId={selectedFrameId}
+                onSelectFrame={(frame) => {
+                  setSelectedFrameId(frame.id)
+                  setEditorOpen(true)
+                }}
+              />
+            </div>
+          ) : null}
 
           {feedback ? (
             <div className="mb-3 rounded-lg border border-[rgba(167,139,250,0.25)] bg-[rgba(124,58,237,0.12)] px-3 py-2 text-xs text-[#d8b4fe]">
@@ -456,9 +535,12 @@ export default function ProjectDetail({ project, onClose }) {
                   onChange={handleFormChange}
                   onClose={() => setEditorOpen(false)}
                   onSave={handleSaveFrame}
-                  onRegenerate={handleRegenerateImage}
+                  onRegenerateImage={handleRegenerateImage}
+                  onRegenerateVideo={handleRegenerateVideo}
                   saving={savingFrame}
                   actionLoading={actionLoading}
+                  canRegenerateVideo={canRegenerateVideo}
+                  mustRegenerateImageFirst={mustRegenerateImageFirst}
                 />
               ) : null}
 
@@ -472,6 +554,11 @@ export default function ProjectDetail({ project, onClose }) {
                     scene?.visual?.description ||
                     scene?.visual?.image_prompt ||
                     '无描述'
+                  const videoPrompt =
+                    frame?.video_prompt ||
+                    frame?.prompt ||
+                    scene?.visual?.video_prompt ||
+                    ''
                   const narration = frame?.narration || scene?.narration || scene?.text || ''
                   const isSelected = frame.id === selectedFrameId
 
@@ -500,10 +587,13 @@ export default function ProjectDetail({ project, onClose }) {
                         <div className="flex-1">
                           <p className="m-0 text-xs font-medium text-[#a78bfa]">
                             分镜 {frame.sequence || idx + 1}
-                            {frame?.duration ? ` · ${frame.duration}s` : ''}
+                            {frame?.duration ? ` · ${Math.round(frame.duration)}s` : ''}
                             {frame?.dirty ? ' · 待应用修改' : ''}
                           </p>
                           <p className="m-0 mt-1 text-sm text-white">{sceneDescription}</p>
+                          {videoPrompt ? (
+                            <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">视频: {videoPrompt}</p>
+                          ) : null}
                         </div>
                       </div>
 
@@ -522,7 +612,7 @@ export default function ProjectDetail({ project, onClose }) {
           )}
         </div>
       </div>
-      {/* 缂栬緫鍒嗛暅 */}
+      {/* 编辑分镜 */}
     </div>
   )
 }

@@ -83,3 +83,10 @@ def test_frame_and_script_models_declare_uniqueness_constraints():
     assert "uq_frames_project_sequence" in frame_source
     assert "UniqueConstraint" in frame_source
     assert "uq_scripts_project_version" in script_source
+
+
+def test_asset_scope_is_modeled_as_string_not_json():
+    asset_source = Path("backend/v1/app/models/asset.py").read_text(encoding="utf-8")
+
+    assert 'scope: Mapped[str | None]' in asset_source
+    assert 'mapped_column(String(30)' in asset_source

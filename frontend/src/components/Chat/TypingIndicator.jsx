@@ -1,3 +1,4 @@
+/** 正在输入指示器 — 三个跳动的圆点，表示 AI 正在生成回复 */
 export default function TypingIndicator() {
   return (
     <div className="flex justify-start">

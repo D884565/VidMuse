@@ -110,6 +110,15 @@ def test_generation_tasks_check_for_cancellation_and_use_task_specific_time_limi
     assert '@celery_app.task(bind=True, max_retries=3, soft_time_limit=180, time_limit=300, name="generate_frame_image_task")' in source
 
 
+def test_frame_video_task_clears_project_dirty_state_after_single_frame_success():
+    source = read("backend/v1/app/generate/tasks/video_tasks.py")
+    body = source[source.index("def generate_frame_video_task"):source.index("except SoftTimeLimitExceeded", source.index("def generate_frame_video_task"))]
+
+    assert 'project.dirty_stage = None' in body
+    assert 'project.stage_status = "awaiting_review"' in body
+    assert "frame.dirty = 0" in body
+
+
 def test_project_detail_uses_project_asset_join_not_url_contains():
     source = read("backend/v1/app/generate/service/stages/video_workflow.py")
 

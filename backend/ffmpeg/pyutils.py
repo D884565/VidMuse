@@ -979,15 +979,15 @@ class FFmpegVideoTool:
                 escaped = audio_path.replace("\\", "/").replace("'", "'\\''")
                 f.write(f"file '{escaped}'\n")
         try:
-            self._run_checked(
-                [self.ffmpeg, "-y",
-                 "-f", "concat", "-safe", "0",
-                 "-i", concat_file,
-                 "-c:a", "aac",
-                 "-b:a", "192k",
-                 output_path],
-                timeout=60,
-            )
+             self._run_checked(
+                 [self.ffmpeg, "-y",
+                  "-f", "concat", "-safe", "0",
+                  "-i", concat_file,
+                  "-c:a", "libmp3lame",
+                  "-q:a", "2",
+                  output_path],
+                 timeout=60,
+             )
         finally:
             try:
                 os.remove(concat_file)

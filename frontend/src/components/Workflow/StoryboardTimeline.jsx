@@ -9,7 +9,7 @@ export default function StoryboardTimeline({ frames = [], selectedFrameId = null
           onClick={() => onSelectFrame?.(frame)}
         >
           <span>#{frame.sequence}</span>
-          <span>{Number(frame.duration || 0).toFixed(1)}s</span>
+          <span>{Math.round(Number(frame.duration || 0))}s</span>
           <span>{frame.status}</span>
           {frame.dirty ? <span>待合成</span> : null}
         </button>

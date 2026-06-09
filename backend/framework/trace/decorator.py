@@ -9,6 +9,15 @@ from .hooks import TraceHooks
 from .compat import PushConfig, PushConfigType, _sync_push
 __all__ = ["trace", "PushConfig", "_sync_push"]
 T = TypeVar("T", bound=Callable[..., Any])
+def _schedule_trace_task(coro) -> None:
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        _sync_push.__globals__["_run_async"](coro)
+        return
+
+    loop.create_task(coro)
+
 def _get_create_push_hooks():
     """
     动态获取push_config转hooks的函数
@@ -145,7 +154,7 @@ def trace(
                         import uuid
                         span.trace_id = uuid.uuid4().hex[:8]
                     # 异步添加到批量队列
-                    asyncio.create_task(add_to_batch(span))
+                    _schedule_trace_task(add_to_batch(span))
         @functools.wraps(func)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             # 确定类名和绑定方法

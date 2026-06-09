@@ -1,9 +1,48 @@
-import { Play, RefreshCw } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import { CheckCircle2, Play, RefreshCw, XCircle } from 'lucide-react'
+import { getGenerationTask } from '../../services/project.js'
 import { useAppStore } from '../../store/appStore.js'
 import { formatVideoStyle } from '../../utils/videoStyle.js'
 
+const TASK_POLL_INTERVAL_MS = 2000
+const SUCCESS_STATUSES = new Set(['confirmed', 'completed', 'complete', 'success', 'succeeded', 'done'])
+const FAILURE_STATUSES = new Set(['failed', 'failure', 'error', 'cancelled', 'canceled'])
+const TERMINAL_STATUSES = new Set([...SUCCESS_STATUSES, ...FAILURE_STATUSES])
+
+/** 格式化时长为整数秒显示（如 5s） */
+function formatDurationLabel(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric) || numeric <= 0) return '0s'
+  return `${Math.round(numeric)}s`
+}
+
+function getProgressCardTone(status) {
+  const normalizedStatus = String(status || 'running').toLowerCase()
+  if (SUCCESS_STATUSES.has(normalizedStatus)) {
+    return {
+      wrapper: 'border-[#10b981]/25 bg-[#052e24]/45',
+      text: 'text-[#6ee7b7]',
+      icon: CheckCircle2,
+      spin: false,
+    }
+  }
+  if (FAILURE_STATUSES.has(normalizedStatus)) {
+    return {
+      wrapper: 'border-[#ef4444]/25 bg-[#3f1111]/40',
+      text: 'text-[#fca5a5]',
+      icon: XCircle,
+      spin: false,
+    }
+  }
+  return {
+    wrapper: 'border-[#f59e0b]/25 bg-[#3b2505]/35',
+    text: 'text-[#fbbf24]',
+    icon: RefreshCw,
+    spin: true,
+  }
+}
+
 export default function MessageBlocks({ blocks = [], onActionComplete }) {
-  void onActionComplete
   const activeProjectId = useAppStore((state) => state.activeProjectId)
   void activeProjectId
 
@@ -16,9 +55,10 @@ export default function MessageBlocks({ blocks = [], onActionComplete }) {
         if (block.type === 'storyboard_table') return <StoryboardTable key={index} block={block} />
         if (block.type === 'image_grid') return <ImageGrid key={index} block={block} />
         if (block.type === 'video_card') return <VideoCard key={index} block={block} />
-        if (block.type === 'progress_card') return <ProgressCard key={index} block={block} />
+        if (block.type === 'progress_card') return <ProgressCard key={index} block={block} onActionComplete={onActionComplete} />
         if (block.type === 'follow_up') return <FollowUp key={index} block={block} />
         if (block.type === 'asset_grid') return <AssetGrid key={index} block={block} />
+        if (block.type === 'product_card') return <ProductCard key={index} block={block} />
         if (block.type === 'quick_actions') return <QuickActions key={index} block={block} />
         if (block.type === 'frame_editor') return <FrameEditor key={index} block={block} />
         if (block.type === 'confirmation_preview') return <ConfirmationPreview key={index} block={block} />
@@ -44,7 +84,7 @@ function ScriptSummary({ block }) {
         <p className="m-0">主题：{block.theme}</p>
         <p className="m-0">风格：{formatVideoStyle(block.style)}</p>
         <p className="m-0">分镜数：{block.frame_count}</p>
-        <p className="m-0">总时长：{block.total_duration}s</p>
+        <p className="m-0">总时长：{formatDurationLabel(block.total_duration)}</p>
       </div>
       <p className="mb-0 mt-3 text-xs text-[var(--text-muted)]">{block.visual_plan}</p>
     </div>
@@ -62,7 +102,7 @@ function StoryboardTable({ block }) {
       {(block.frames || []).map((frame) => (
         <div key={frame.id || frame.sequence} className="grid grid-cols-[64px_80px_1fr] gap-2 border-t border-white/5 px-3 py-3 text-xs">
           <span className="font-semibold text-white">#{frame.sequence}</span>
-          <span>{frame.duration}s</span>
+          <span>{formatDurationLabel(frame.duration)}</span>
           <div>
             <p className="m-0 text-white">{frame.scene}</p>
             <p className="mb-0 mt-1 text-[var(--text-muted)]">{frame.narration}</p>
@@ -109,11 +149,53 @@ function VideoCard({ block }) {
   )
 }
 
-function ProgressCard({ block }) {
+function ProgressCard({ block, onActionComplete }) {
+  const initialStatus = String(block.status || 'running').toLowerCase()
+  const [taskStatus, setTaskStatus] = useState(initialStatus)
+  const notifiedRef = useRef(SUCCESS_STATUSES.has(initialStatus))
+  const effectiveStatus = taskStatus || initialStatus
+  const tone = getProgressCardTone(effectiveStatus)
+  const Icon = tone.icon
+
+  useEffect(() => {
+    setTaskStatus(initialStatus)
+    notifiedRef.current = SUCCESS_STATUSES.has(initialStatus)
+  }, [block.task_id, initialStatus])
+
+  useEffect(() => {
+    if (!block.task_id || TERMINAL_STATUSES.has(taskStatus)) return undefined
+
+    let cancelled = false
+    const pollTask = async () => {
+      try {
+        const task = await getGenerationTask(block.task_id)
+        const nextStatus = String(task?.status || '').toLowerCase()
+        if (!cancelled && nextStatus) {
+          setTaskStatus(nextStatus)
+        }
+      } catch (error) {
+        console.warn('Failed to poll generation task', error)
+      }
+    }
+
+    pollTask()
+    const timer = setInterval(pollTask, TASK_POLL_INTERVAL_MS)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [block.task_id, taskStatus])
+
+  useEffect(() => {
+    if (!SUCCESS_STATUSES.has(effectiveStatus) || notifiedRef.current) return
+    notifiedRef.current = true
+    onActionComplete?.()
+  }, [effectiveStatus, onActionComplete])
+
   return (
-    <div className="rounded-xl border border-[#f59e0b]/25 bg-[#3b2505]/35 p-4 text-sm">
-      <div className="flex items-center gap-2 text-[#fbbf24]">
-        <RefreshCw size={15} />
+    <div className={`rounded-xl border ${tone.wrapper} p-4 text-sm`}>
+      <div className={`flex items-center gap-2 ${tone.text}`}>
+        <Icon size={15} className={tone.spin ? 'animate-spin' : undefined} />
         {block.message}
       </div>
     </div>
@@ -121,13 +203,45 @@ function ProgressCard({ block }) {
 }
 
 function AssetGrid({ block }) {
+  const items = block.items || block.assets || []
+  if (!items.length) return null
   return (
     <div className="grid gap-2 sm:grid-cols-3">
-      {(block.assets || []).map((asset, index) => (
-        <div key={asset.url || index} className="rounded-lg border border-white/10 p-2 text-xs text-[var(--text-muted)]">
-          {asset.url || asset.title || '素材'}
+      {items.map((asset, index) => (
+        <div key={asset.url || index} className="overflow-hidden rounded-lg border border-white/10 bg-white/[0.04]">
+          {asset.url ? (
+            <img src={asset.url} alt={asset.title || '素材'} className="aspect-square w-full object-cover" />
+          ) : (
+            <div className="grid aspect-square place-items-center text-xs text-[var(--text-muted)]">{asset.title || '素材'}</div>
+          )}
+          {asset.title && (
+            <div className="truncate px-2 py-1.5 text-xs text-[var(--text-muted)]">{asset.title}</div>
+          )}
         </div>
       ))}
+    </div>
+  )
+}
+
+function ProductCard({ block }) {
+  return (
+    <div className="flex items-start gap-3 rounded-xl border border-[#a78bfa]/25 bg-[#1a0f2e]/50 p-4">
+      {block.image_url ? (
+        <img src={block.image_url} alt={block.title || '商品'} className="h-16 w-16 shrink-0 rounded-lg object-cover" />
+      ) : (
+        <div className="grid h-16 w-16 shrink-0 place-items-center rounded-lg bg-white/5 text-xs text-[var(--text-muted)]">商品</div>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-semibold text-[#c4b5fd]">{block.title || '商品'}</div>
+        {block.description && (
+          <p className="mt-1 line-clamp-2 text-xs text-[var(--text-muted)]">{block.description}</p>
+        )}
+        {block.url && (
+          <a href={block.url} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-block text-xs text-[#7dd3fc] hover:underline">
+            查看商品链接 →
+          </a>
+        )}
+      </div>
     </div>
   )
 }
@@ -174,7 +288,7 @@ function FrameEditor({ block }) {
             <div key={key}>
               <label className="mb-1 block text-xs text-[var(--text-muted)]">{fieldLabels[key] || key}</label>
               <div className="rounded-lg border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white">
-                {String(field.value ?? '') || '无'}
+                {(key === 'duration' ? formatDurationLabel(field.value) : String(field.value ?? '')) || '无'}
               </div>
             </div>
           ) : null

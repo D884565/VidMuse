@@ -1,4 +1,3 @@
-import { WandSparkles } from 'lucide-react'
 import { useChat } from '../../hooks/useChat.js'
 import { useProjectPolling } from '../../hooks/useProjectPolling.js'
 import { useAppStore } from '../../store/appStore.js'
@@ -10,7 +9,7 @@ import TypingIndicator from './TypingIndicator.jsx'
 const WELCOME_MESSAGE = {
   id: 'welcome',
   role: 'assistant',
-  content: `欢迎使用带货视频生成系统！我将帮助您一步步创建带货短视频：
+  content: `我是 VidMuse——带货视频生成 Agent。我会帮你一步步创建带货短视频：
 
 1. 剧本创作 - 根据您的产品和需求生成分镜脚本
 2. 分镜配图 - 为每个分镜生成精美的画面
@@ -42,10 +41,6 @@ export default function ChatContainer() {
             <p className="m-0 text-xs text-[var(--text-muted)]">
               通过对话推进剧本、图片、视频三个阶段
             </p>
-          </div>
-          <div className="flex items-center gap-2 rounded-full border border-[var(--border-soft)] bg-[rgba(26,26,46,0.65)] px-3 py-1.5 text-xs text-[var(--text-muted)]">
-            <WandSparkles size={14} className="text-[#38bdf8]" />
-            工作流助手在线
           </div>
         </div>
         {activeProjectId && <StageProgress project={project} />}
