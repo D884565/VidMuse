@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Eye, Trash2, Upload, RefreshCw, Play, X } from 'lucide-react'
 import PageContainer from '../../components/Admin/Layout/PageContainer'
 import Table from '../../components/Admin/Common/Table'
-import { getAssetList, getAssetDetail, deleteAsset, parseAsset, getParsingProgress, retryParsing } from '../../services/admin'
+import { getAssetList, getAssetDetail, deleteAsset, parseAsset, getParsingProgress, retryParsing, uploadInternalAsset } from '../../services/admin'
 
 const columns = [
   { key: 'id', title: 'ID' },
@@ -211,7 +211,7 @@ export default function AssetManagement() {
       formData.append('skip_ai_analysis', uploadForm.skip_ai_analysis)
 
       // 调用上传接口
-      // await uploadInternalAsset(formData)
+      await uploadInternalAsset(formData)
 
       alert('上传成功！')
       setUploadModalVisible(false)

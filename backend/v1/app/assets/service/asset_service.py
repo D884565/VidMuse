@@ -146,7 +146,7 @@ class AssetService(BaseParsingService):
                 "ai_features": None,
                 "content_text": content,
                 "source_type": 0,
-                "scope": "library",
+                "scope": {"type": "library"},
             },
         )
         AssetService._parse_asset_sync(db, asset.id, force=True)
@@ -259,7 +259,7 @@ class AssetService(BaseParsingService):
                 "user_id": AssetService._library_owner_id(user_id),
                 "storage_key": object_name,
                 "upload_status": "completed",
-                "scope": "library",
+                "scope": {"type": "library"},
             },
         )
         return asset.to_dict()
@@ -317,10 +317,12 @@ class AssetService(BaseParsingService):
     @staticmethod
     async def upload_internal_asset(
         db: Session,
+        background_tasks: BackgroundTasks,
         file: UploadFile,
         type: int,
         title: Optional[str] = None,
         source_type: int = 1,
+        skip_ai_analysis: bool = True,
         user_id: int = 0,
     ) -> dict:
         asset_dict = AssetService._upload_asset_common(
@@ -332,6 +334,21 @@ class AssetService(BaseParsingService):
             is_internal=True,
             user_id=user_id,
         )
+        # 图片/视频素材：如果不跳过分析，后台异步解析
+        if not skip_ai_analysis and type in [1, 2]:
+            asset_id = asset_dict["id"]
+            def _bg_parse():
+                try:
+                    from backend.store.database.sync_database import SessionLocal
+                    bg_db = SessionLocal()
+                    try:
+                        AssetService._parse_asset_sync(bg_db, asset_id, force=True)
+                    finally:
+                        bg_db.close()
+                except Exception as e:
+                    import logging
+                    logging.getLogger(__name__).error(f"[后台解析] asset_id={asset_id} 失败: {e}")
+            background_tasks.add_task(_bg_parse)
         return {
             "id": asset_dict["id"],
             "type": asset_dict["type"],
@@ -344,6 +361,7 @@ class AssetService(BaseParsingService):
             "ai_features": asset_dict["ai_features"],
             "source_type": asset_dict["source_type"],
             "created_at": asset_dict["created_at"],
+            "analysis_performed": not skip_ai_analysis,
         }
 
     @staticmethod

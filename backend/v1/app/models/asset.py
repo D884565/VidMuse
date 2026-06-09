@@ -26,7 +26,7 @@ class Asset(Base):
     ai_features: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="AI feature payload")
     tags: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="Asset tags")
     metadata_: Mapped[dict | None] = mapped_column("metadata", JSON, nullable=True, comment="Extended metadata")
-    scope: Mapped[str | None] = mapped_column(String(30), nullable=True, comment="Asset scope")
+    scope: Mapped[dict | None] = mapped_column(JSON, nullable=True, comment="Asset scope")
     content_text: Mapped[str | None] = mapped_column(Text, nullable=True, comment="Text material content")
     storage_key: Mapped[str | None] = mapped_column(String(500), nullable=True, comment="Object storage key")
     file_hash: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="File hash")

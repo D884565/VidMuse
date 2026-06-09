@@ -480,7 +480,7 @@ async def bind_project_asset(
         raise BusinessException(RESOURCE_NOT_FOUND, "素材不存在")
 
     binding = ProjectAsset(project_id=project_id, asset_id=asset_id, role=req.get("role", "reference"))
-    asset.scope = "project"
+    asset.scope = {"type": "project"}
     db.add(binding)
     await db.commit()
     await db.refresh(binding)

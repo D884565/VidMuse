@@ -176,7 +176,7 @@ class BGMSelectorService:
         """从异步数据库会话获取 BGM 候选列表。"""
         result = await db.execute(
             select(Asset)
-            .where(Asset.type == 3, Asset.scope == "bgm_library")
+            .where(Asset.type == 3, Asset.scope["type"].as_string() == "bgm_library")
             .order_by(Asset.created_at.desc())
             .limit(200)
         )

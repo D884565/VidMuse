@@ -68,19 +68,23 @@ async def upload_asset(
 
 @router.post("/upload/internal", response_model=Response, summary="Upload internal asset")
 async def upload_internal_asset(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="File to upload"),
     type: int = Form(..., description="Asset type: 1-image, 2-video, 3-audio"),
     title: Optional[str] = Form(None, description="Asset title"),
     source_type: Optional[int] = Form(1, description="Source type"),
+    skip_ai_analysis: bool = Form(True, description="Skip AI parsing"),
     db: Session = Depends(get_db),
     current_user_id: int = Depends(get_current_user_id),
 ):
     result = await AssetService.upload_internal_asset(
         db=db,
+        background_tasks=background_tasks,
         file=file,
         type=type,
         title=title,
         source_type=source_type,
+        skip_ai_analysis=skip_ai_analysis,
         user_id=current_user_id,
     )
     return Response.success(data=result, message="Internal asset uploaded successfully")

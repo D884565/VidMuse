@@ -7,7 +7,7 @@ services:
       context: .
     container_name: aigc_api
     ports:
-      - "8000:8000"
+      - "8000:8000" 
     environment:
       # 应用配置
       - APP_ENV=production
@@ -91,7 +91,7 @@ services:
       - aigc_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -140,7 +140,7 @@ services:
       - aigc_network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/health"]
+      test: ["CMD-SHELL", "timeout 1 bash -c '</dev/tcp/localhost/6333' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
