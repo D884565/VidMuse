@@ -129,6 +129,16 @@ export function buildScriptGenerationMessagePayload(status = 'running', taskId =
   }
 }
 
+export function buildScriptHistorySyncPlaceholder(taskId = null) {
+  return {
+    content: '',
+    blocks: [],
+    stage: 'script',
+    action_type: 'GENERATE_SCRIPT',
+    task_id: taskId,
+  }
+}
+
 export function promoteDraftMessagesToProject(cache, projectId, streamingMessageId = null) {
   const projectKey = getProjectKey(projectId)
   const draftMessages = cache[DRAFT_PROJECT_KEY] || []

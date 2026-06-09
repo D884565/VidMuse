@@ -3,6 +3,7 @@ import { CheckCircle2, Play, RefreshCw, XCircle } from 'lucide-react'
 import { getGenerationTask } from '../../services/project.js'
 import { useAppStore } from '../../store/appStore.js'
 import { formatVideoStyle } from '../../utils/videoStyle.js'
+import { localizeProgressMessage } from './progressCardLocalization.js'
 
 const TASK_POLL_INTERVAL_MS = 2000
 const SUCCESS_STATUSES = new Set(['confirmed', 'completed', 'complete', 'success', 'succeeded', 'done'])
@@ -156,6 +157,7 @@ function ProgressCard({ block, onActionComplete }) {
   const effectiveStatus = taskStatus || initialStatus
   const tone = getProgressCardTone(effectiveStatus)
   const Icon = tone.icon
+  const displayMessage = localizeProgressMessage(block.message)
 
   useEffect(() => {
     setTaskStatus(initialStatus)
@@ -196,7 +198,7 @@ function ProgressCard({ block, onActionComplete }) {
     <div className={`rounded-xl border ${tone.wrapper} p-4 text-sm`}>
       <div className={`flex items-center gap-2 ${tone.text}`}>
         <Icon size={15} className={tone.spin ? 'animate-spin' : undefined} />
-        {block.message}
+        {displayMessage}
       </div>
     </div>
   )

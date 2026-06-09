@@ -49,9 +49,25 @@ class GenerationTaskTracker:
         """标记任务开始。"""
         task_tracker_dao.start_task(db, task_id, stage)
 
-    def update_stage(self, db: Session, task_id: str, stage: str, progress: int) -> None:
+    def update_stage(
+        self,
+        db: Session,
+        task_id: str,
+        stage: str,
+        progress: int | None = None,
+        *,
+        status: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
         """更新当前阶段和进度。"""
-        task_tracker_dao.update_task(db, task_id, current_stage=stage, progress=progress)
+        payload = {"current_stage": stage}
+        if progress is not None:
+            payload["progress"] = progress
+        if status is not None:
+            payload["status"] = status
+        if error_message is not None:
+            payload["error_message"] = error_message
+        task_tracker_dao.update_task(db, task_id, **payload)
 
     def complete_task(self, db: Session, task_id: str) -> None:
         """标记任务完成。"""

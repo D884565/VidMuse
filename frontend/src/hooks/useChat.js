@@ -8,6 +8,7 @@ import {
   DRAFT_PROJECT_KEY,
   appendOptimisticMessages,
   appendTokenToMessage,
+  buildScriptHistorySyncPlaceholder,
   buildScriptGenerationMessagePayload,
   clearPersistedDraftState,
   getProjectActivity,
@@ -407,7 +408,7 @@ export function useChat(options = {}) {
           setMessagesByProject((current) =>
             updateProjectMessage(current, projectKey, assistantMsgId, (message) => ({
               ...message,
-              ...buildScriptGenerationMessagePayload('completed', scriptResult?.task_id || null),
+              ...buildScriptHistorySyncPlaceholder(scriptResult?.task_id || null),
               streaming: false,
               optimistic: false,
             }))

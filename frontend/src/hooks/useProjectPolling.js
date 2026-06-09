@@ -83,7 +83,7 @@ export function useProjectPolling(projectId) {
         if (cancelled) return
         setProject(data)
         setFrames(data.frames || [])
-        setVideoUrl(data.video_url || null)
+        setVideoUrl(data.video_output_url || data.video_url || null)
         setAudioUrl(data.audio_url || null)
         setAssets(data.assets || [])
         setError(null)
@@ -91,6 +91,7 @@ export function useProjectPolling(projectId) {
           data.workflow_stage,
           data.stage_status,
           data.last_task_id,
+          data.video_output_url,
           data.video_url,
           data.audio_url,
         ].join('|')
