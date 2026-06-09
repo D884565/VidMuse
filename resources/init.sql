@@ -7,15 +7,6 @@ DROP TABLE IF EXISTS product_assets;
 DROP TABLE IF EXISTS asset_upload_sessions;
 DROP TABLE IF EXISTS trace_log;
 DROP TABLE IF EXISTS conversations;
-VALUES (
-    '1',
-    'admin',
-    'admin123',
-    'exap',
-    '0',
-    '2024-06-01 00:00:00',
-    '2024-06-01 00:00:00'
-  );
 DROP TABLE IF EXISTS scripts;
 DROP TABLE IF EXISTS frames;
 DROP TABLE IF EXISTS slices;
@@ -41,6 +32,17 @@ CREATE TABLE IF NOT EXISTS users(
     INDEX idx_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='用户表';
 
+-- 插入默认超级管理员账号
+INSERT INTO users (id, username, password_hash, avatar_url, role, created_at, updated_at)
+VALUES (
+    1,
+    'admin',
+    'admin123',
+    'https://via.placeholder.com/150',
+    0,
+    '2024-06-01 00:00:00',
+    '2024-06-01 00:00:00'
+);
 
 CREATE TABLE IF NOT EXISTS product_categories (
     id              BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '分类ID',

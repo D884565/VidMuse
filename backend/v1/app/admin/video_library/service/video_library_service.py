@@ -564,6 +564,8 @@ class VideoLibraryService:
                         "asset_type": asset.type,
                         "video_url": asset.url,  # 视频类型添加video_url字段
                         "video_id": video_id,
+                        "business_id": video_id,
+                        "business_type": "VideoLibraryService",
                         **context
                     }
                     logger.info(f"流水线参数: {pipeline_params}")

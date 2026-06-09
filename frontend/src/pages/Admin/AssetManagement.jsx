@@ -357,14 +357,14 @@ export default function AssetManagement() {
         </div>
         <div className="space-x-2">
           <button
-            onClick={() => handleFilterChange('page', Math.max(1, pagination.page - 1))}
+            onClick={() => setFilters(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
             disabled={pagination.page <= 1}
             className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 text-gray-700"
           >
             上一页
           </button>
           <button
-            onClick={() => handleFilterChange('page', pagination.page + 1)}
+            onClick={() => setFilters(prev => ({ ...prev, page: prev.page + 1 }))}
             disabled={pagination.page >= Math.ceil(pagination.total / pagination.page_size)}
             className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 text-gray-700"
           >

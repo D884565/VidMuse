@@ -81,6 +81,9 @@ class ProductCategoryService:
         else:
             category_data["level"] = 1
 
+        # 先给path一个临时值，创建成功后再更新为正确值（因为path需要包含自增ID）
+        category_data["path"] = "/tmp/"
+
         # 先创建获取ID
         temp_category = ProductCategoryDAO.create_category(db, category_data)
 

@@ -1,6 +1,6 @@
 # backend/v1/app/push/controller/websocket_controller.py
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 import json
 
@@ -18,7 +18,7 @@ router = APIRouter()
 async def websocket_endpoint(
     websocket: WebSocket,
     user_id: int = Depends(get_ws_user),
-    db: Session = Depends(get_db)
+    db: AsyncSession = Depends(get_db)
 ):
     """
     WebSocket连接端点

@@ -2,7 +2,7 @@
 from typing import Any, Optional
 import uuid
 import json
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 import logging
 
 from backend.framework.trace import get_trace_id, trace
@@ -19,7 +19,7 @@ class PushService:
 
     @staticmethod
     async def push_message(
-        db: Session,
+        db: AsyncSession,
         user_id: int,
         message_type: str,
         title: str,
@@ -80,7 +80,7 @@ class PushService:
 
         # 持久化消息
         if persist:
-            db_message = message_dao.create_message(db, message_create, message_id)
+            db_message = await message_dao.create_message(db, message_create, message_id)
             message_dict = PushMessageBase.from_orm(db_message).model_dump()
         else:
             message_dict = {
@@ -150,7 +150,7 @@ class PushService:
 
     @staticmethod
     async def push_to_admin(
-        db: Session,
+        db: AsyncSession,
         message_type: str,
         title: str,
         content: Any,
@@ -172,7 +172,10 @@ class PushService:
         :return: 推送结果列表
         """
         # 获取所有管理员用户（role=0，假设管理员角色值为0）
-        total, admins = await UserDAO.list_users(db, role=0, page_size=1000)  # 假设管理员数量不超过1000
+        # UserDAO目前还是同步实现，使用run_sync兼容
+        total, admins = await db.run_sync(
+            lambda sync_db: UserDAO.list_users(sync_db, role=0, page_size=1000)  # 假设管理员数量不超过1000
+        )
 
         results = []
         for admin in admins:

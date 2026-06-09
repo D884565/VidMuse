@@ -274,3 +274,4 @@ export const cancelPipeline = (executionId) => {
   return api.post(`/v1/admin/pipelines/${executionId}/cancel`)
 }
 
+

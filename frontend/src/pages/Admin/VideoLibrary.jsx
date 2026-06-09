@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { Plus, Edit, Trash2, Upload, Play, RefreshCw, Import, FileCode } from 'lucide-react'
 import PageContainer from '../../components/Admin/Layout/PageContainer'
 import Table from '../../components/Admin/Common/Table'
-import { getVideoList, deleteVideo, triggerVideoParsing, batchImportHotVideos, uploadVideo, getCategoryTree } from '../../services/admin'
+import { getVideoList, deleteVideo, triggerVideoParsing, batchImportHotVideos, uploadVideo, getCategoryTree, updateVideo } from '../../services/admin'
 
 const columns = [
   { key: 'id', title: 'ID' },
@@ -120,6 +120,15 @@ export default function VideoLibrary() {
     limit: 50,
   })
   const [processing, setProcessing] = useState(false)
+  const [editModalVisible, setEditModalVisible] = useState(false)
+  const [currentEditingVideo, setCurrentEditingVideo] = useState(null)
+  const [editForm, setEditForm] = useState({
+    title: '',
+    description: '',
+    category_id: '',
+    tags: [],
+    hot_score: 0,
+  })
 
   useEffect(() => {
     fetchVideos()
@@ -146,22 +155,28 @@ export default function VideoLibrary() {
         Object.entries(filters).filter(([_, v]) => v !== '' && v != null)
       )
       const data = await getVideoList(params)
-      setVideos(Array.isArray(data) ? data : data?.list || [])
+      setVideos(data?.list || [])
       setPagination({
-        total: data?.total || data?.length || 0,
+        total: data?.total || 0,
         page: params.page || 1,
         page_size: params.page_size || 20,
       })
     } catch (error) {
       console.error('获取视频列表失败:', error)
       setVideos([])
+      setPagination({ total: 0, page: 1, page_size: 20 })
     } finally {
       setLoading(false)
     }
   }
 
   const handleFilterChange = (key, value) => {
-    setFilters(prev => ({ ...prev, [key]: value, page: 1 }))
+    setFilters(prev => ({
+      ...prev,
+      [key]: value,
+      // 修改筛选条件时重置到第一页，但修改页码时不需要
+      ...(key !== 'page' && { page: 1 })
+    }))
   }
 
   const handleDelete = async (videoId) => {
@@ -231,6 +246,36 @@ export default function VideoLibrary() {
     } catch (error) {
       console.error('批量导入失败:', error)
       alert('导入失败，请重试')
+    } finally {
+      setProcessing(false)
+    }
+  }
+
+  const handleEdit = (video) => {
+    setCurrentEditingVideo(video)
+    setEditForm({
+      title: video.title || '',
+      description: video.description || '',
+      category_id: video.category_id || '',
+      tags: Array.isArray(video.tags) ? video.tags : (video.tags ? video.tags.split(',').map(t => t.trim()) : []),
+      hot_score: video.hot_score || 0,
+    })
+    setEditModalVisible(true)
+  }
+
+  const handleEditSubmit = async (e) => {
+    e.preventDefault()
+    if (!currentEditingVideo) return
+
+    try {
+      setProcessing(true)
+      await updateVideo(currentEditingVideo.id, editForm)
+      alert('视频信息更新成功')
+      setEditModalVisible(false)
+      fetchVideos()
+    } catch (error) {
+      console.error('更新视频信息失败:', error)
+      alert('更新失败，请重试')
     } finally {
       setProcessing(false)
     }
@@ -309,6 +354,7 @@ export default function VideoLibrary() {
         <FileCode size={16} />
       </button>
       <button
+        onClick={() => handleEdit(row)}
         className="p-1 text-purple-600 hover:text-purple-800"
         title="编辑"
       >
@@ -419,7 +465,7 @@ export default function VideoLibrary() {
       {/* 分页信息 */}
       <div className="mt-4 flex items-center justify-between text-sm text-gray-700">
         <div>
-          共 {pagination.total} 条记录，第 {pagination.page} 页 / 共 {Math.ceil(pagination.total / pagination.page_size)} 页
+          共 {pagination.total} 条记录，第 {pagination.page} 页 / 共 {Math.max(1, Math.ceil(pagination.total / pagination.page_size))} 页
         </div>
         <div className="space-x-2">
           <button
@@ -431,7 +477,7 @@ export default function VideoLibrary() {
           </button>
           <button
             onClick={() => handleFilterChange('page', pagination.page + 1)}
-            disabled={pagination.page >= Math.ceil(pagination.total / pagination.page_size)}
+            disabled={pagination.page >= Math.max(1, Math.ceil(pagination.total / pagination.page_size))}
             className="px-3 py-1 border border-gray-300 rounded disabled:opacity-50 hover:bg-gray-50 text-gray-700"
           >
             下一页
@@ -758,6 +804,101 @@ export default function VideoLibrary() {
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑视频弹窗 */}
+      {editModalVisible && currentEditingVideo && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg w-full max-w-md">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-lg font-semibold">编辑视频信息</h3>
+              <button onClick={() => setEditModalVisible(false)} className="text-gray-400 hover:text-gray-600">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">视频标题</label>
+                <input
+                  type="text"
+                  required
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="请输入视频标题"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">视频描述</label>
+                <textarea
+                  value={editForm.description}
+                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows="3"
+                  placeholder="请输入视频描述信息"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
+                <select
+                  value={editForm.category_id}
+                  onChange={(e) => setEditForm({ ...editForm, category_id: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={categoryLoading}
+                >
+                  <option value="">请选择三级分类</option>
+                  {categoryLoading ? (
+                    <option value="" disabled>加载中...</option>
+                  ) : (
+                    renderCategoryOptions(categoryTree, 0, false)
+                  )}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">请选择三级分类，一级和二级分类不可选</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">标签（用逗号分隔）</label>
+                <input
+                  type="text"
+                  value={editForm.tags.join(',')}
+                  onChange={(e) => setEditForm({ ...editForm, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean) })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="例如：营销,爆款,短平快"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">爆款分数</label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={editForm.hot_score}
+                  onChange={(e) => setEditForm({ ...editForm, hot_score: parseInt(e.target.value) || 0 })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="请输入爆款分数（0-100）"
+                />
+              </div>
+              <div className="flex justify-end space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setEditModalVisible(false)}
+                  className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+                  disabled={processing}
+                >
+                  取消
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                  disabled={processing}
+                >
+                  {processing ? '保存中...' : '保存'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

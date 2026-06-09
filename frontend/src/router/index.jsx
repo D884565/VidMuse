@@ -68,7 +68,7 @@ export const router = createBrowserRouter([
       {
         path: 'pipelines',
         element: <PipelineManagement />
-      }
+      },
     ]
   },
   {

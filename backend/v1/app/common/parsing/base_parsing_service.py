@@ -144,6 +144,12 @@ class BaseParsingService(ABC):
                     # 构建流水线参数
                     pipeline_params = {**context}
 
+                    # 添加业务标识参数
+                    pipeline_params.update({
+                        "business_id": business_id,
+                        "business_type": self.__class__.__name__,
+                    })
+
                     # 如果有资产，添加资产相关参数
                     if asset and asset_id:
                         from backend.v1.app.assets.service.asset_service import AssetService

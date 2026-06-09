@@ -1,6 +1,6 @@
 """流水线状态推送服务"""
 from typing import Dict, Any
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from backend.v1.app.push.service.push_service import PushService
 from backend.v1.app.models.pipeline_execution import PipelineExecution
 import logging
@@ -14,7 +14,7 @@ class PipelinePushService:
     def __init__(self):
         self.push_service = PushService()
 
-    async def push_execution_update(self, db: Session, execution: PipelineExecution) -> None:
+    async def push_execution_update(self, db: AsyncSession, execution: PipelineExecution) -> None:
         """
         推送流水线执行状态更新
         :param execution: 流水线执行记录对象

@@ -77,9 +77,9 @@ class AssetDAO:
         if format:
             query = query.filter(Asset.format == format.lower())
 
-        # scope 筛选
+        # scope 筛选（JSON字段查询）
         if scope:
-            query = query.filter(Asset.scope == scope)
+            query = query.filter(Asset.scope["type"].as_string() == scope)
 
         # 关键词搜索
         if keyword:

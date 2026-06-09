@@ -97,6 +97,30 @@ class AssetPersistProcessor(BaseProcessor):
             context.set("asset_info", updated_asset.to_dict())
             logger.info(f"商品数据成功落库到asset表，asset_id: {asset_id}")
 
+            # 同步状态到业务表
+            business_id = context.get("business_id")
+            business_type = context.get("business_type")
+            if business_id and business_type:
+                try:
+                    # 根据业务类型获取对应的服务实例
+                    service = None
+                    if business_type in ["AssetService", "asset"]:
+                        from backend.v1.app.assets.service.asset_service import AssetService
+                        service = AssetService()
+                    elif business_type in ["ProductService", "product"]:
+                        from backend.v1.app.product.service.product_service import ProductService
+                        service = ProductService()
+                    elif business_type in ["VideoLibraryService", "video_library"]:
+                        from backend.v1.app.admin.video_library.service.video_library_service import VideoLibraryService
+                        service = VideoLibraryService()
+
+                    if service and hasattr(service, "sync_status"):
+                        service.sync_status(db, int(business_id), updated_asset)
+                        logger.info(f"已同步状态到{business_type}，业务ID: {business_id}")
+                except Exception as e:
+                    logger.error(f"同步状态到业务表失败: {str(e)}", exc_info=True)
+                    # 同步失败不影响主流程，只记录日志
+
             # 如果有product_id，更新products表
             product_id = context.get("product_id")
             if product_id:

@@ -75,16 +75,16 @@ class VideoLibraryDAO:
         # 排序
         query = query.order_by(VideoLibrary.created_at.desc())
 
-        # 分页
+        # 先统计符合条件的总条数
+        count_query = select(func.count()).select_from(query)
+        total = await db.scalar(count_query)
+
+        # 分页获取当前页数据
         offset = (page - 1) * page_size
         query = query.offset(offset).limit(page_size)
 
         result = await db.execute(query)
         videos = result.scalars().all()
-
-        # 查询总数
-        count_query = select(func.count()).select_from(query.subquery())
-        total = await db.scalar(count_query)
 
         return videos, total
 

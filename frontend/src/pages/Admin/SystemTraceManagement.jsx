@@ -193,7 +193,12 @@ export default function SystemTraceManagement() {
   }
 
   const handleFilterChange = (key, value) => {
-    setFilters(prev => ({ ...prev, [key]: value, page: 1 }))
+    setFilters(prev => ({
+      ...prev,
+      [key]: value,
+      // 修改筛选条件时重置到第一页，但修改页码时不需要
+      ...(key !== 'page' && { page: 1 })
+    }))
   }
 
   const handleViewDetail = async (traceId) => {

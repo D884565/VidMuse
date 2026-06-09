@@ -1,0 +1,311 @@
+{
+  "summary": {
+    "total_factors": 224,
+    "total_strategies": 10,
+    "total_templates": 10,
+    "completion_rate": "100%"
+  },
+  "templates": [
+    {
+      "template_id": "t_0001",
+      "strategy_id": "s_0001",
+      "name": "痛点反转爆品种草策略",
+      "description": "痛点反转爆品种草策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.95,
+      "required_factors": [
+        "f_0001",
+        "f_0011"
+      ],
+      "optional_factors": [
+        "f_0021"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0001",
+        "strategy_name": "痛点反转爆品种草策略",
+        "core_logic": "基于痛点反转爆品种草策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0001"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0011"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0002",
+      "strategy_id": "s_0002",
+      "name": "痛点反转高转化种草策略",
+      "description": "痛点反转高转化种草策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.95,
+      "required_factors": [
+        "f_0002",
+        "f_0012"
+      ],
+      "optional_factors": [
+        "f_0022"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0002",
+        "strategy_name": "痛点反转高转化种草策略",
+        "core_logic": "基于痛点反转高转化种草策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0002"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0012"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0003",
+      "strategy_id": "s_0003",
+      "name": "痛点反转式产品种草策略",
+      "description": "痛点反转式产品种草策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.9,
+      "required_factors": [
+        "f_0003",
+        "f_0013"
+      ],
+      "optional_factors": [
+        "f_0023"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0003",
+        "strategy_name": "痛点反转式产品种草策略",
+        "core_logic": "基于痛点反转式产品种草策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0003"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0013"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0004",
+      "strategy_id": "s_0004",
+      "name": "痛点反转带货创作策略",
+      "description": "痛点反转带货创作策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.95,
+      "required_factors": [
+        "f_0004",
+        "f_0014"
+      ],
+      "optional_factors": [
+        "f_0024"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0004",
+        "strategy_name": "痛点反转带货创作策略",
+        "core_logic": "基于痛点反转带货创作策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0004"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0014"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0005",
+      "strategy_id": "s_0005",
+      "name": "痛点反转高转化种草策略",
+      "description": "痛点反转高转化种草策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.9,
+      "required_factors": [
+        "f_0005",
+        "f_0015"
+      ],
+      "optional_factors": [
+        "f_0025"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0005",
+        "strategy_name": "痛点反转高转化种草策略",
+        "core_logic": "基于痛点反转高转化种草策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0005"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0015"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0006",
+      "strategy_id": "s_0006",
+      "name": "痛点反转产品种草创作策略",
+      "description": "痛点反转产品种草创作策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.95,
+      "required_factors": [
+        "f_0006",
+        "f_0016"
+      ],
+      "optional_factors": [
+        "f_0026"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0006",
+        "strategy_name": "痛点反转产品种草创作策略",
+        "core_logic": "基于痛点反转产品种草创作策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0006"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0016"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0007",
+      "strategy_id": "s_0007",
+      "name": "痛点反转爆款种草创作策略",
+      "description": "痛点反转爆款种草创作策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.85,
+      "required_factors": [
+        "f_0007",
+        "f_0017"
+      ],
+      "optional_factors": [
+        "f_0027"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0007",
+        "strategy_name": "痛点反转爆款种草创作策略",
+        "core_logic": "基于痛点反转爆款种草创作策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0007"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0017"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0008",
+      "strategy_id": "s_0008",
+      "name": "痛点反转型产品种草创作策略",
+      "description": "痛点反转型产品种草创作策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.95,
+      "required_factors": [
+        "f_0008",
+        "f_0018"
+      ],
+      "optional_factors": [
+        "f_0028"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0008",
+        "strategy_name": "痛点反转型产品种草创作策略",
+        "core_logic": "基于痛点反转型产品种草创作策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0008"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0018"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0009",
+      "strategy_id": "s_0009",
+      "name": "痛点反转种草转化策略",
+      "description": "痛点反转种草转化策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.85,
+      "required_factors": [
+        "f_0009",
+        "f_0019"
+      ],
+      "optional_factors": [
+        "f_0029"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0009",
+        "strategy_name": "痛点反转种草转化策略",
+        "core_logic": "基于痛点反转种草转化策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0009"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0019"
+          }
+        ]
+      }
+    },
+    {
+      "template_id": "t_0010",
+      "strategy_id": "s_0010",
+      "name": "痛点解法类带货短视频创作策略",
+      "description": "痛点解法类带货短视频创作策略的完整实现模板",
+      "version": "v1.0",
+      "success_rate": 0.85,
+      "required_factors": [
+        "f_0010",
+        "f_0020"
+      ],
+      "optional_factors": [
+        "f_0030"
+      ],
+      "combination_example": {
+        "strategy_id": "s_0010",
+        "strategy_name": "痛点解法类带货短视频创作策略",
+        "core_logic": "基于痛点解法类带货短视频创作策略的核心创作逻辑",
+        "flow": [
+          {
+            "step": "步骤1: Hook痛点",
+            "factor_id": "f_0010"
+          },
+          {
+            "step": "步骤2: 展示产品",
+            "factor_id": "f_0020"
+          }
+        ]
+      }
+    }
+  ],
+  "generated_at": "20260609_162757"
+}

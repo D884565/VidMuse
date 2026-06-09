@@ -115,7 +115,7 @@ class TaskEventService:
             result=extra,
         )
         message_id = uuid.uuid4().hex
-        message_dao.create_message(
+        message_dao.create_message_sync(
             db,
             PushMessageCreate(
                 user_id=user_id or 0,
@@ -191,7 +191,7 @@ class TaskEventService:
             error=error,
         )
         message_id = uuid.uuid4().hex
-        message_dao.create_message(
+        message_dao.create_message_sync(
             db,
             PushMessageCreate(
                 user_id=user_id or 0,
