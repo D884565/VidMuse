@@ -115,6 +115,7 @@ class AssetPersistProcessor(BaseProcessor):
                     # 更新商品记录
                     updated_product = ProductDAO.update_product(db, int(product_id), product_update_data)
                     if updated_product:
+                        db.commit()  # 显式提交，确保商品更新持久化
                         logger.info(f"商品信息成功更新，product_id: {product_id}")
                         context.set("product_info", updated_product.to_dict())
                 except Exception as e:

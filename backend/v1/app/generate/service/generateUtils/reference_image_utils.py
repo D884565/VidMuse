@@ -46,7 +46,11 @@ def extract_reference_images(project: Any) -> list[str]:
     if not isinstance(product_info, dict):
         return images
 
-    for url in normalize_image_urls(product_info.get("main_images")):
+    product_urls = []
+    for key in ("main_images", "main_image_url", "images", "detail_images"):
+        product_urls.extend(normalize_image_urls(product_info.get(key)))
+
+    for url in product_urls:
         if url not in seen:
             images.append(url)
             seen.add(url)

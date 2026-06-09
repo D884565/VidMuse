@@ -608,12 +608,14 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         all_frame_ids = [f.id for f in frames]
         generation_task_tracker.init_frame_progress(db, tracker_task_id, project_id, all_frame_ids, "image")
 
-        # 跳过已完成的帧
+        # 跳过已完成的帧，记录哪些帧需要重新生成
+        frames_needing_image = []
         for f in frames:
             if f.status == 2 and f.image_url:
                 generation_task_tracker.update_frame_status(db, tracker_task_id, f.id, "image", "succeeded", result_url=f.image_url)
             else:
                 generation_task_tracker.update_frame_status(db, tracker_task_id, f.id, "image", "running")
+                frames_needing_image.append(f)
         db.commit()
 
         reference_images = extract_reference_images(project)
@@ -647,6 +649,22 @@ def generate_video_task(self, project_id: int, task_id: int | None = None, trigg
         generation_task_tracker.update_stage(db, tracker_task_id, "video", 45)
         db.commit()
         logger.info(f"[image] completed frames: {len(frames)}")
+
+        # 图片生成完成后写入 image_grid 快照消息，确保对话中保留本次图片版本
+        if frames_needing_image:
+            image_msg = build_image_stage_message(frames, task_id)
+            db.add(Conversation(
+                project_id=project_id,
+                role=image_msg["role"],
+                content=image_msg["content"],
+                message_type=image_msg["message_type"],
+                stage=image_msg["stage"],
+                blocks=image_msg["blocks"],
+                action_type=image_msg["action_type"],
+                task_id=image_msg["task_id"],
+                metadata_=image_msg["metadata"],
+            ))
+            db.commit()
 
         # ---- Step 4+5: 为每个分镜生成视频并拼接 ----
         step = generation_task_service.start_step_sync(db, task_id, "VIDEO_GENERATING", progress=50) if task_id else None

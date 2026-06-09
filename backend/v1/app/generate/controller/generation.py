@@ -80,12 +80,19 @@ async def create_project(
                     product_images = json.loads(product_obj.images) if isinstance(product_obj.images, str) else product_obj.images
                 except (json.JSONDecodeError, TypeError):
                     pass
+            main_images = []
+            if product_obj.main_image_url:
+                main_images.append(product_obj.main_image_url)
+            for image_url in product_images:
+                if image_url and image_url not in main_images:
+                    main_images.append(image_url)
             product_info_dict = {
                 "title": product_obj.name,
                 "description": product_obj.description,
                 "brand": product_obj.brand,
                 "price": float(product_obj.price) if product_obj.price else None,
                 "main_image_url": product_obj.main_image_url,
+                "main_images": main_images,
                 "images": product_images,
             }
             product_info_str = json.dumps(product_info_dict, ensure_ascii=False)

@@ -165,9 +165,11 @@ class BGMSelectorService:
 
     def _get_candidates(self, db: Session, exclude_ids: list[int] | None) -> list[dict]:
         """从数据库获取 BGM 候选列表。"""
-        _, assets = AssetDAO.list_assets(
+        _, rows = AssetDAO.list_assets(
             db, type=3, scope="bgm_library", page_size=200
         )
+        # list_assets 返回 [(Asset, username)] Row 对象列表，提取 Asset 对象
+        assets = [row[0] for row in rows]
         return self._assets_to_candidates(assets, exclude_ids)
 
     async def _get_candidates_async(self, db: AsyncSession, exclude_ids: list[int] | None) -> list[dict]:

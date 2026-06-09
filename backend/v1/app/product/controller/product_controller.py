@@ -46,6 +46,7 @@ def create_product(
                 from backend.store.database.sync_database import get_db
                 db_bg = next(get_db())
                 product_service.parse_product(db_bg, result["id"], current_user_id)
+                db_bg.commit()  # 确保解析结果持久化
                 db_bg.close()
             except Exception as e:
                 # 后台任务失败只记录日志，不影响主流程
@@ -132,6 +133,7 @@ def parse_product(
 ):
     """手动触发商品解析，返回执行ID用于查询状态"""
     execution_id = product_service.parse_product(db, product_id, current_user_id)
+    db.commit()  # 确保解析结果持久化
     return Response.success(
         data={
             "execution_id": execution_id,

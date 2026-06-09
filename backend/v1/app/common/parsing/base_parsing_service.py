@@ -92,6 +92,7 @@ class BaseParsingService(ABC):
 
                 # 3. 状态检查
                 if asset.parsing_status == "completed" and not force and asset.ai_features:
+                    self.sync_status(db, business_id, asset)
                     logger.info(f"资产 {asset_id} 已经解析完成，跳过解析（force={force}）")
                     return True
 
@@ -210,7 +211,18 @@ class BaseParsingService(ABC):
                 updated_asset = AssetDAO.get_asset_by_id(db, asset_id)
                 self.sync_status(db, business_id, updated_asset)
             elif "execution_id" in pipeline_result:
-                # 无资产场景，execution_id需要业务自己处理
+                # 无资产场景，同步一个最小状态，便于业务后续回查执行结果
+                synthetic_asset = type(
+                    "SyntheticAsset",
+                    (),
+                    {
+                        "execution_id": pipeline_result["execution_id"],
+                        "parsing_status": "running",
+                        "parsing_error": None,
+                        "ai_features": None,
+                    },
+                )()
+                self.sync_status(db, business_id, synthetic_asset)
                 logger.info(f"业务记录 {business_id} 解析任务已成功触发，execution_id={pipeline_result['execution_id']}")
 
             logger.info(f"业务记录 {business_id} 解析任务已成功触发" + (f", asset_id={asset_id}" if asset_id else ""))

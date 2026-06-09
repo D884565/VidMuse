@@ -1047,7 +1047,6 @@ class ChatService:
             trigger_source = "chat_regenerate_images_and_video"
         else:
             generation_workflow_service.invalidate_from(project, "video")
-            project_workflow_state.mark_project_stage_review(project, "image", project.last_task_id)
             require_ready_images = True
             trigger_source = "chat_regenerate_video_only"
 

@@ -19,6 +19,27 @@ from backend.framework.trace import trace, PushConfig
 logger = logging.getLogger(__name__)
 
 
+def _schedule_background_task(coro: Any) -> None:
+    """Run coroutine on the active loop when possible, otherwise use a daemon loop."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        from backend.framework.trace.compat import _run_async
+
+        _run_async(coro)
+        return
+
+    task = loop.create_task(coro)
+
+    def _drain_task_error(done_task: asyncio.Task) -> None:
+        try:
+            done_task.result()
+        except Exception as exc:
+            logger.warning(f"Background pipeline task failed: {exc}", exc_info=True)
+
+    task.add_done_callback(_drain_task_error)
+
+
 # ==================== Trace推送配置 ====================
 def _get_pipeline_user_id(*args, **kwargs) -> int:
     """从流水线输入参数中获取user_id"""
@@ -253,7 +274,7 @@ class BasePipeline:
                     if execution_id and db_session and self.persist_after_each_processor:
                         self._persist_progress(db_session, execution_id, current_index, context)
                         # 推送进度更新
-                        asyncio.create_task(self._on_status_change(execution_id))
+                        _schedule_background_task(self._on_status_change(execution_id))
 
                     # 推送进度更新
                     try:
@@ -284,7 +305,7 @@ class BasePipeline:
                                     )
 
                             # 异步推送，不阻塞主流程
-                            asyncio.create_task(push_progress())
+                            _schedule_background_task(push_progress())
                     except Exception as e:
                         logger.warning(f"Failed to push pipeline progress: {e}")
 
@@ -301,7 +322,7 @@ class BasePipeline:
                             db_session, execution_id, PipelineExecutionStatus.FAILED, str(e)
                         )
                         # 推送状态更新
-                        asyncio.create_task(self._on_status_change(execution_id))
+                        _schedule_background_task(self._on_status_change(execution_id))
                     break
 
             total_duration = time.time() - start_time
@@ -321,7 +342,7 @@ class BasePipeline:
                     )
                     PipelineExecutionDAO.update_execution_result(db_session, execution_id, result)
                     # 推送状态更新
-                    asyncio.create_task(self._on_status_change(execution_id))
+                    _schedule_background_task(self._on_status_change(execution_id))
                 else:
                     # 如果还没标记为失败（比如在循环外出错）
                     PipelineExecutionDAO.update_execution_status(
@@ -329,7 +350,7 @@ class BasePipeline:
                         context.get_errors()[0] if context.get_errors() else "未知错误"
                     )
                     # 推送状态更新
-                    asyncio.create_task(self._on_status_change(execution_id))
+                    _schedule_background_task(self._on_status_change(execution_id))
 
             if success:
                 logger.debug(f"流水线执行结果: {self._build_result(context)}")
@@ -348,7 +369,7 @@ class BasePipeline:
                     db_session, execution_id, PipelineExecutionStatus.FAILED, str(e)
                 )
                 # 推送状态更新
-                asyncio.create_task(self._on_status_change(execution_id))
+                _schedule_background_task(self._on_status_change(execution_id))
 
             return self._build_result(context)
 
@@ -410,7 +431,7 @@ class BasePipeline:
                         await self.push_service.push_execution_update(async_db, execution)
 
             import asyncio
-            asyncio.create_task(push_update())
+            _schedule_background_task(push_update())
         except Exception as e:
             logger.warning(f"推送流水线状态更新失败: {e}")
 
@@ -457,7 +478,7 @@ class BasePipeline:
             PipelineExecutionDAO.update_execution_status(db, execution_id, PipelineExecutionStatus.RUNNING)
 
             # 推送状态更新
-            asyncio.create_task(self._on_status_change(execution_id))
+            _schedule_background_task(self._on_status_change(execution_id))
 
             # 执行流水线
             result = self._run_internal(
@@ -480,7 +501,7 @@ class BasePipeline:
                         db, execution_id, PipelineExecutionStatus.FAILED, error_msg
                     )
                     # 推送状态更新
-                    asyncio.create_task(self._on_status_change(execution_id))
+                    _schedule_background_task(self._on_status_change(execution_id))
                 except:
                     pass
             return {
@@ -568,7 +589,7 @@ class BasePipeline:
             PipelineExecutionDAO.update_execution_status(db, execution_id, PipelineExecutionStatus.RUNNING)
 
             # 推送状态更新
-            asyncio.create_task(self._on_status_change(execution_id))
+            _schedule_background_task(self._on_status_change(execution_id))
 
             # 执行流水线
             result = self._run_internal(
@@ -588,7 +609,7 @@ class BasePipeline:
             if execution_id:
                 try:
                     # 推送状态更新
-                    asyncio.create_task(self._on_status_change(execution_id))
+                    _schedule_background_task(self._on_status_change(execution_id))
                 except:
                     pass
             return {

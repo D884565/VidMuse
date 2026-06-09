@@ -433,3 +433,56 @@ async def test_chat_narration_only_edit_submits_render_task_and_returns_task_res
         trigger_source="chat_narration_edit",
     )
     assert any(block.get("type") == "progress_card" and block.get("stage") == "video" for block in blocks)
+
+
+@pytest.mark.asyncio
+async def test_regenerate_video_only_keeps_image_stage_confirmed_before_render_submission():
+    service = ChatService()
+    mock_db = MagicMock()
+    mock_db.commit = AsyncMock()
+
+    frame = SimpleNamespace(
+        id=1,
+        project_id=1,
+        sequence=1,
+        image_url="https://cdn.test/frame.png",
+        video_url="https://cdn.test/frame.mp4",
+        status=2,
+        dirty=0,
+    )
+    project = SimpleNamespace(
+        id=1,
+        workflow_stage="video",
+        stage_status="awaiting_review",
+        dirty_stage=None,
+        last_task_id="video_1",
+        status="review_required",
+        script_confirmed_at="2026-01-01",
+        images_confirmed_at="2026-01-01",
+        video_confirmed_at="2026-01-01",
+    )
+
+    with patch.object(service, "_get_frames", new=AsyncMock(return_value=[frame])):
+        with patch(
+            "backend.v1.app.generate.service.chat.chat_service.video_generation_service.submit_generation_task",
+            new=AsyncMock(return_value={"task_id": "render_2", "status": "render_queued"}),
+        ) as mock_submit:
+            task_result = await service._submit_project_regeneration(
+                mock_db,
+                project,
+                project.id,
+                "REGENERATE_VIDEO_ONLY",
+            )
+
+    assert task_result["task_id"] == "render_2"
+    assert frame.video_url is None
+    assert frame.dirty == 1
+    assert project.workflow_stage == "image"
+    assert project.stage_status == "confirmed"
+    assert project.dirty_stage == "video"
+    mock_submit.assert_awaited_once_with(
+        mock_db,
+        project.id,
+        require_ready_images=True,
+        trigger_source="chat_regenerate_video_only",
+    )

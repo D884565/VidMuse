@@ -148,13 +148,17 @@ class ProjectInitialMessageBuilder:
         if not product_info:
             return []
         images: list[str] = []
-        for key in ("main_images", "detail_images", "images"):
+        for key in ("main_images", "main_image_url", "detail_images", "images"):
             value = product_info.get(key)
             if isinstance(value, list):
                 images.extend(str(item) for item in value if item)
             elif isinstance(value, str) and value:
                 images.append(value)
-        return images
+        deduped: list[str] = []
+        for url in images:
+            if url not in deduped:
+                deduped.append(url)
+        return deduped
 
     def build_system_intro(self) -> dict[str, Any]:
         """构建系统介绍消息，在项目创建时作为第一条助手消息存储。"""

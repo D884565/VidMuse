@@ -1,7 +1,7 @@
 """项目数据访问层（异步版本）"""
 import logging
 from typing import Optional
-from sqlalchemy import select, func, delete as sa_delete
+from sqlalchemy import select, func, delete as sa_delete, update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -61,11 +61,18 @@ class ProjectDAO:
         # 1. conversations（核心：用户看到的"对话还存在"就是这张表没删干净）
         await db.execute(sa_delete(Conversation).where(Conversation.project_id == project_id))
 
-        # 2. frames
-        await db.execute(sa_delete(Frame).where(Frame.project_id == project_id))
-
-        # 3. scripts
+        # 2. scripts
+        # scripts.parent_id -> scripts.id 是自引用外键。失败项目常有版本链，
+        # 先批量断开项目内脚本的 parent_id，再删除脚本，避免整批删除触发 FK 拦截。
+        await db.execute(
+            sa_update(Script)
+            .where(Script.project_id == project_id)
+            .values(parent_id=None)
+        )
         await db.execute(sa_delete(Script).where(Script.project_id == project_id))
+
+        # 3. frames
+        await db.execute(sa_delete(Frame).where(Frame.project_id == project_id))
 
         # 4. push_messages + user_messages（无 FK 约束）
         msg_ids_result = await db.execute(
