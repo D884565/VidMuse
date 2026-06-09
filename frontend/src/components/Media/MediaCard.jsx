@@ -1,3 +1,4 @@
+import { useRef } from 'react'
 import { FileText, Image, Music, Play, Trash2 } from 'lucide-react'
 
 /** 素材类型对应的图标映射 */
@@ -14,15 +15,44 @@ const iconMap = {
  */
 export default function MediaCard({ item, onClick, onDelete }) {
   const Icon = iconMap[item.type] || Image
+  const videoRef = useRef(null)
 
   const handleDelete = (e) => {
     e.stopPropagation()
     onDelete?.(item.id)
   }
 
+  const handleMouseEnter = () => {
+    if (item.type === 'video' && videoRef.current) {
+      videoRef.current.currentTime = 0
+      videoRef.current.play().catch(() => {})
+    }
+  }
+
+  const handleMouseLeave = () => {
+    if (item.type === 'video' && videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
+    }
+  }
+
   const renderPreview = () => {
     if (item.type === 'image' && item.url) {
       return <img src={item.url} alt={item.name} className="h-full w-full object-contain p-2" />
+    }
+    if (item.type === 'video' && item.url) {
+      return (
+        <video
+          ref={videoRef}
+          src={item.url}
+          muted
+          playsInline
+          preload="metadata"
+          className="h-full w-full object-contain"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        />
+      )
     }
     return <Icon size={28} className="text-[#a78bfa]" />
   }
@@ -33,7 +63,11 @@ export default function MediaCard({ item, onClick, onDelete }) {
       onClick={() => onClick?.(item)}
       className="group w-full overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[rgba(26,26,46,0.72)] text-left transition hover:-translate-y-0.5 hover:border-[rgba(124,58,237,0.45)] hover:shadow-[0_4px_24px_rgba(124,58,237,0.15)]"
     >
-      <div className="relative grid aspect-video place-items-center overflow-hidden bg-[rgba(255,255,255,0.04)]">
+      <div
+        className="relative grid aspect-video place-items-center overflow-hidden bg-[rgba(255,255,255,0.04)]"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
         {renderPreview()}
         {/* Delete button on hover */}
         <div className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100">

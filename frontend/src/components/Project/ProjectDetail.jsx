@@ -12,7 +12,6 @@ import {
 import { regenerateFrameImage, regenerateFrameVideo, updateFrame } from '../../services/frame.js'
 import { useAppStore } from '../../store/appStore.js'
 import { formatVideoStyle } from '../../utils/videoStyle.js'
-import StoryboardTimeline from '../Workflow/StoryboardTimeline.jsx'
 
 const DEFAULT_FORM = {
   narration: '',
@@ -490,19 +489,6 @@ export default function ProjectDetail({ project, onClose }) {
             </div>
           </div>
 
-          {frames.length > 0 ? (
-            <div className="mb-4">
-              <StoryboardTimeline
-                frames={frames}
-                selectedFrameId={selectedFrameId}
-                onSelectFrame={(frame) => {
-                  setSelectedFrameId(frame.id)
-                  setEditorOpen(true)
-                }}
-              />
-            </div>
-          ) : null}
-
           {feedback ? (
             <div className="mb-3 rounded-lg border border-[rgba(167,139,250,0.25)] bg-[rgba(124,58,237,0.12)] px-3 py-2 text-xs text-[#d8b4fe]">
               {feedback}
@@ -594,7 +580,6 @@ export default function ProjectDetail({ project, onClose }) {
                         <div className="flex-1">
                           <p className="m-0 text-xs font-medium text-[#a78bfa]">
                             分镜 {frame.sequence || idx + 1}
-                            {frame?.duration ? ` · ${Math.round(frame.duration)}s` : ''}
                             {frame?.dirty ? ' · 待应用修改' : ''}
                           </p>
                           <p className="m-0 mt-1 text-sm text-white">{sceneDescription}</p>

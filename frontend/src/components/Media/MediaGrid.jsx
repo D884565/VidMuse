@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
-import { FileText, ImagePlus, Loader2, Plus } from 'lucide-react'
+import { Loader2, Plus } from 'lucide-react'
 import ConfirmDialog from '../Common/ConfirmDialog.jsx'
 import MediaCard from './MediaCard.jsx'
 import AssetEditModal from './AssetEditModal.jsx'
 
 /* 素材库页面 — 管理图片、视频、文本等素材资源 */
 import {
-  createTextAsset,
   deleteAsset,
   listAssets,
   uploadAsset,
 } from '../../services/asset.js'
 
-const typeMap = { 1: 'image', 4: 'text' }
+const typeMap = { 1: 'image', 2: 'video', 4: 'text' }
 
 function formatFileSize(bytes) {
   if (!bytes) return ''
@@ -24,6 +23,7 @@ function formatFileSize(bytes) {
 function getAssetTypeLabel(type) {
   return {
     image: '图片',
+    video: '视频',
     text: '文本',
   }[type] || '素材'
 }
@@ -46,16 +46,11 @@ function mapAsset(item) {
   }
 }
 
-const DEFAULT_TEXT_FORM = { id: null, title: '', content_text: '' }
-
 export default function MediaGrid() {
   const [assets, setAssets] = useState([])
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
   const [activeTab, setActiveTab] = useState('all')
-  const [textSaving, setTextSaving] = useState(false)
-  const [textModalOpen, setTextModalOpen] = useState(false)
-  const [textForm, setTextForm] = useState(DEFAULT_TEXT_FORM)
   const [confirmDelete, setConfirmDelete] = useState({ open: false, assetId: null, title: '' })
   const [editAsset, setEditAsset] = useState(null)
   const fileInputRef = useRef(null)
@@ -92,7 +87,7 @@ export default function MediaGrid() {
       setUploading(true)
       const formData = new FormData()
       formData.append('file', file)
-      formData.append('type', '1')
+      formData.append('type', file.type.startsWith('video/') ? '2' : '1')
       formData.append('title', file.name)
       await uploadAsset(formData)
       await fetchAssets()
@@ -116,34 +111,6 @@ export default function MediaGrid() {
     }
   }
 
-  const openCreateTextModal = () => {
-    setTextForm(DEFAULT_TEXT_FORM)
-    setTextModalOpen(true)
-  }
-
-  const handleSaveText = async (event) => {
-    event.preventDefault()
-    if (!textForm.content_text.trim()) {
-      alert('文本内容不能为空。')
-      return
-    }
-
-    try {
-      setTextSaving(true)
-      await createTextAsset({
-        title: textForm.title,
-        content_text: textForm.content_text,
-      })
-      setTextModalOpen(false)
-      await fetchAssets()
-    } catch (err) {
-      console.error('创建文本素材失败:', err)
-      alert('创建失败，请重试。')
-    } finally {
-      setTextSaving(false)
-    }
-  }
-
   const handleCardClick = (item) => {
     setEditAsset(item)
   }
@@ -164,39 +131,21 @@ export default function MediaGrid() {
         <div>
           <h1 className="m-0 text-lg font-semibold">素材库</h1>
           <p className="m-0 mt-1 text-sm text-[var(--text-muted)]">
-            点击素材卡片可编辑名称、重新上传图片或修改文本内容。
+            点击素材卡片可编辑名称、重新上传或修改文本内容。
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-xl bg-[#7c3aed] px-4 py-2 text-sm font-medium text-white hover:bg-[#6d28d9]"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <Plus size={16} />
-            新增素材
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.04)] px-4 py-2 text-sm text-white hover:bg-[rgba(255,255,255,0.08)]"
-            onClick={openCreateTextModal}
-          >
-            <FileText size={16} />
-            新建文本
-          </button>
-          <button
-            type="button"
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.04)] px-4 py-2 text-sm text-white hover:bg-[rgba(255,255,255,0.08)]"
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <ImagePlus size={16} />
-            上传图片
-          </button>
-        </div>
+        <button
+          type="button"
+          className="inline-flex items-center gap-2.5 rounded-xl bg-[#7c3aed] px-6 py-3 text-base font-medium text-white shadow-lg shadow-[#7c3aed]/25 hover:bg-[#6d28d9]"
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <Plus size={20} />
+          新增素材
+        </button>
       </header>
 
       <div className="mb-6 flex flex-wrap gap-2">
-        {['all', 'image', 'text'].map((tab) => (
+        {['all', 'image', 'video', 'text'].map((tab) => (
           <button
             key={tab}
             type="button"
@@ -215,17 +164,17 @@ export default function MediaGrid() {
       <div className="mb-6 flex min-h-16 items-center justify-between rounded-xl border border-[var(--border-soft)] bg-[rgba(26,26,46,0.5)] px-4 py-3">
         <div>
           <p className="m-0 text-sm font-medium text-white">
-            {uploading ? '正在上传图片...' : '通过"新增素材"添加图片素材'}
+            {uploading ? '正在上传...' : '通过"新增素材"添加图片或视频素材'}
           </p>
           <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">
-            图片会直接上传到素材库，并作为新的素材记录展示。
+            图片和视频会直接上传到素材库，并作为新的素材记录展示。
           </p>
         </div>
         {uploading ? <Loader2 className="animate-spin text-[#a78bfa]" size={18} /> : null}
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,video/*"
           className="hidden"
           onChange={handleFileChange}
         />
@@ -250,59 +199,6 @@ export default function MediaGrid() {
               onDelete={(assetId) => setConfirmDelete({ open: true, assetId, title: item.name })}
             />
           ))}
-        </div>
-      )}
-
-      {/* Text create/edit modal (legacy, kept for "新建文本" button) */}
-      {textModalOpen && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-2xl border border-[var(--border-soft)] bg-[rgba(15,15,26,0.98)] p-6 shadow-2xl">
-            <div className="mb-5">
-              <h2 className="m-0 text-lg font-semibold">新建文本素材</h2>
-              <p className="m-0 mt-1 text-sm text-[var(--text-muted)]">
-                创建后可在素材卡片中点击编辑。
-              </p>
-            </div>
-            <form onSubmit={handleSaveText} className="space-y-4">
-              <div>
-                <label className="mb-2 block text-sm text-[var(--text-muted)]">标题</label>
-                <input
-                  type="text"
-                  value={textForm.title}
-                  onChange={(event) => setTextForm((prev) => ({ ...prev, title: event.target.value }))}
-                  className="w-full rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.04)] px-4 py-3 text-white outline-none focus:border-[#7c3aed]"
-                  placeholder="选填标题"
-                />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm text-[var(--text-muted)]">文本内容</label>
-                <textarea
-                  value={textForm.content_text}
-                  onChange={(event) => setTextForm((prev) => ({ ...prev, content_text: event.target.value }))}
-                  rows={10}
-                  className="w-full rounded-xl border border-[var(--border-soft)] bg-[rgba(255,255,255,0.04)] px-4 py-3 text-white outline-none focus:border-[#7c3aed]"
-                  placeholder="请输入文本素材内容"
-                />
-              </div>
-              <div className="flex justify-end gap-3">
-                <button
-                  type="button"
-                  className="rounded-xl border border-[var(--border-soft)] px-4 py-2 text-sm text-[var(--text-muted)] hover:bg-[rgba(255,255,255,0.05)]"
-                  onClick={() => setTextModalOpen(false)}
-                  disabled={textSaving}
-                >
-                  取消
-                </button>
-                <button
-                  type="submit"
-                  className="rounded-xl bg-[#7c3aed] px-4 py-2 text-sm font-medium text-white hover:bg-[#6d28d9] disabled:opacity-60"
-                  disabled={textSaving}
-                >
-                  {textSaving ? '保存中...' : '保存文本'}
-                </button>
-              </div>
-            </form>
-          </div>
         </div>
       )}
 

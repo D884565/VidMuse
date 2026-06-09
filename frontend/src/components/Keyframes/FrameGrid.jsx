@@ -23,7 +23,6 @@ import {
   getGenerationTask,
   getGenerationTaskSteps,
 } from '../../services/project.js'
-import StoryboardTimeline from '../Workflow/StoryboardTimeline.jsx'
 import VideoPlayer from '../VideoPlayer.jsx'
 
 const STATUS_MAP = {
@@ -677,12 +676,6 @@ export default function FrameGrid() {
         </div>
       ) : null}
 
-      {frames.length ? (
-        <div className="mb-6 rounded-lg border border-[var(--border-soft)] bg-[var(--bg-secondary)] p-4">
-          <StoryboardTimeline frames={frames} />
-        </div>
-      ) : null}
-
       {!frames.length ? (
         <div className="grid min-h-[360px] place-items-center rounded-lg border border-dashed border-[var(--border-soft)] bg-[var(--bg-secondary)] px-6 text-center">
           <div>
@@ -735,7 +728,6 @@ export default function FrameGrid() {
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <span className="text-sm font-medium">分镜 {frame.sequence}</span>
                     <div className="flex items-center gap-2">
-                      {frame.duration ? <span className="text-xs text-[var(--text-muted)]">{Math.round(frame.duration)}s</span> : null}
                       <span className={`text-xs ${status.color}`}>{status.text}</span>
                     </div>
                   </div>
