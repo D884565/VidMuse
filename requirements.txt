@@ -1,0 +1,64 @@
+# Python 版本要求: 3.14
+# AIGC 带货视频生成系统 - 依赖清单
+
+# ==================== 后端层 ====================
+fastapi==0.115.9
+uvicorn[standard]==0.34.2
+python-multipart==0.0.20       # 文件上传
+python-jose[cryptography]==3.4.0  # JWT 认证
+passlib[bcrypt]==1.7.4         # 密码哈希
+pydantic==2.11.4
+pydantic-settings==2.9.1       # 配置管理
+email-validator==2.2.0
+httpx==0.28.1                  # 异步 HTTP 客户端
+aiohttp==3.10.10               # 异步 HTTP 客户端（aiohttp）
+fsspec==2024.10.0              # 文件系统抽象层
+pydub==0.25.1                  # 音频处理库
+
+
+
+
+# LLM 相关
+openai==1.76.0
+volcengine-python-sdk==5.0.27  # 火山引擎 SDK
+tos>=2.0.0
+
+tiktoken==0.9.0                # Token 计算
+
+# ==================== 存储层 ====================
+# MySQL
+sqlalchemy==2.0.41
+aiomysql==0.2.0                # 异步 MySQL
+databases[aiomysql]==0.9.0     # 异步数据库抽象
+PyMySQL==1.1.1                 # 同步 MySQL
+
+# MinIO (对象存储)
+minio==7.2.15
+
+
+# Redis
+redis==7.4.1                   # Redis 客户端，用于ID生成器和缓存
+
+# ==================== 爬虫层 ====================
+playwright==1.49.1             # 浏览器自动化
+beautifulsoup4==4.13.4       # HTML 解析
+opencv-python
+websockets==12.0          # WebSocket客户端，用于豆包语音合成
+numpy
+# 核心缺失包
+scikit-learn>=1.2.0
+jieba==0.42.1                # 中文分词，用于关键词提取
+
+ffmpeg-python
+jsonschema==4.23.0        # JSON Schema校验
+
+celery==5.3.0            # 分布式任务队列
+
+
+PyJWT>=2.8.0
+
+
+qdrant-client>=1.10.0,<1.11.0
+
+
+pydub==0.25.1

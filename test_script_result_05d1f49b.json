@@ -1,0 +1,104 @@
+{
+  "script": {
+    "total_duration": 15,
+    "video_style": "简约、清新、生活化",
+    "scenes": [
+      {
+        "scene_id": 1,
+        "duration": 3,
+        "image_prompt": "年轻男生站在室外阳光下，后背的T恤被汗浸湿粘在皮肤上，男生皱着眉不舒服地扯领口，生活化背景，暖黄自然光线，简约清新色调",
+        "video_prompt": "近景固定镜头，拍摄男生后背汗湿的T恤，接着拍男生皱眉扯衣服的动作",
+        "audio": "夏天穿T恤闷汗还变形？",
+        "overlay": {
+          "text": "T恤太闷？",
+          "position": "bottom",
+          "font_size": 24,
+          "color": "#ff3333"
+        }
+      },
+      {
+        "scene_id": 2,
+        "duration": 4,
+        "image_prompt": "白皙的手轻轻抚摸纯白色纯棉T恤的面料，纹理清晰可见，背景是浅色木质桌面，清新明亮光线",
+        "video_prompt": "特写镜头缓慢移动，展示T恤柔软的面料纹理，接着切到男生穿上干净T恤舒展肩膀露出舒服的表情",
+        "audio": "100%新疆长绒棉，透气又舒服",
+        "overlay": {
+          "text": "新疆长绒棉",
+          "position": "bottom",
+          "font_size": 24,
+          "color": "#228B22"
+        }
+      },
+      {
+        "scene_id": 3,
+        "duration": 4,
+        "image_prompt": "左边是水洗后平整的T恤，右边是T恤搭配牛仔裤、休闲裤的穿搭效果图，浅色系背景，简约清新风格",
+        "video_prompt": "快速剪辑两个画面：第一个是拎起水洗后没有褶皱变形的T恤，第二个是T恤搭配不同下装的上身效果",
+        "audio": "不缩水不变形，怎么搭都好看",
+        "overlay": {
+          "text": "耐穿 百搭",
+          "position": "bottom",
+          "font_size": 24,
+          "color": "#228B22"
+        }
+      },
+      {
+        "scene_id": 4,
+        "duration": 4,
+        "image_prompt": "多色纯棉T恤整齐平铺在浅色桌面，旁边放着99元的价格牌，右上角有醒目的购物车图标，明亮光线",
+        "video_prompt": "俯拍固定镜头，依次扫过不同颜色的T恤，弹出价格标签和购物车动效",
+        "audio": "现在只要99元，多色可选，赶紧抢！",
+        "overlay": {
+          "text": "仅99元 速抢",
+          "position": "bottom",
+          "font_size": 28,
+          "color": "#ff3333"
+        }
+      }
+    ]
+  },
+  "iterations": [
+    {
+      "iteration": 1,
+      "type": "tool_call",
+      "thought": "",
+      "tool_calls": [
+        {
+          "tool_name": "hot_video_fusion_creation",
+          "parameters": {
+            "product_info": {
+              "title": "夏季纯棉T恤",
+              "description": "100%纯棉短袖T恤，透气舒适，不缩水不变形，多色可选",
+              "price": 99,
+              "material": "100%新疆长绒棉",
+              "sell_points": [
+                "透气舒适",
+                "不缩水",
+                "不变形",
+                "百搭"
+              ],
+              "target_age": "18-45岁",
+              "target_crowd": "喜欢简约穿搭的人群"
+            },
+            "category": "男装T恤",
+            "target_duration": 15
+          },
+          "result": "{\"success\": false, \"error\": \"查询爆款视频失败: 查询失败\"}"
+        }
+      ]
+    },
+    {
+      "iteration": 2,
+      "type": "final_response",
+      "thought": "{\n    \"total_duration\": 15,\n    \"video_style\": \"简约、清新、生活化\",\n    \"scenes\": [\n        {\n            \"scene_id\": 1,\n            \"duration\": 3,\n            \"image_prompt\": \"年轻男生站在室外阳光下，后背的T恤被汗浸湿粘在皮肤上，男生皱着眉不舒服地扯领口，生活化背景，暖黄自然光线，简约清新色调\",\n            \"video_prompt\": \"近景固定镜头，拍摄男生后背汗湿的T恤，接着拍男生皱眉扯衣服的动作\",\n            \"audio\": \"夏天穿T恤闷汗还变形？\",\n            \"overlay\": {\n                \"text\": \"T恤太闷？\",\n                \"position\": \"bottom\",\n                \"font_size\": 24,\n                \"color\": \"#ff3333\"\n            }\n        },\n        {\n            \"scene_id\": 2,\n            \"duration\": 4,\n            \"image_prompt\": \"白皙的手轻轻抚摸纯白色纯棉T恤的面料，纹理清晰可见，背景是浅色木质桌面，清新明亮光线\",\n            \"video_prompt\": \"特写镜头缓慢移动，展示T恤柔软的面料纹理，接着切到男生穿上干净T恤舒展肩膀露出舒服的表情\",\n            \"audio\": \"100%新疆长绒棉，透气又舒服\",\n            \"overlay\": {\n                \"text\": \"新疆长绒棉\",\n                \"position\": \"bottom\",\n                \"font_size\": 24,\n                \"color\": \"#228B22\"\n            }\n        },\n        {\n            \"scene_id\": 3,\n            \"duration\": 4,\n            \"image_prompt\": \"左边是水洗后平整的T恤，右边是T恤搭配牛仔裤、休闲裤的穿搭效果图，浅色系背景，简约清新风格\",\n            \"video_prompt\": \"快速剪辑两个画面：第一个是拎起水洗后没有褶皱变形的T恤，第二个是T恤搭配不同下装的上身效果\",\n            \"audio\": \"不缩水不变形，怎么搭都好看\",\n            \"overlay\": {\n                \"text\": \"耐穿 百搭\",\n                \"position\": \"bottom\",\n                \"font_size\": 24,\n                \"color\": \"#228B22\"\n            }\n        },\n        {\n            \"scene_id\": 4,\n            \"duration\": 4,\n            \"image_prompt\": \"多色纯棉T恤整齐平铺在浅色桌面，旁边放着99元的价格牌，右上角有醒目的购物车图标，明亮光线\",\n            \"video_prompt\": \"俯拍固定镜头，依次扫过不同颜色的T恤，弹出价格标签和购物车动效\",\n            \"audio\": \"现在只要99元，多色可选，赶紧抢！\",\n            \"overlay\": {\n                \"text\": \"仅99元 速抢\",\n                \"position\": \"bottom\",\n                \"font_size\": 28,\n                \"color\": \"#ff3333\"\n            }\n        }\n    ]\n}",
+      "tool_calls": []
+    }
+  ],
+  "tools": [
+    "text_to_sql_inspiration",
+    "hot_video_fusion_creation",
+    "template_creation",
+    "strategy_factor_creation",
+    "search_similar_hot_videos"
+  ]
+}

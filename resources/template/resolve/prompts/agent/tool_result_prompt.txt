@@ -1,0 +1,6 @@
+<|工具结果{index}|>
+工具名称: {tool_name}
+调用参数: {parameters}
+返回结果:
+{result}
+<|工具结果结束|>

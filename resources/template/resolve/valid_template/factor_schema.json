@@ -1,0 +1,67 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": [
+      "factor_type",
+      "name",
+      "description",
+      "applicable_scenarios",
+      "data_schema",
+      "example",
+      "tags",
+      "popularity"
+    ],
+    "properties": {
+      "factor_id": {
+        "type": "string",
+        "description": "可选的因子ID，如果提供则使用，否则自动生成"
+      },
+      "factor_type": {
+        "type": "string",
+        "enum": ["content_structure", "product_expression", "user_operation"],
+        "description": "因子类型"
+      },
+      "name": {
+        "type": "string",
+        "maxLength": 20,
+        "description": "简洁的因子名称"
+      },
+      "description": {
+        "type": "string",
+        "description": "详细描述因子的含义和使用方法"
+      },
+      "applicable_scenarios": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "适用场景列表"
+      },
+      "data_schema": {
+        "type": "object",
+        "description": "因子的数据结构定义"
+      },
+      "example": {
+        "description": "具体的示例数据，符合data_schema定义"
+      },
+      "tags": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        },
+        "description": "标签列表，便于检索"
+      },
+      "popularity": {
+        "type": "number",
+        "minimum": 0,
+        "maximum": 1,
+        "description": "流行度，表示这个因子在报告中出现的频率"
+      }
+    }
+  },
+  "minItems": 3,
+  "maxItems": 10,
+  "description": "共性因子列表"
+}

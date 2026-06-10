@@ -1,0 +1,97 @@
+import { useRef } from 'react'
+import { FileText, Image, Music, Play, Trash2 } from 'lucide-react'
+
+/** 素材类型对应的图标映射 */
+const iconMap = {
+  video: Play,
+  image: Image,
+  audio: Music,
+  text: FileText,
+}
+
+/**
+ * 素材卡片组件
+ * 在素材库网格中展示单个素材的预览、标题和操作按钮。
+ */
+export default function MediaCard({ item, onClick, onDelete }) {
+  const Icon = iconMap[item.type] || Image
+  const videoRef = useRef(null)
+
+  const handleDelete = (e) => {
+    e.stopPropagation()
+    onDelete?.(item.id)
+  }
+
+  const handleMouseEnter = () => {
+    if (item.type === 'video' && videoRef.current) {
+      videoRef.current.currentTime = 0
+      videoRef.current.play().catch(() => {})
+    }
+  }
+
+  const handleMouseLeave = () => {
+    if (item.type === 'video' && videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.currentTime = 0
+    }
+  }
+
+  const renderPreview = () => {
+    if (item.type === 'image' && item.url) {
+      return <img src={item.url} alt={item.name} className="h-full w-full object-contain p-2" />
+    }
+    if (item.type === 'video' && item.url) {
+      return (
+        <video
+          ref={videoRef}
+          src={item.url}
+          muted
+          playsInline
+          preload="metadata"
+          className="h-full w-full object-contain"
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+        />
+      )
+    }
+    return <Icon size={28} className="text-[#a78bfa]" />
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => onClick?.(item)}
+      className="group w-full overflow-hidden rounded-xl border border-[var(--border-soft)] bg-[rgba(26,26,46,0.72)] text-left transition hover:-translate-y-0.5 hover:border-[rgba(124,58,237,0.45)] hover:shadow-[0_4px_24px_rgba(124,58,237,0.15)]"
+    >
+      <div
+        className="relative grid aspect-video place-items-center overflow-hidden bg-[rgba(255,255,255,0.04)]"
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+      >
+        {renderPreview()}
+        {/* Delete button on hover */}
+        <div className="absolute right-2 top-2 opacity-0 transition group-hover:opacity-100">
+          <span
+            role="button"
+            tabIndex={0}
+            className="grid h-8 w-8 place-items-center rounded-lg border border-white/15 bg-[rgba(15,23,42,0.86)] text-white transition hover:bg-red-500/80"
+            aria-label="删除素材"
+            onClick={handleDelete}
+            onKeyDown={(e) => e.key === 'Enter' && handleDelete(e)}
+          >
+            <Trash2 size={14} />
+          </span>
+        </div>
+      </div>
+      <div className="p-3">
+        <p className="m-0 truncate text-sm font-medium text-white">{item.name}</p>
+        <p className="m-0 mt-1 text-xs text-[var(--text-muted)]">{item.meta}</p>
+        {item.type === 'text' && item.content_text && (
+          <p className="m-0 mt-2 line-clamp-2 text-xs leading-4 text-[var(--text-muted)]">
+            {item.content_text}
+          </p>
+        )}
+      </div>
+    </button>
+  )
+}
