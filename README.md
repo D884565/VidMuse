@@ -12,6 +12,9 @@
 - **🔌 一键发布**：支持直接推送至TikTok Shop等多个平台
 - **📦 开箱即用**：Docker一键部署，无需复杂配置
 
+## ✨ 演示视频
+地址：https://www.bilibili.com/video/BV1VSEX6sEHd/?vd_source=aa35b545c15d70279dc1dc07445002ff
+
 ## 🏗️ 技术架构
 
 ### 技术栈
@@ -304,7 +307,7 @@ MIT License - 详见 [LICENSE](LICENSE) 文件
 
 如有问题，请通过以下方式联系：
 - 提交GitHub Issue
-- 发送邮件至：support@vidmuse.ai
+- 发送邮件至：19970772131@163.com
 
 ---
 
