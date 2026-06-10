@@ -58,12 +58,17 @@ tests/generate
 # 导出工具
 export_cookies.py
 
-# RAG 临时接口（RAG团队提供正式实现后删除）
+
 logs/
 .env.example
+.env
 
 # 本地开发配置
 docker-compose.dev.yml
 Dockerfile.backend
 setup.sh
 DEV_SETUP.md
+.env
+.env
+.env
+.env

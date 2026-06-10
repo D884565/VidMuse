@@ -303,6 +303,9 @@ class ReActAgent(BaseAgent):
         all_tool_results = []
         system_prompt = self.context_builder.build_system_prompt(self)
 
+        # 记录本次运行的完整迭代历史（用于测试和调试）
+        self.last_run_iterations = []
+
         # 从context中获取会话和用户信息
         context = context or {}
         session_id = context.get("session_id", f"session_{int(time.time())}")
@@ -320,12 +323,20 @@ class ReActAgent(BaseAgent):
                 if not thought.get("tool_calls"):
                     final_answer = thought.get("content", "")
                     success = True
+                    # 记录迭代
+                    self.last_run_iterations.append({
+                        "iteration": iterations,
+                        "type": "final_response",
+                        "thought": thought.get("content", ""),
+                        "tool_calls": []
+                    })
                     break
 
                 # 行动
                 action_result = self.act(thought)
 
                 # 收集工具调用和结果
+                tool_calls_in_iteration = []
                 if action_result.get("type") == "tool_results":
                     for result in action_result["content"]:
                         all_tool_calls.append({
@@ -334,6 +345,15 @@ class ReActAgent(BaseAgent):
                             "result": result["result"]
                         })
                         all_tool_results.append(result["result"])
+                        tool_calls_in_iteration.append(result)
+
+                # 记录迭代
+                self.last_run_iterations.append({
+                    "iteration": iterations,
+                    "type": "tool_call",
+                    "thought": thought.get("content", ""),
+                    "tool_calls": tool_calls_in_iteration
+                })
 
                 # 观察
                 self.observe(action_result)

@@ -124,7 +124,7 @@ class Settings(BaseSettings):
     TTS_API_KEY: str = ""  # 新版语音合成API Key
 
     # 火山引擎图片生成 (Seedream 4.5)
-    IMAGE_API_KEY: str = ""
+    IMAGE_API_KEY: str = os.getenv("VOLC_EMBEDDING_API_KEY","")
 
     # 火山引擎语音识别
     VOLC_ENGINE_ACCESS_KEY: str = os.getenv('VOLC_ENGINE_ACCESS_KEY', '')

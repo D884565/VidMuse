@@ -46,7 +46,7 @@ class ScriptGenerationService:
         if self._script_agent is None:
             try:
                 # 动态导入避免循环依赖
-                from backend.v1.app.agent import ScriptAgent
+                from backend.v1.app.agent.implementations.script_agent import ScriptAgent
                 self._script_agent = ScriptAgent()
             except Exception as e:
                 raise RuntimeError(f"初始化ScriptAgent失败: {str(e)}")
@@ -830,9 +830,9 @@ class ScriptGenerationService:
         # 如果用户指定了template_id但没指定模式，默认使用template模式
         if template_id and not creation_mode:
             creation_mode = "template"
-        # 如果没有指定模式，默认使用independent自主创作模式
+        # 如果没有指定模式，默认使用auto模式，由大模型自主选择最合适的创作模式
         elif not creation_mode:
-            creation_mode = "independent"
+            creation_mode = "auto"
 
         try:
             # 在独立线程中运行Agent（避免阻塞事件循环）

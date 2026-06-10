@@ -29,7 +29,7 @@ AGENT_CONFIG = {
 
     # 上下文构建配置
     "context": {
-        "template_dir": str(BASE_DIR / "backend" / "v1" / "app" / "agent" / "templates"),
+        "template_dir": str(BASE_DIR / "v1" / "app" / "agent" / "templates"),
         "max_context_length": 8192,  # 最大上下文长度
     },
 

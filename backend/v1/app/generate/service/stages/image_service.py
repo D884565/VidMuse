@@ -156,7 +156,8 @@ class ImageGenerationService:
             prompt = resolve_image_generation_prompt(frame, style=style)
             if reference_images:
                 prompt = self._build_reference_image_prompt(prompt)
-                image_path = self._call_image_to_image(prompt, reference_images)
+                # 火山引擎图生图API只接受单个参考图片，取列表第一个
+                image_path = self._call_image_to_image(prompt, reference_images[0])
             else:
                 image_path = self._call_text_to_image(prompt)
 
@@ -248,8 +249,10 @@ class ImageGenerationService:
         logger.info(f"[文生图] API 调用成功: {output_path}")
         return output_path
 
-    def _call_image_to_image(self, prompt: str, reference_image_url: str | list[str]) -> str:
-        """调用火山引擎 Ark 平台图生图 API，返回本地图片路径。"""
+    def _call_image_to_image(self, prompt: str, reference_image_url: str) -> str:
+        """调用火山引擎 Ark 平台图生图 API，返回本地图片路径。
+        :param reference_image_url: 单个参考图片 URL（火山引擎API仅支持单张参考图）
+        """
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.api_key}",

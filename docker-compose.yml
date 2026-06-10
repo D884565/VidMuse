@@ -201,7 +201,7 @@ services:
       - MYSQL_USER=aigc_user
       - MYSQL_PASSWORD=123456
       - MYSQL_ROOT_PASSWORD=root_password
-      - DATABASE_URL=mysql+aiomysql://aigc_user:123456@mysql:3306/aigc_video?charset=utf8mb4
+      - DATABASE_URL=mysql+aiomysql://root:root_password@mysql:3306/aigc_video?charset=utf8mb4
 
       # Redis 配置
       - REDIS_HOST=redis
