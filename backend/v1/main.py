@@ -48,10 +48,11 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     os.makedirs(settings.LOCAL_STORAGE_ROOT, exist_ok=True)
-    from backend.store.database.schema_bootstrap import ensure_product_assets_table
+    from backend.store.database.schema_bootstrap import ensure_product_assets_table, ensure_seed_bgm_assets
     from backend.v1.app.push.service.redis_client import redis_client
 
     ensure_product_assets_table()
+    ensure_seed_bgm_assets()
 
     # 初始化Redis客户端
     await redis_client.initialize()
