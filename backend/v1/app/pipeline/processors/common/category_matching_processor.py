@@ -108,7 +108,11 @@ class CategoryMatchingProcessor(BaseProcessor):
                 context.set("category_name_path", match_result["name_path"])
 
             else:
-                logger.warning(f"分类匹配失败，{source_type}_id: {source_id}, 分类文本: '{category_text}'")
+                # 处理ID为空的情况，更清晰的日志
+                if not source_id:
+                    logger.warning(f"分类匹配失败，{source_type}_id为空, 分类文本: '{category_text}'")
+                else:
+                    logger.warning(f"分类匹配失败，{source_type}_id: {source_id}, 分类文本: '{category_text}'")
                 # 匹配失败时可以设置默认分类，或者保持原样
                 context.set("category_match_failed", True)
 

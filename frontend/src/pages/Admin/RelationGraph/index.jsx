@@ -92,9 +92,8 @@ const RelationGraph = () => {
         min_usage: filters.minUsage || undefined,
         min_success_rate: filters.minSuccessRate > 0 ? filters.minSuccessRate : undefined
       }
-      const res = await getRelationGraph(params)
-      const data = res.data || { nodes: [], edges: [] }
-      setGraphData(data)
+      const data = await getRelationGraph(params)
+      setGraphData(data || { nodes: [], edges: [] })
 
       // 应用筛选后渲染
       renderGraph(data)
@@ -116,27 +115,40 @@ const RelationGraph = () => {
 
     // 转换数据格式适配G6
     const g6Data = {
-      nodes: (filteredData.nodes || []).map(node => ({
-        id: node.id,
-        type: 'circle',
-        size: node.size || 30,
-        color: node.color || '#999',
-        style: { fill: node.color || '#999' },
-        label: node.name?.length > 8 ? node.name.slice(0, 6) + '...' : node.name || '',
-        ...node
-      })),
-      edges: (filteredData.edges || []).map(edge => ({
-        id: edge.id,
-        source: edge.source,
-        target: edge.target,
-        label: edge.label || '',
-        style: {
-          stroke: edge.color || '#999',
-          lineDash: edge.style === 'dashed' ? [5, 5] : edge.style === 'dotted' ? [2, 2] : [],
-          lineWidth: edge.value || 1
-        },
-        ...edge
-      }))
+      nodes: (filteredData.nodes || []).map(node => {
+        const g6Node = {
+          id: node.id,
+          type: 'circle', // G6节点类型，固定为圆形
+          nodeType: node.type, // 保存业务类型（strategy/template/factor）
+          size: node.size || 30,
+          color: node.color || '#999',
+          style: { fill: node.color || '#999' },
+          label: node.name?.length > 8 ? node.name.slice(0, 6) + '...' : node.name || '',
+          ...node
+        }
+        // 确保type不被覆盖
+        g6Node.type = 'circle'
+        return g6Node
+      }),
+      edges: (filteredData.edges || []).map(edge => {
+        const g6Edge = {
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          type: 'cubic-horizontal', // 曲线边
+          edgeType: edge.type, // 保存业务类型（strategy-template/template-factor）
+          label: edge.label || '',
+          style: {
+            stroke: edge.color || '#999',
+            lineDash: edge.style === 'dashed' ? [5, 5] : edge.style === 'dotted' ? [2, 2] : [],
+            lineWidth: edge.value || 1
+          },
+          ...edge
+        }
+        // 确保type不被覆盖
+        g6Edge.type = 'cubic-horizontal'
+        return g6Edge
+      })
     }
 
     graphRef.current.changeData(g6Data)

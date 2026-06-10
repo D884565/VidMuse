@@ -125,15 +125,18 @@ class FFmpegVideoTool:
 
     def _validate_tools(self):
         """验证 FFmpeg / FFprobe 可用"""
+        import logging
+        logger = logging.getLogger(__name__)
+
         for tool in [self.ffmpeg, self.ffprobe]:
             try:
                 result = subprocess.run(
                     [tool, "-version"], capture_output=True, text=True, timeout=10,
                 )
                 if result.returncode != 0:
-                    raise RuntimeError(f"{tool} 返回错误")
+                    logger.warning(f"{tool} 返回错误，视频处理功能将不可用")
             except FileNotFoundError:
-                raise RuntimeError(f"未找到 {tool}，请确保 FFmpeg 已安装")
+                logger.warning(f"未找到 {tool}，请确保 FFmpeg 已安装，视频处理功能将不可用")
 
     def _run_command(
         self,

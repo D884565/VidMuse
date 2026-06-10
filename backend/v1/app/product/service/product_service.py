@@ -306,7 +306,8 @@ class ProductService(BaseParsingService):
             "product_id": product_id,
             "description": description,
             "images": images,
-            "selected_asset_id": asset_id  # 传递指定的资产ID给get_asset_id方法
+            "selected_asset_id": asset_id,  # 传递指定的资产ID给get_asset_id方法
+            "business_type": "ProductService",
         }
         if target_asset:
             context["asset_type"] = target_asset.type

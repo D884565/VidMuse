@@ -155,6 +155,8 @@ class VideoProductUnderstandingProcessor(BaseProcessor):
                 try:
                     import demjson3
                     return demjson3.decode(content, strict=False)
+                except ImportError:
+                    logger.warning("demjson3模块未安装，跳过demjson3解析，尝试标准JSON解析")
                 except Exception as e:
                     logger.warning(f"demjson3解析失败，尝试标准JSON解析: {str(e)}")
 
@@ -237,7 +239,9 @@ class VideoProductUnderstandingProcessor(BaseProcessor):
                     try:
                         import demjson3
                         return demjson3.decode(content, strict=False)
-                    except:
+                    except ImportError:
+                        logger.warning("demjson3模块未安装，跳过demjson3解析")
+                    except Exception:
                         pass
                 except Exception as e:
                     logger.warning(f"逐行修复失败: {str(e)}")
@@ -259,8 +263,12 @@ class VideoProductUnderstandingProcessor(BaseProcessor):
                     content = '\n'.join(lines)
 
                     # 再次尝试解析
-                    import demjson3
-                    return demjson3.decode(content, strict=False)
+                    try:
+                        import demjson3
+                        return demjson3.decode(content, strict=False)
+                    except ImportError:
+                        logger.warning("demjson3模块未安装，跳过demjson3解析")
+                        raise  # 重新抛出异常，让后续处理逻辑继续
                 except Exception as e:
                     logger.error(f"手动修复也失败: {str(e)}")
 

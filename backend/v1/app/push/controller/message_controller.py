@@ -41,7 +41,7 @@ async def get_user_messages(
         page_size=page_size
     )
 
-    total, unread_count, messages = await message_dao.get_user_messages(db, current_user.id, query_params)
+    total, unread_count, messages = await message_dao.get_user_messages(db, current_user, query_params)
 
     return Response.success(data=MessageListResponse(
         total=total,
@@ -59,7 +59,7 @@ async def mark_messages_as_read(
     db: AsyncSession = Depends(get_db)
 ):
     """批量标记消息为已读"""
-    updated = await message_dao.mark_messages_as_read(db, current_user.id, request.message_ids)
+    updated = await message_dao.mark_messages_as_read(db, current_user, request.message_ids)
     return Response.success(data={"updated_count": updated})
 
 
@@ -69,7 +69,7 @@ async def get_unread_count(
     db: AsyncSession = Depends(get_db)
 ):
     """获取当前用户未读消息数量"""
-    count = await message_dao.get_unread_count(db, current_user.id)
+    count = await message_dao.get_unread_count(db, current_user)
     return Response.success(data={"unread_count": count})
 
 

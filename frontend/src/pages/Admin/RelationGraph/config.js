@@ -16,7 +16,7 @@ export const GRAPH_CONFIG = {
           return `
             <div class="graph-tooltip">
               <div class="font-bold">${model.name}</div>
-              <div class="text-sm text-gray-500">${getTypeLabel(model.type)}</div>
+              <div class="text-sm text-gray-500">${getTypeLabel(model.nodeType || model.type)}</div>
               ${model.data?.usage_count !== undefined ? `<div class="text-xs">使用次数: ${model.data.usage_count}</div>` : ''}
               ${model.data?.success_rate !== undefined ? `<div class="text-xs">成功率: ${(model.data.success_rate * 100).toFixed(1)}%</div>` : ''}
             </div>

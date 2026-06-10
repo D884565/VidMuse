@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Any
 from abc import ABC
 
 from backend.store.vector import VectorDatabase, get_vector_db_client, VectorDBType
@@ -75,3 +75,25 @@ class CollectionDAO(ABC):
         :return: 绑定到当前集合的VectorDatabase实例
         """
         return self._vector_client
+
+    def get_all(self, limit: int = 1000, with_vectors: bool = True) -> List[Dict[str, Any]]:
+        """
+        获取集合中的所有向量数据
+        :param limit: 每次批量获取的数量
+        :param with_vectors: 是否返回向量数据
+        :return: 包含id、vector、content、metadata等信息的列表
+        """
+        result = self._vector_client.get_all(limit=limit, with_vectors=with_vectors)
+
+        items = []
+        for i in range(len(result["ids"])):
+            item = {
+                "id": result["ids"][i],
+                "content": result["documents"][i],
+                "metadata": result["metadatas"][i],
+            }
+            if with_vectors and result["vectors"]:
+                item["vector"] = result["vectors"][i]
+            items.append(item)
+
+        return items

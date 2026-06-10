@@ -368,6 +368,56 @@ class QdrantClient(VectorDatabase):
         # Qdrant自动管理内存，无需手动操作
         pass
 
+    def get_all(self, limit: int = 1000, offset: int = 0, with_vectors: bool = True) -> Dict:
+        """
+        批量获取集合中的所有向量
+        :param limit: 每次获取的数量
+        :param offset: 偏移量（Qdrant scroll不支持offset，使用last_point_id进行分页）
+        :param with_vectors: 是否返回向量数据
+        :return: 包含ids、vectors、metadatas、documents的字典
+        """
+        try:
+            all_points = []
+            last_point_id = None
+
+            while True:
+                # 使用scroll API滚动获取所有点
+                search_result, next_page_offset = self.client.scroll(
+                    collection_name=self.collection_name,
+                    limit=limit,
+                    offset=last_point_id,
+                    with_payload=True,
+                    with_vectors=with_vectors
+                )
+
+                all_points.extend(search_result)
+
+                if next_page_offset is None:
+                    break
+
+                last_point_id = next_page_offset
+
+            # 转换为统一格式
+            formatted_results = {
+                "ids": [],
+                "vectors": [],
+                "metadatas": [],
+                "documents": []
+            }
+
+            for point in all_points:
+                # 返回原始ID而不是转换后的UUID
+                original_id = point.payload.get("original_id", str(point.id))
+                formatted_results["ids"].append(original_id)
+                if with_vectors:
+                    formatted_results["vectors"].append(point.vector)
+                formatted_results["metadatas"].append(point.payload.get("metadata", {}))
+                formatted_results["documents"].append(point.payload.get("document", ""))
+
+            return formatted_results
+        except Exception as e:
+            raise RuntimeError(f"获取Qdrant所有向量失败: {str(e)}")
+
 
 def get_qdrant_client(collection_name: str = None):
     """获取Qdrant客户端实例"""

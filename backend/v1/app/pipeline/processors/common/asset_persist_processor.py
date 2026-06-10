@@ -7,6 +7,7 @@ from backend.framework.trace import trace
 from backend.v1.app.pipeline.base import BaseProcessor, PipelineContext
 from backend.v1.app.assets.dao.asset_dao import AssetDAO
 from backend.v1.app.product.dao.product_dao import ProductDAO
+from backend.v1.app.admin.video_library.dao.video_library_dao import VideoLibraryDAO
 from backend.store.database.sync_database import get_db
 
 logger = logging.getLogger(__name__)
@@ -101,50 +102,26 @@ class AssetPersistProcessor(BaseProcessor):
             business_id = context.get("business_id")
             business_type = context.get("business_type")
             if business_id and business_type:
-                try:
-                    # 根据业务类型获取对应的服务实例
-                    service = None
-                    if business_type in ["AssetService", "asset"]:
-                        from backend.v1.app.assets.service.asset_service import AssetService
-                        service = AssetService()
-                    elif business_type in ["ProductService", "product"]:
-                        from backend.v1.app.product.service.product_service import ProductService
-                        service = ProductService()
-                    elif business_type in ["VideoLibraryService", "video_library"]:
-                        from backend.v1.app.admin.video_library.service.video_library_service import VideoLibraryService
-                        service = VideoLibraryService()
-
-                    if service and hasattr(service, "sync_status"):
-                        service.sync_status(db, int(business_id), updated_asset)
-                        logger.info(f"已同步状态到{business_type}，业务ID: {business_id}")
-                except Exception as e:
-                    logger.error(f"同步状态到业务表失败: {str(e)}", exc_info=True)
-                    # 同步失败不影响主流程，只记录日志
-
-            # 如果有product_id，更新products表
-            product_id = context.get("product_id")
-            if product_id:
-                try:
-                    product_update_data = {
-                        "ai_features": product_data  # 将解析结果存入商品表的ai_features字段
-                    }
+                if business_type in ["ProductService", "product"]:
+                    # 如果有product_id，更新products表
+                    product_id = context.get("product_id")
+                    AssetDAO.update_asset(db,int(asset_id),update_data)
                     # 如果有分类信息，也更新分类
                     category_id = context.get("category_id")
                     if category_id:
-                        product_update_data.update({
+                        product_data = update_data.update({
                             "category_id": category_id,
                             "category": context.get("category_name"),
                             "category_path": context.get("category_path")
                         })
-                    # 更新商品记录
-                    updated_product = ProductDAO.update_product(db, int(product_id), product_update_data)
-                    if updated_product:
-                        db.commit()  # 显式提交，确保商品更新持久化
-                        logger.info(f"商品信息成功更新，product_id: {product_id}")
-                        context.set("product_info", updated_product.to_dict())
-                except Exception as e:
-                    logger.error(f"更新商品信息失败: {str(e)}", exc_info=True)
-                    context.add_error(ValueError(f"更新商品信息失败: {str(e)}"))
+                    ProductDAO.update_product(db,int(product_id),product_data)
+                elif business_type in ["VideoLibraryService", "video_library"]:
+                    video_id = context.get("video_id")
+                    VideoLibraryDAO.update(db,video_id,update_data) 
+            
+            
+            
+            db.commit()
 
         except Exception as e:
             logger.error(f"资产落库失败: {str(e)}", exc_info=True)

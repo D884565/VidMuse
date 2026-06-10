@@ -72,10 +72,6 @@ class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
                 f"current_active={limit - semaphore._value}, "
                 f"limit={limit}"
             )
-
-            # 执行请求
-            return await call_next(request)
-
         except asyncio.TimeoutError:
             # 等待超时，返回429错误
             logger.warning(
@@ -92,8 +88,12 @@ class ConcurrencyLimitMiddleware(BaseHTTPMiddleware):
                 }
             )
         except Exception as e:
-            # 中间件异常（获取信号量阶段），记录日志并放行，避免中间件故障影响业务
+            # 获取信号量阶段发生异常，记录日志并放行，避免中间件故障影响业务
             logger.error(f"Concurrency limit middleware error when acquiring semaphore: {str(e)}", exc_info=True)
+            return await call_next(request)
+
+        try:
+            # 执行请求
             return await call_next(request)
         finally:
             # 只有成功获取到信号量的才需要释放

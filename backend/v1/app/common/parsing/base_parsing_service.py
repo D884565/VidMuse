@@ -148,7 +148,6 @@ class BaseParsingService(ABC):
                     # 添加业务标识参数
                     pipeline_params.update({
                         "business_id": business_id,
-                        "business_type": self.__class__.__name__,
                     })
 
                     # 如果有资产，添加资产相关参数

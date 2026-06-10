@@ -7,10 +7,12 @@ import {
   Download,
   Info,
   ChevronDown,
-  ChevronRight
+  ChevronRight,
+  Play,
+  Settings
 } from 'lucide-react'
 import PageContainer from '../../components/Admin/Layout/PageContainer'
-import { Card, Tabs, Select, Button, Table, Modal, message, Tag, Space, Progress } from 'antd'
+import { Card, Tabs, Select, Button, Table, Modal, message, Tag, Space, Progress, InputNumber, Form, Slider } from 'antd'
 import {
   ScatterChart,
   Scatter,
@@ -30,7 +32,9 @@ import {
 } from 'recharts'
 import {
   getClusterOverview,
-  getClusterDetail
+  getClusterDetail,
+  runClusterAnalysis,
+  getClusterAnalysisStatus
 } from '../../services/admin'
 
 const { TabPane } = Tabs
@@ -52,15 +56,25 @@ export default function ClusterVisualization() {
   const [selectedCluster, setSelectedCluster] = useState(null)
   const [detailModalVisible, setDetailModalVisible] = useState(false)
   const [expandedClusters, setExpandedClusters] = useState(new Set())
+  const [configModalVisible, setConfigModalVisible] = useState(false)
+  const [clusterConfig, setClusterConfig] = useState({
+    maxVectors: 800,
+    clusterEps: 0.2,
+    minSamples: 3
+  })
+  const [taskStatus, setTaskStatus] = useState(null)
+  const [pollingInterval, setPollingInterval] = useState(null)
 
   // 加载数据
   const loadData = async () => {
     setLoading(true)
     try {
       const overviewData = await getClusterOverview()
-      setOverview(overviewData.data)
-      setClusters(overviewData.data?.clusters || [])
+      // 模拟数据直接返回数据对象，不需要.data
+      setOverview(overviewData)
+      setClusters(overviewData?.clusters || [])
     } catch (error) {
+      console.error('加载失败:', error)
       message.error('加载聚类数据失败')
     } finally {
       setLoading(false)
@@ -75,9 +89,11 @@ export default function ClusterVisualization() {
   const viewClusterDetail = async (clusterId) => {
     try {
       const detail = await getClusterDetail(clusterId)
-      setSelectedCluster(detail.data)
+      // 模拟数据直接返回数据对象，不需要.data
+      setSelectedCluster(detail)
       setDetailModalVisible(true)
     } catch (error) {
+      console.error('加载详情失败:', error)
       message.error('加载簇详情失败')
     }
   }
@@ -93,10 +109,101 @@ export default function ClusterVisualization() {
     setExpandedClusters(newExpanded)
   }
 
+  // 运行聚类分析
+  const handleRunCluster = async () => {
+    try {
+      const res = await runClusterAnalysis({
+        max_vectors: clusterConfig.maxVectors,
+        cluster_eps: clusterConfig.clusterEps,
+        min_samples: clusterConfig.minSamples
+      })
+      message.success('聚类分析任务已启动')
+      setConfigModalVisible(false)
+      // 开始轮询任务状态
+      const interval = setInterval(() => {
+        pollTaskStatus(res.task_id)
+      }, 1000)
+      setPollingInterval(interval)
+    } catch (error) {
+      console.error('启动失败:', error)
+      message.error('启动聚类分析失败')
+    }
+  }
+
+  // 轮询任务状态
+  const pollTaskStatus = async (taskId) => {
+    try {
+      const res = await getClusterAnalysisStatus(taskId)
+      setTaskStatus(res)
+
+      if (res.status === 'completed') {
+        message.success(res.message || '聚类分析完成')
+        clearInterval(pollingInterval)
+        setPollingInterval(null)
+        setTaskStatus(null)
+        // 重新加载数据
+        loadData()
+      } else if (res.status === 'failed') {
+        message.error(res.message || '聚类分析失败')
+        clearInterval(pollingInterval)
+        setPollingInterval(null)
+        setTaskStatus(null)
+      }
+    } catch (error) {
+      console.error('获取任务状态失败', error)
+    }
+  }
+
+  // 导出聚类数据
+  const handleExportData = () => {
+    if (!clusters.length) {
+      message.warning('暂无数据可导出')
+      return
+    }
+
+    // 构造导出数据
+    const exportData = {
+      overview: overview,
+      clusters: clusters,
+      exported_at: new Date().toISOString()
+    }
+
+    // 下载为JSON文件
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `cluster-analysis-${new Date().toISOString().slice(0, 10)}.json`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+    message.success('数据导出成功')
+  }
+
+  // 组件卸载时清除轮询
+  useEffect(() => {
+    return () => {
+      if (pollingInterval) {
+        clearInterval(pollingInterval)
+      }
+    }
+  }, [pollingInterval])
+
   // 生成散点图数据（降维后的向量）
   const getScatterData = () => {
     if (!overview?.visualization_data) return []
-    return overview.visualization_data.points || []
+    const points = overview.visualization_data.points || []
+    // 添加size字段，根据簇的样本数量动态调整点的大小
+    return points.map(point => {
+      // 找到对应的簇获取样本数量
+      const cluster = clusters.find(c => c.cluster_id === point.cluster_id ||
+                                        c.cluster_id === point.original_cluster_id)
+      return {
+        ...point,
+        size: cluster?.sample_count || 50 // 默认大小50
+      }
+    })
   }
 
   // 生成饼图数据
@@ -209,6 +316,21 @@ export default function ClusterVisualization() {
           >
             刷新
           </Button>
+          <Button
+            icon={<Settings size={16} />}
+            onClick={() => setConfigModalVisible(true)}
+            loading={!!pollingInterval}
+          >
+            聚类参数
+          </Button>
+          <Button
+            type="primary"
+            icon={<Play size={16} />}
+            onClick={() => setConfigModalVisible(true)}
+            loading={!!pollingInterval}
+          >
+            运行聚类分析
+          </Button>
         </Space>
       }
     >
@@ -294,7 +416,7 @@ export default function ClusterVisualization() {
                     <CartesianGrid strokeDasharray="3 3" />
                     <XAxis type="number" dataKey="x" name="X" />
                     <YAxis type="number" dataKey="y" name="Y" />
-                    <ZAxis type="number" dataKey="cluster_id" range={[60, 400]} name="簇ID" />
+                    <ZAxis type="number" dataKey="size" range={[60, 400]} name="样本数量" />
                     <Tooltip cursor={{ strokeDasharray: '3 3' }} />
                     <Legend />
                     <Scatter
@@ -463,6 +585,69 @@ export default function ClusterVisualization() {
         </TabPane>
       </Tabs>
 
+      {/* 聚类参数配置模态框 */}
+      <Modal
+        title="聚类分析参数配置"
+        open={configModalVisible}
+        onCancel={() => setConfigModalVisible(false)}
+        footer={[
+          <Button key="back" onClick={() => setConfigModalVisible(false)}>
+            取消
+          </Button>,
+          <Button key="run" type="primary" onClick={handleRunCluster} loading={!!pollingInterval}>
+            开始聚类分析
+          </Button>
+        ]}
+        width={500}
+      >
+        <Form layout="vertical">
+          <Form.Item label="最大处理向量数量">
+            <InputNumber
+              min={100}
+              max={5000}
+              step={100}
+              value={clusterConfig.maxVectors}
+              onChange={(value) => setClusterConfig(prev => ({ ...prev, maxVectors: value }))}
+              className="w-full"
+            />
+            <p className="text-xs text-gray-500 mt-1">数量越多，聚类时间越长，建议不超过2000</p>
+          </Form.Item>
+
+          <Form.Item label="聚类阈值 (cluster_eps)">
+            <Slider
+              min={0.05}
+              max={0.5}
+              step={0.05}
+              value={clusterConfig.clusterEps}
+              onChange={(value) => setClusterConfig(prev => ({ ...prev, clusterEps: value }))}
+              tooltip={{ formatter: (value) => value?.toFixed(2) }}
+            />
+            <p className="text-xs text-gray-500 mt-1">值越小，生成的簇越多，每个簇内样本越相似</p>
+          </Form.Item>
+
+          <Form.Item label="最小样本数 (min_samples)">
+            <InputNumber
+              min={2}
+              max={20}
+              value={clusterConfig.minSamples}
+              onChange={(value) => setClusterConfig(prev => ({ ...prev, minSamples: value }))}
+              className="w-full"
+            />
+            <p className="text-xs text-gray-500 mt-1">形成一个簇所需的最小样本数，值越大，噪声点越多</p>
+          </Form.Item>
+
+          {taskStatus && (
+            <div className="p-4 bg-blue-50 rounded">
+              <p className="text-sm font-medium mb-2">
+                任务状态: {taskStatus.status === 'running' ? '运行中' : taskStatus.status}
+              </p>
+              <p className="text-xs text-gray-600 mb-1">当前阶段: {taskStatus.stage}</p>
+              <Progress percent={taskStatus.progress} size="small" />
+            </div>
+          )}
+        </Form>
+      </Modal>
+
       {/* 簇详情模态框 */}
       <Modal
         title={`簇 ${selectedCluster?.cluster_id} 详细信息`}
@@ -472,7 +657,7 @@ export default function ClusterVisualization() {
           <Button key="back" onClick={() => setDetailModalVisible(false)}>
             关闭
           </Button>,
-          <Button key="download" type="primary" icon={<Download size={14} />}>
+          <Button key="download" type="primary" icon={<Download size={14} />} onClick={handleExportData}>
             导出数据
           </Button>
         ]}

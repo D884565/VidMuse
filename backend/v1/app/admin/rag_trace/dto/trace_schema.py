@@ -25,7 +25,8 @@ class AgentTraceBase(BaseModel):
     created_at: datetime = Field(description="创建时间")
 
     model_config = {
-        "from_attributes": True
+        "from_attributes": True,
+        "populate_by_name": True
     }
 
 
@@ -36,7 +37,7 @@ class AgentTraceDetail(AgentTraceBase):
     messages_history: List[Dict[str, Any]] = Field(description="完整的消息历史")
     tool_calls: Optional[List[Dict[str, Any]]] = Field(None, description="所有工具调用信息")
     tool_results: Optional[List[str]] = Field(None, description="所有工具返回结果")
-    metadata: Optional[Dict[str, Any]] = Field(None, description="扩展元数据")
+    metadata: Optional[Dict[str, Any]] = Field(None, description="扩展元数据", validation_alias="meta_data")
 
 
 class AgentTraceListResponse(BaseModel):

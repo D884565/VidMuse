@@ -9,6 +9,9 @@ from backend.framework.trace.compat import PushConfig
 from backend.framework.trace.hooks import TraceHooks
 from .service import push_service
 from backend.store.database.async_database import SessionLocal
+
+# 保存所有后台推送任务的引用，防止被GC回收
+_background_push_tasks: set[asyncio.Task] = set()
 async def do_push(
     push_config: PushConfig,
     user_id: int,
@@ -71,11 +74,15 @@ def create_push_hooks(push_config: PushConfig, func: Callable) -> TraceHooks:
                     if hasattr(func, '__get__') and span.args:
                         bound_func = func.__get__(span.args[0], span.args[0].__class__)
                     # 异步推送
-                    asyncio.create_task(do_push(
+                    task = asyncio.create_task(do_push(
                         push_config, user_id,
                         push_config.start_message_generator,
                         bound_func, span.args, span.kwargs
                     ))
+                    # 保存任务引用，防止被GC回收
+                    _background_push_tasks.add(task)
+                    # 任务完成后自动移除引用
+                    task.add_done_callback(_background_push_tasks.discard)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
@@ -93,11 +100,15 @@ def create_push_hooks(push_config: PushConfig, func: Callable) -> TraceHooks:
                     if hasattr(func, '__get__') and span.args:
                         bound_func = func.__get__(span.args[0], span.args[0].__class__)
                     # 异步推送
-                    asyncio.create_task(do_push(
+                    task = asyncio.create_task(do_push(
                         push_config, user_id,
                         push_config.end_message_generator,
                         bound_func, span.return_value
                     ))
+                    # 保存任务引用，防止被GC回收
+                    _background_push_tasks.add(task)
+                    # 任务完成后自动移除引用
+                    task.add_done_callback(_background_push_tasks.discard)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
@@ -115,11 +126,15 @@ def create_push_hooks(push_config: PushConfig, func: Callable) -> TraceHooks:
                     if hasattr(func, '__get__') and span.args:
                         bound_func = func.__get__(span.args[0], span.args[0].__class__)
                     # 异步推送
-                    asyncio.create_task(do_push(
+                    task = asyncio.create_task(do_push(
                         push_config, user_id,
                         push_config.error_message_generator,
                         bound_func, exc
                     ))
+                    # 保存任务引用，防止被GC回收
+                    _background_push_tasks.add(task)
+                    # 任务完成后自动移除引用
+                    task.add_done_callback(_background_push_tasks.discard)
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)

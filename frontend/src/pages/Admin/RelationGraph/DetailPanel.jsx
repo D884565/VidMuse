@@ -26,7 +26,7 @@ const DetailPanel = ({ item, onClose }) => {
     if (type === 'node') {
       const nodeData = data.data || {}
       const baseItems = [
-        { label: '类型', value: NODE_TYPE_MAP[data.type]?.label || data.type },
+        { label: '类型', value: NODE_TYPE_MAP[data.nodeType || data.type]?.label || (data.nodeType || data.type) },
         { label: '名称', value: data.name },
         { label: 'ID', value: nodeData.id || '-' },
         { label: '使用次数', value: nodeData.usage_count },
@@ -63,7 +63,7 @@ const DetailPanel = ({ item, onClose }) => {
     } else { // edge
       const edgeData = data.data || {}
       return [
-        { label: '关系类型', value: data.type === 'strategy-template' ? '策略→模板' : '模板→因子' },
+        { label: '关系类型', value: (data.edgeType || data.type) === 'strategy-template' ? '策略→模板' : '模板→因子' },
         { label: '源节点', value: data.source },
         { label: '目标节点', value: data.target },
         { label: '关联类型', value: data.label },
@@ -80,7 +80,7 @@ const DetailPanel = ({ item, onClose }) => {
     if (type !== 'node') return null
 
     const nodeData = data.data || {}
-    switch (data.type) {
+    switch (data.nodeType || data.type) {
       case 'strategy':
         return `/admin/inspiration?tab=strategies&id=${nodeData.id}`
       case 'template':

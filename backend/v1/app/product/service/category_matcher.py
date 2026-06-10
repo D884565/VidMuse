@@ -36,6 +36,9 @@ class ProductCategoryMatcher:
         "手表": ["腕表", "智能手表"],
         "相机": ["照相机", "数码相机", "单反相机"],
         "平板": ["平板电脑", "iPad"],
+        "海鲜": ["海鲜水产", "海产品"],
+        "海参": ["海刺参", "辽参"],
+        "食品饮料": ["食品", "饮料", "食品酒水"],
     }
 
     def __new__(cls):
@@ -142,15 +145,34 @@ class ProductCategoryMatcher:
         if not levels:
             return None
 
-        # 尝试完全匹配路径（从最后往前匹配）
-        for i in range(len(levels)):
-            sub_path = '>'.join(levels[i:])
-            # 查找所有分类的名称路径是否包含该子路径
-            for category in self._categories:
-                # 构建分类的名称路径（如：家用电器>厨房小电>电饭煲）
-                category_name_path = self._get_category_name_path(category)
-                if sub_path in category_name_path:
-                    return category
+        best_match = None
+        max_match_length = 0
+
+        # 尝试匹配路径，优先匹配更多层级的
+        for category in self._categories:
+            category_name_path = self._get_category_name_path(category)
+            category_levels = category_name_path.split('>')
+
+            # 计算匹配的层级数
+            match_count = 0
+            # 从后往前匹配，优先匹配最后几级
+            for level in reversed(levels):
+                if level in [cat_level.strip() for cat_level in reversed(category_levels)]:
+                    match_count += 1
+                else:
+                    break
+
+            # 如果匹配到至少2层，或者匹配到最后一层且分类是三级分类
+            if match_count > max_match_length:
+                # 额外检查：如果匹配的是最后一级，优先选择三级分类
+                if match_count == 1 and category.level != 3:
+                    continue
+                max_match_length = match_count
+                best_match = category
+
+        if best_match and max_match_length >= 1:
+            logger.debug(f"路径匹配成功: 匹配{max_match_length}层, '{'>'.join(levels)}' -> '{self._get_category_name_path(best_match)}'")
+            return best_match
 
         return None
 
@@ -208,8 +230,16 @@ class ProductCategoryMatcher:
         :param category_text: 大模型输出的分类文本，支持多种格式
         :return: 匹配结果字典，包含id, name, path, level等字段，未匹配到返回None
         """
-        if not category_text or not self._categories:
+        if not category_text:
             return None
+
+        # 如果分类数据未加载，尝试重新加载一次
+        if not self._categories:
+            logger.warning("分类数据为空，尝试重新加载分类数据...")
+            self.reload()
+            if not self._categories:
+                logger.error("分类数据加载失败，无法进行分类匹配")
+                return None
 
         try:
             levels = self._parse_category_levels(category_text)

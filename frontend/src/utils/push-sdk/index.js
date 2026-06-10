@@ -242,6 +242,12 @@ class PushClient {
         return
       }
 
+      // 发送消息确认（除了系统消息和心跳）
+      // 收到消息立即发送ack，确保服务器知道消息已送达，避免重发
+      if (message.message_id && message.message_type !== 'system') {
+        this._sendAck(message.message_id)
+      }
+
       // 触发全局消息监听器
       this._emit('message', message)
 
@@ -254,11 +260,6 @@ class PushClient {
             console.error('Message listener error:', error)
           }
         })
-      }
-
-      // 发送消息确认（除了系统消息和心跳）
-      if (message.message_id && message.message_type !== 'system') {
-        this._sendAck(message.message_id)
       }
     } catch (error) {
       console.error('Failed to parse message:', error)
@@ -322,7 +323,7 @@ class PushClient {
         // 设置心跳超时
         this.heartbeatTimeoutTimer = setTimeout(() => {
           console.error('Heartbeat timeout')
-          this.ws.close(1008, 'Heartbeat timeout')
+          this.ws.close(1000, 'Heartbeat timeout')
         }, this.options.heartbeatTimeout)
       }
     }, this.options.heartbeatInterval)

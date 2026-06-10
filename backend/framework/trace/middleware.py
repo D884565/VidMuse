@@ -3,7 +3,7 @@ import uuid
 import time
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Set
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -29,6 +29,11 @@ class TraceMiddleware(BaseHTTPMiddleware):
         app = FastAPI()
         app.add_middleware(TraceMiddleware)
     """
+
+    def __init__(self, app):
+        super().__init__(app)
+        # 保存所有后台任务的引用，防止被GC回收
+        self._background_tasks: Set[asyncio.Task] = set()
 
     async def dispatch(self, request: Request, call_next):
         if not trace_config.TRACE_ENABLED:
@@ -107,7 +112,7 @@ class TraceMiddleware(BaseHTTPMiddleware):
             user_id = get_user_id()
 
             # 无论是否有response都保存数据（包括异常情况）
-            asyncio.create_task(self._save_trace_async(
+            task = asyncio.create_task(self._save_trace_async(
                 trace_id=trace_id,
                 user_id=user_id,
                 method=request.method,
@@ -120,6 +125,10 @@ class TraceMiddleware(BaseHTTPMiddleware):
                 response_headers=response_headers,
                 spans=spans,
             ))
+            # 保存任务引用，防止被GC回收
+            self._background_tasks.add(task)
+            # 任务完成后自动移除引用
+            task.add_done_callback(self._background_tasks.discard)
 
             # 清理上下文
             trace_id_var.reset(token_trace)

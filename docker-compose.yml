@@ -63,6 +63,10 @@ services:
       - TOS_REGION=${TOS_REGION:-cn-beijing}
       - TOS_SECURE=${TOS_SECURE:-true}
 
+      # FFmpeg 配置（Linux 系统路径，覆盖 .env 中的 Windows 路径）
+      - FFMPEG_PATH=/usr/bin/ffmpeg
+      - FFPROBE_PATH=/usr/bin/ffprobe
+
 
 
     env_file:
@@ -233,6 +237,10 @@ services:
       - TOS_BUCKET_NAME=${TOS_BUCKET_NAME:-vidmuse}
       - TOS_REGION=${TOS_REGION:-cn-beijing}
       - TOS_SECURE=${TOS_SECURE:-true}
+
+      # FFmpeg 配置（Linux 系统路径，覆盖 .env 中的 Windows 路径）
+      - FFMPEG_PATH=/usr/bin/ffmpeg
+      - FFPROBE_PATH=/usr/bin/ffprobe
     env_file:
       - .env
     depends_on:

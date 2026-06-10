@@ -20,6 +20,8 @@ class ConnectionManager:
         # Redis频道名称
         self._push_channel = "ws:push:message"
         self._broadcast_channel = "ws:broadcast:message"
+        # 保存后台任务引用，防止被GC回收
+        self._background_tasks: set[asyncio.Task] = set()
 
     # ====================== 异步初始化 ======================
     async def initialize(self):
@@ -42,7 +44,11 @@ class ConnectionManager:
             return
 
         # 在后台任务中发送消息
-        asyncio.create_task(self.send_personal_message(message, user_id))
+        task = asyncio.create_task(self.send_personal_message(message, user_id))
+        # 保存任务引用，防止被GC回收
+        self._background_tasks.add(task)
+        # 任务完成后自动移除引用
+        task.add_done_callback(self._background_tasks.discard)
 
     def _handle_redis_broadcast_message(self, data: dict) -> None:
         """处理来自Redis的广播消息"""
@@ -53,7 +59,11 @@ class ConnectionManager:
             return
 
         # 在后台任务中发送消息
-        asyncio.create_task(self.broadcast(message))
+        task = asyncio.create_task(self.broadcast(message))
+        # 保存任务引用，防止被GC回收
+        self._background_tasks.add(task)
+        # 任务完成后自动移除引用
+        task.add_done_callback(self._background_tasks.discard)
 
     async def connect(self, user_id: int, websocket: WebSocket) -> None:
         """建立连接"""

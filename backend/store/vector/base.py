@@ -72,3 +72,14 @@ class VectorDatabase(ABC):
         """释放集合内存"""
         pass
 
+    @abstractmethod
+    def get_all(self, limit: int = 1000, offset: int = 0, with_vectors: bool = True) -> Dict:
+        """
+        批量获取集合中的所有向量
+        :param limit: 每次获取的数量
+        :param offset: 偏移量
+        :param with_vectors: 是否返回向量数据
+        :return: 包含ids、vectors、metadatas、documents的字典
+        """
+        pass
+

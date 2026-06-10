@@ -117,6 +117,48 @@ async def root():
 
 
 
+# ==================== 测试接口（开发环境使用）====================
+@app.get("/test/cluster/overview", tags=["测试接口"])
+async def test_cluster_overview():
+    """测试聚类接口，无需认证"""
+    from backend.v1.app.admin.inspiration_template.service.cluster_service import cluster_service
+    from backend.store.database.async_database import get_db
+
+    # 获取数据库会话
+    db_gen = get_db()
+    db = await db_gen.__anext__()
+
+    try:
+        result = await cluster_service.get_overview(db)
+        return Response.success(data=result)
+    finally:
+        await db.close()
+
+@app.post("/test/cluster/run", tags=["测试接口"])
+async def test_run_cluster(
+    max_vectors: int = 800,
+    cluster_eps: float = 0.2,
+    min_samples: int = 3
+):
+    """测试运行聚类分析，无需认证"""
+    from backend.v1.app.admin.inspiration_template.service.cluster_service import cluster_service
+
+    params = {
+        "max_vectors": max_vectors,
+        "cluster_eps": cluster_eps,
+        "min_samples": min_samples
+    }
+    result = await cluster_service.run_analysis(params)
+    return Response.success(data=result, message="聚类分析任务已启动")
+
+@app.get("/test/cluster/status", tags=["测试接口"])
+async def test_cluster_status(task_id: str = None):
+    """测试获取聚类任务状态，无需认证"""
+    from backend.v1.app.admin.inspiration_template.service.cluster_service import cluster_service
+
+    result = cluster_service.get_analysis_status(task_id)
+    return Response.success(data=result)
+
 if __name__ == "__main__":
     import uvicorn
 
