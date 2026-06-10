@@ -89,29 +89,31 @@ class QdrantClient(VectorDatabase):
             self.client.get_collection(collection_name=self.collection_name)
         except UnexpectedResponse as e:
             if e.status_code == 404:
-                # 集合不存在，创建新集合
-                try:
-                    # 创建集合配置
-                    self.client.create_collection(
-                        collection_name=self.collection_name,
-                        vectors_config=models.VectorParams(
-                            size=self.vector_dimension,
-                            distance=models.Distance.COSINE
-                        ),
-                        # 可选配置，根据需要调整
-                        shard_number=2,
-                        replication_factor=1,
-                        on_disk_payload=True
-                    )
-
-                    # metadata是嵌套对象，不需要显式创建顶层索引
-                    # Qdrant会自动为查询中用到的metadata内部字段创建必要的索引
-                except Exception as create_e:
-                    raise RuntimeError(f"创建Qdrant集合失败: {str(create_e)}")
+                self._create_collection()
             else:
                 raise RuntimeError(f"检查Qdrant集合失败: {str(e)}")
         except Exception as e:
-            raise RuntimeError(f"连接Qdrant服务失败: {str(e)}")
+            # gRPC 模式下抛出的是 _InactiveRpcError，NOT_FOUND 表示集合不存在
+            if "NOT_FOUND" in str(e) or "doesn't exist" in str(e):
+                self._create_collection()
+            else:
+                raise RuntimeError(f"连接Qdrant服务失败: {str(e)}")
+
+    def _create_collection(self):
+        """创建Qdrant集合"""
+        try:
+            self.client.create_collection(
+                collection_name=self.collection_name,
+                vectors_config=models.VectorParams(
+                    size=self.vector_dimension,
+                    distance=models.Distance.COSINE
+                ),
+                shard_number=2,
+                replication_factor=1,
+                on_disk_payload=True
+            )
+        except Exception as create_e:
+            raise RuntimeError(f"创建Qdrant集合失败: {str(create_e)}")
 
     def add_embeddings(self, ids: List[str], embeddings: List[List[float]],
                       metadatas: Optional[List[Dict]] = None,
